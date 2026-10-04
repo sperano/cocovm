@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   into the machine, clash with another hotkey, or take a built-in shortcut.
 
 ### Changed
+- The MCP server's `screen_text` tool reports where BASIC's next character
+  lands, as a 0-based row and column, on the 32-column screen and the
+  `WIDTH 40`/`WIDTH 80` screens. In PMODE graphics it now says there is no
+  text buffer instead of decoding graphics bytes as characters.
 - DriveWire settings apply to a running machine as they are edited: enabling
   or disabling DriveWire, HDB-DOS mode, and the DW0–DW3 images no longer wait
   for the next start from power off. A suspended machine still resumes its

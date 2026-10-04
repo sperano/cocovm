@@ -39,11 +39,12 @@ impl Default for RemoteStick {
 
 impl CocoApp {
     /// `screen_text`: the text screen decoded as lines, plus the video-mode
-    /// summary.
+    /// summary and BASIC's text cursor.
     pub(crate) fn screen_text(&mut self) -> crate::control::Reply {
         crate::control::Reply::Screen {
             lines: self.machine.text_screen_lines(),
             mode: self.machine.video_mode_summary(),
+            cursor: self.machine.basic_text_cursor(),
         }
     }
 

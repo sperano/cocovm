@@ -1,6 +1,7 @@
 //! Maps `tools/list` and `tools/call` onto the [`protocol`] request/reply
 //! types.
 
+use coco_core::TextCursor;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
@@ -99,8 +100,12 @@ fn format_vms(vms: &[VmInfo]) -> String {
         .join("\n")
 }
 
-fn format_screen(lines: &[String], mode: &str) -> String {
-    format!("```\n{}\n```\n{mode}", lines.join("\n"))
+fn format_screen(lines: &[String], mode: &str, cursor: Option<TextCursor>) -> String {
+    let cursor = match cursor {
+        Some(TextCursor { row, col }) => format!("cursor: row {row}, column {col} (0-based)"),
+        None => "cursor: unknown (graphics mode, or BASIC is not driving this screen)".to_string(),
+    };
+    format!("```\n{}\n```\n{mode}\n{cursor}", lines.join("\n"))
 }
 
 fn hex_dump(addr: u16, bytes: &[u8]) -> String {
@@ -159,7 +164,11 @@ fn dispatch_screen_text(backend: &mut dyn Backend, args: Value) -> Result<Value,
         action: Action::ScreenText,
     };
     Ok(finish(backend, req, |reply| match reply {
-        Reply::Screen { lines, mode } => Some(text_result(format_screen(&lines, &mode))),
+        Reply::Screen {
+            lines,
+            mode,
+            cursor,
+        } => Some(text_result(format_screen(&lines, &mode, cursor))),
         _ => None,
     }))
 }

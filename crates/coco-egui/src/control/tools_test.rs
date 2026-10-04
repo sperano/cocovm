@@ -51,6 +51,37 @@ fn screenshot_returns_an_image_block() {
 }
 
 #[test]
+fn screen_text_reports_the_cursor_after_the_mode() {
+    let mut mock = MockBackend::new(vec![Ok(Reply::Screen {
+        lines: vec!["OK".into(), String::new()],
+        mode: "video mode: CoCo-compatible text, base=$0400".into(),
+        cursor: Some(coco_core::TextCursor { row: 1, col: 0 }),
+    })]);
+    let result = call(&mut mock, call_params("screen_text", json!({}))).unwrap();
+    assert_eq!(
+        result["content"][0]["text"],
+        json!(
+            "```\nOK\n\n```\nvideo mode: CoCo-compatible text, base=$0400\n\
+             cursor: row 1, column 0 (0-based)"
+        )
+    );
+}
+
+#[test]
+fn screen_text_without_a_cursor_says_so() {
+    let mut mock = MockBackend::new(vec![Ok(Reply::Screen {
+        lines: vec!["<no text buffer>".into()],
+        mode: "video mode: CoCo-compatible graphics (PMODE), base=$0E00".into(),
+        cursor: None,
+    })]);
+    let result = call(&mut mock, call_params("screen_text", json!({}))).unwrap();
+    let text = result["content"][0]["text"].as_str().unwrap();
+    assert!(
+        text.ends_with("\ncursor: unknown (graphics mode, or BASIC is not driving this screen)")
+    );
+}
+
+#[test]
 fn peek_formats_a_hex_dump_sixteen_bytes_per_line() {
     let bytes: Vec<u8> = (0..20).collect();
     let mut mock = MockBackend::new(vec![Ok(Reply::Bytes(bytes))]);
@@ -77,6 +108,7 @@ fn every_listed_tool_round_trips_through_the_mock() {
             Reply::Screen {
                 lines: vec!["HELLO".into()],
                 mode: "text 32x16".into(),
+                cursor: None,
             },
         ),
         (
