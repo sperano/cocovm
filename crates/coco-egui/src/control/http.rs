@@ -314,8 +314,8 @@ fn handle_post(
     let Some(value) = parse_json_body(&request.body) else {
         return write_response(writer, 400, "text/plain", b"bad request", &[]);
     };
-    if value.is_array() {
-        return handle_batch_post(request, handler, value, sessions, writer);
+    if let Value::Array(messages) = value {
+        return handle_batch_post(request, handler, messages, sessions, writer);
     }
     handle_single_post(request, handler, value, sessions, writer)
 }
@@ -369,7 +369,7 @@ fn handle_initialize(
 fn handle_batch_post(
     request: &HttpRequest,
     handler: &mut Mcp,
-    value: Value,
+    messages: Vec<Value>,
     sessions: &Arc<Mutex<SessionStore>>,
     writer: &mut impl Write,
 ) -> io::Result<()> {
@@ -377,7 +377,6 @@ fn handle_batch_post(
         Ok(version) => version,
         Err(status) => return write_response(writer, status, "text/plain", b"", &[]),
     };
-    let messages = value.as_array().expect("caller checked array");
     if !protocol_version.accepts_batches()
         || messages.is_empty()
         || messages
@@ -388,8 +387,8 @@ fn handle_batch_post(
     }
     handler.set_protocol_version(protocol_version);
     let responses: Vec<Value> = messages
-        .iter()
-        .filter_map(|message| jsonrpc::dispatch(handler, message.clone()))
+        .into_iter()
+        .filter_map(|message| jsonrpc::dispatch(handler, message))
         .collect();
     if responses.is_empty() {
         return write_response(writer, 202, "application/json", b"", &[]);
