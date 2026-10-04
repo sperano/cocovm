@@ -1,10 +1,10 @@
 use super::*;
 use crate::control::jsonrpc::{self, METHOD_NOT_FOUND};
-use crate::control::protocol::Reply;
+use crate::control::protocol::{ControlError, Reply};
 use crate::control::tool_defs;
 use crate::control::tools::MockBackend;
 
-fn mcp_with(responses: Vec<Result<Reply, String>>) -> Mcp {
+fn mcp_with(responses: Vec<Result<Reply, ControlError>>) -> Mcp {
     Mcp::new(Box::new(MockBackend::new(responses)))
 }
 

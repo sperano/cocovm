@@ -13,6 +13,7 @@ const EXPECTED_NAMES: &[&str] = &[
     "reset",
     "set_running",
     "wait",
+    "wait_for_text",
     "peek",
     "poke",
 ];
@@ -26,6 +27,29 @@ fn every_tool_has_name_description_and_object_schema() {
         assert!(def["description"].as_str().is_some_and(|d| !d.is_empty()));
         assert_eq!(def["inputSchema"]["type"], json!("object"));
     }
+}
+
+#[test]
+fn wait_for_text_bounds_pattern_and_timeout() {
+    let defs = definitions(true);
+    let wait = defs
+        .iter()
+        .find(|definition| definition["name"] == "wait_for_text")
+        .unwrap();
+    let properties = &wait["inputSchema"]["properties"];
+    assert_eq!(
+        properties["pattern"]["maxLength"],
+        json!(crate::control::MAX_WAIT_PATTERN_CHARS)
+    );
+    assert_eq!(properties["timeout_fields"]["minimum"], json!(1));
+    assert_eq!(
+        properties["timeout_fields"]["maximum"],
+        json!(crate::control::MAX_WAIT_FIELDS)
+    );
+    assert_eq!(
+        wait["inputSchema"]["required"],
+        json!(["pattern", "timeout_fields"])
+    );
 }
 
 #[test]
@@ -87,6 +111,7 @@ fn annotations_classify_read_only_and_mutating_tools() {
         ("reset", false, true, false),
         ("set_running", false, true, true),
         ("wait", false, true, false),
+        ("wait_for_text", false, true, false),
         ("peek", true, false, true),
         ("poke", false, true, false),
     ];
@@ -117,11 +142,26 @@ fn only_tools_with_structured_results_declare_an_output_schema() {
         .filter(|d| d.get("outputSchema").is_some())
         .map(|d| d["name"].as_str().unwrap())
         .collect();
-    assert_eq!(with_output, ["list_vms", "screen_text", "peek"]);
+    assert_eq!(
+        with_output,
+        ["list_vms", "screen_text", "wait_for_text", "peek"]
+    );
     for def in defs.iter().filter(|d| d.get("outputSchema").is_some()) {
         assert_eq!(def["outputSchema"]["type"], json!("object"));
         assert!(def["outputSchema"]["required"].is_array());
     }
+}
+
+#[test]
+fn screen_tools_declare_the_same_output_schema() {
+    let defs = definitions(true);
+    let output = |name| {
+        defs.iter()
+            .find(|definition| definition["name"] == name)
+            .unwrap()["outputSchema"]
+            .clone()
+    };
+    assert_eq!(output("wait_for_text"), output("screen_text"));
 }
 
 #[test]

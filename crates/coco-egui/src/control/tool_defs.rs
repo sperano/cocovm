@@ -8,7 +8,10 @@ use serde_json::{Value, json};
 
 use super::key_names;
 use super::protocol::VmStatus;
-use super::{MAX_HOLD_FIELDS, MAX_PEEK_LEN, MAX_POKE_LEN, MAX_TYPE_TEXT_CHARS, MAX_WAIT_FIELDS};
+use super::{
+    MAX_HOLD_FIELDS, MAX_PEEK_LEN, MAX_POKE_LEN, MAX_TYPE_TEXT_CHARS, MAX_WAIT_FIELDS,
+    MAX_WAIT_PATTERN_CHARS,
+};
 
 /// Highest floppy drive index a tool call may name — [`crate::UI_DRIVES`] is
 /// the manager's own exposed drive count (not `coco_core::fdc::DRIVE_COUNT`,
@@ -135,21 +138,7 @@ fn screen_text(include_annotations: bool) -> Value {
          row/column where BASIC's next character lands (32-column VDG and WIDTH 40/80 \
          screens). Graphics modes have no text buffer.",
         object_schema(json!({"vm": vm_property()}), &[]),
-        object_schema(
-            json!({
-                "lines": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "One string per screen row, top to bottom."
-                },
-                "mode": {
-                    "type": "string",
-                    "description": "Video-mode summary, with the text buffer's base address."
-                },
-                "cursor": cursor_schema()
-            }),
-            &["lines", "mode"],
-        ),
+        screen_schema(),
         READ_ONLY,
         include_annotations,
     )
@@ -313,6 +302,32 @@ fn wait(include_annotations: bool) -> Value {
     )
 }
 
+fn wait_for_text(include_annotations: bool) -> Value {
+    tool_with_output(
+        "wait_for_text",
+        "Wait until decoded screen text matches a literal string or regular expression. Returns \
+         the matching screen, video mode, and cursor. On timeout, returns an error with the last \
+         screen state.",
+        object_schema(
+            json!({
+                "vm": vm_property(),
+                "pattern": {"type": "string", "maxLength": MAX_WAIT_PATTERN_CHARS},
+                "regex": {"type": "boolean"},
+                "timeout_fields": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": MAX_WAIT_FIELDS,
+                    "description": "Maximum wait in video fields (60/s)."
+                }
+            }),
+            &["pattern", "timeout_fields"],
+        ),
+        screen_schema(),
+        DESTRUCTIVE,
+        include_annotations,
+    )
+}
+
 /// `screen_text`'s optional `cursor`, absent when the text says "unknown".
 fn cursor_schema() -> Value {
     let mut schema = object_schema(
@@ -327,6 +342,24 @@ fn cursor_schema() -> Value {
          modes or when BASIC is not driving the screen."
     );
     schema
+}
+
+fn screen_schema() -> Value {
+    object_schema(
+        json!({
+            "lines": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "One string per screen row, top to bottom."
+            },
+            "mode": {
+                "type": "string",
+                "description": "Video-mode summary, with the text buffer's base address."
+            },
+            "cursor": cursor_schema()
+        }),
+        &["lines", "mode"],
+    )
 }
 
 fn peek(include_annotations: bool) -> Value {
@@ -394,6 +427,7 @@ pub fn definitions(include_annotations: bool) -> Vec<Value> {
         reset(include_annotations),
         set_running(include_annotations),
         wait(include_annotations),
+        wait_for_text(include_annotations),
         peek(include_annotations),
         poke(include_annotations),
     ]

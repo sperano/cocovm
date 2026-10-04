@@ -45,6 +45,14 @@ fn backend_error_is_is_error_true() {
     assert!(result.get(STRUCTURED_CONTENT).is_none());
 }
 
+fn screen_reply(text: &str) -> Reply {
+    Reply::Screen(ScreenSnapshot {
+        lines: vec![text.into()],
+        mode: "text 32x16".into(),
+        cursor: Some(coco_core::TextCursor { row: 0, col: 5 }),
+    })
+}
+
 #[test]
 fn screenshot_returns_an_image_block() {
     let mut mock = MockBackend::new(vec![Ok(Reply::Screenshot {
@@ -64,11 +72,11 @@ fn screenshot_returns_an_image_block() {
 
 #[test]
 fn screen_text_reports_the_cursor_after_the_mode() {
-    let mut mock = MockBackend::new(vec![Ok(Reply::Screen {
+    let mut mock = MockBackend::new(vec![Ok(Reply::Screen(ScreenSnapshot {
         lines: vec!["OK".into(), String::new()],
         mode: "video mode: CoCo-compatible text, base=$0400".into(),
         cursor: Some(coco_core::TextCursor { row: 1, col: 0 }),
-    })]);
+    }))]);
     let result = call(&mut mock, call_params("screen_text", json!({})), STRUCTURED).unwrap();
     assert_eq!(
         result["content"][0]["text"],
@@ -81,11 +89,11 @@ fn screen_text_reports_the_cursor_after_the_mode() {
 
 #[test]
 fn screen_text_without_a_cursor_says_so() {
-    let mut mock = MockBackend::new(vec![Ok(Reply::Screen {
+    let mut mock = MockBackend::new(vec![Ok(Reply::Screen(ScreenSnapshot {
         lines: vec!["<no text buffer>".into()],
         mode: "video mode: CoCo-compatible graphics (PMODE), base=$0E00".into(),
         cursor: None,
-    })]);
+    }))]);
     let result = call(&mut mock, call_params("screen_text", json!({})), STRUCTURED).unwrap();
     let text = result["content"][0]["text"].as_str().unwrap();
     assert!(
@@ -115,15 +123,7 @@ fn every_listed_tool_round_trips_through_the_mock() {
     let cases: Vec<(&str, Value, Reply)> = vec![
         ("list_vms", json!({}), Reply::Vms(vec![])),
         ("start_vm", json!({"vm": "coco3"}), Reply::Done),
-        (
-            "screen_text",
-            json!({}),
-            Reply::Screen {
-                lines: vec!["HELLO".into()],
-                mode: "text 32x16".into(),
-                cursor: None,
-            },
-        ),
+        ("screen_text", json!({}), screen_reply("HELLO")),
         (
             "screenshot",
             json!({}),
@@ -145,6 +145,11 @@ fn every_listed_tool_round_trips_through_the_mock() {
         ("reset", json!({}), Reply::Done),
         ("set_running", json!({"running": true}), Reply::Done),
         ("wait", json!({"fields": 30}), Reply::Done),
+        (
+            "wait_for_text",
+            json!({"pattern": "OK", "timeout_fields": 60}),
+            screen_reply("OK"),
+        ),
         (
             "peek",
             json!({"addr": 0, "len": 4}),
@@ -168,6 +173,94 @@ fn every_listed_tool_round_trips_through_the_mock() {
             "{name} should have dispatched cleanly"
         );
     }
+}
+
+#[test]
+fn wait_for_text_builds_a_literal_matcher_and_formats_cursor() {
+    let mut mock = MockBackend::new(vec![Ok(screen_reply("READY"))]);
+    let result = call(
+        &mut mock,
+        call_params(
+            "wait_for_text",
+            json!({"pattern": "READY", "timeout_fields": 120}),
+        ),
+        STRUCTURED,
+    )
+    .unwrap();
+
+    assert_eq!(result["isError"], json!(false));
+    let text = result["content"][0]["text"].as_str().unwrap();
+    assert!(text.contains("READY"));
+    assert!(text.contains("cursor: row 0, column 5 (0-based)"));
+    assert_eq!(
+        result[STRUCTURED_CONTENT]["cursor"],
+        json!({"row": 0, "col": 5})
+    );
+    assert!(matches!(
+        mock.calls[0].action,
+        Action::WaitForText {
+            matcher: TextMatcher::Literal(ref pattern),
+            timeout_fields: 120,
+        } if pattern == "READY"
+    ));
+}
+
+#[test]
+fn wait_for_text_rejects_an_invalid_or_overlong_regex_before_backend_call() {
+    let mut mock = MockBackend::new(vec![]);
+    let invalid = call(
+        &mut mock,
+        call_params(
+            "wait_for_text",
+            json!({"pattern": "(", "regex": true, "timeout_fields": 1}),
+        ),
+        STRUCTURED,
+    )
+    .unwrap();
+    assert_eq!(invalid["isError"], json!(true));
+    assert!(mock.calls.is_empty());
+
+    let overlong = "x".repeat(crate::control::MAX_WAIT_PATTERN_CHARS + 1);
+    let result = call(
+        &mut mock,
+        call_params(
+            "wait_for_text",
+            json!({"pattern": overlong, "timeout_fields": 1}),
+        ),
+        STRUCTURED,
+    )
+    .unwrap();
+    assert_eq!(result["isError"], json!(true));
+    assert!(mock.calls.is_empty());
+}
+
+#[test]
+fn wait_for_text_timeout_error_formats_the_last_screen() {
+    let screen = ScreenSnapshot {
+        lines: vec!["STILL LOADING".into()],
+        mode: "video mode: GIME hi-res text".into(),
+        cursor: None,
+    };
+    let error = ControlError::with_screen("timed out waiting for screen text", screen);
+    let mut mock = MockBackend::new(vec![Err(error)]);
+
+    let result = call(
+        &mut mock,
+        call_params(
+            "wait_for_text",
+            json!({"pattern": "OK", "timeout_fields": 60}),
+        ),
+        STRUCTURED,
+    )
+    .unwrap();
+
+    assert_eq!(result["isError"], json!(true));
+    let text = result["content"][0]["text"].as_str().unwrap();
+    assert!(text.contains("timed out"));
+    assert!(text.contains("STILL LOADING"));
+    assert!(text.contains("GIME hi-res text"));
+    assert!(text.contains("cursor: unknown"));
+    assert!(result.get(STRUCTURED_CONTENT).is_none());
 }
 
 /// Checks `value` against the JSON Schema subset `tool_defs` uses (`type`,
@@ -245,20 +338,29 @@ fn structured_cases() -> Vec<(&'static str, Value, Reply)> {
         (
             "screen_text",
             json!({}),
-            Reply::Screen {
+            Reply::Screen(ScreenSnapshot {
                 lines: vec!["HELLO".into(), "OK".into()],
                 mode: "video mode: CoCo-compatible text, base=$0400".into(),
                 cursor: Some(coco_core::TextCursor { row: 2, col: 0 }),
-            },
+            }),
         ),
         (
             "screen_text",
             json!({}),
-            Reply::Screen {
+            Reply::Screen(ScreenSnapshot {
                 lines: vec!["<no text buffer>".into()],
                 mode: "video mode: CoCo-compatible graphics (PMODE), base=$0E00".into(),
                 cursor: None,
-            },
+            }),
+        ),
+        (
+            "wait_for_text",
+            json!({"pattern": "OK", "timeout_fields": 60}),
+            Reply::Screen(ScreenSnapshot {
+                lines: vec!["READY".into(), "OK".into()],
+                mode: "video mode: GIME hi-res text, base=$000000".into(),
+                cursor: Some(coco_core::TextCursor { row: 2, col: 0 }),
+            }),
         ),
         (
             "peek",
@@ -298,6 +400,11 @@ fn structured_content_carries_the_reply_values() {
         json!({
             "lines": ["<no text buffer>"],
             "mode": "video mode: CoCo-compatible graphics (PMODE), base=$0E00"
+        }),
+        json!({
+            "lines": ["READY", "OK"],
+            "mode": "video mode: GIME hi-res text, base=$000000",
+            "cursor": {"row": 2, "col": 0}
         }),
         json!({"addr": 0xFFFE, "bytes": [0x00, 0x7F, 0x80, 0xFF]}),
     ];

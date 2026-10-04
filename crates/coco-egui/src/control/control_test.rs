@@ -442,7 +442,7 @@ fn a_full_incoming_queue_returns_an_overload_error() {
     )
     .expect_err("a full queue must reject admission");
 
-    assert!(err.contains("overloaded"));
+    assert!(err.message.contains("overloaded"));
 }
 
 #[test]
@@ -469,7 +469,7 @@ fn reply_timeout_marks_queued_work_abandoned() {
         .expect_err("past deadline must time out");
     let queued = rx.try_recv().expect("queued request remains available");
 
-    assert!(err.contains("timed out"));
+    assert!(err.message.contains("timed out"));
     assert!(queued.reply.is_abandoned());
 }
 

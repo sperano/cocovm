@@ -23,17 +23,12 @@ fn boot() -> CocoApp {
 #[test]
 fn screen_text_reports_lines_mode_and_cursor() {
     let mut app = boot();
-    let Reply::Screen {
-        lines,
-        mode,
-        cursor,
-    } = app.screen_text()
-    else {
+    let Reply::Screen(screen) = app.screen_text() else {
         panic!("expected Reply::Screen");
     };
-    assert!(!lines.is_empty());
-    assert!(!mode.is_empty());
-    assert_eq!(cursor, app.machine.basic_text_cursor());
+    assert!(!screen.lines.is_empty());
+    assert!(!screen.mode.is_empty());
+    assert_eq!(screen.cursor, app.machine.basic_text_cursor());
 }
 
 #[test]

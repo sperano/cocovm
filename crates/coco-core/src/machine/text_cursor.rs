@@ -7,6 +7,28 @@ use crate::{gime_video, video};
 
 use super::{Machine, VideoMode};
 
+/// Logical base of the flat system-ROM image in [`crate::SystemBus::rom`].
+const SYSTEM_ROM_BASE: u16 = 0x8000;
+/// Stock Color BASIC cursor-blink routine at $A1A1.
+///
+/// `bas12.rom` and `coco3.rom` contain `LDX <$88; LDA ,X; ADDA #$10;
+/// ORA #$8F; STA ,X` at this address. Checking these immutable ROM bytes
+/// distinguishes the workspace convention from an arbitrary program that
+/// happens to leave an in-range value at CURPOS.
+pub(super) const VDG_CURSOR_ROUTINE_OFFSET: usize = 0xA1A1 - SYSTEM_ROM_BASE as usize;
+pub(super) const VDG_CURSOR_ROUTINE: &[u8] =
+    &[0x9E, 0x88, 0xA6, 0x84, 0x8B, 0x10, 0x8A, 0x8F, 0xA7, 0x84];
+/// Super Extended BASIC's coordinate-update routine at $F7F4.
+///
+/// `coco3.rom` contains `LDD $FE02; DECA; BPL; DECB; STB $FE03;
+/// LDA $FE04; DECA; STA $FE02` here, establishing the $FE02-$FE04
+/// workspace convention used by the surrounding $F7E2-$F852 cursor code.
+pub(super) const GIME_CURSOR_ROUTINE_OFFSET: usize = 0xF7F4 - SYSTEM_ROM_BASE as usize;
+pub(super) const GIME_CURSOR_ROUTINE: &[u8] = &[
+    0xFC, 0xFE, 0x02, 0x4A, 0x2A, 0x08, 0x5A, 0xF7, 0xFE, 0x03, 0xB6, 0xFE, 0x04, 0x4A, 0xB7, 0xFE,
+    0x02,
+];
+
 /// A text cursor position, 0-based, in the rows/columns of
 /// [`Machine::text_screen_lines`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -31,6 +53,9 @@ impl Machine {
     /// The 32-column cursor from CURPOS, if BASIC's VDG screen is the one
     /// shown (and, on a CoCo 3, `WIDTH 32` is in effect).
     fn vdg_basic_cursor(&self) -> Option<TextCursor> {
+        if !self.rom_has_signature(VDG_CURSOR_ROUTINE_OFFSET, VDG_CURSOR_ROUTINE) {
+            return None;
+        }
         if self.config.variant == MachineVariant::Coco3
             && self.bus.peek(basic_vars::HRWIDTH) != hrwidth::VDG_32
         {
@@ -56,6 +81,9 @@ impl Machine {
     /// The `WIDTH 40`/`80` cursor from H.CURSX/H.CURSY, if `WIDTH 40` or
     /// `80` is in effect and BASIC's screen size matches the GIME's.
     fn hires_basic_cursor(&self) -> Option<TextCursor> {
+        if !self.rom_has_signature(GIME_CURSOR_ROUTINE_OFFSET, GIME_CURSOR_ROUTINE) {
+            return None;
+        }
         let width = self.bus.peek(basic_vars::HRWIDTH);
         if width != hrwidth::HIRES_40 && width != hrwidth::HIRES_80 {
             return None;
@@ -70,5 +98,12 @@ impl Machine {
         let col = usize::from(self.bus.peek(basic_vars::H_CURSX));
         let row = usize::from(self.bus.peek(basic_vars::H_CURSY));
         (col < cols && row < rows).then_some(TextCursor { row, col })
+    }
+
+    fn rom_has_signature(&self, offset: usize, signature: &[u8]) -> bool {
+        self.bus
+            .rom
+            .get(offset..offset + signature.len())
+            .is_some_and(|bytes| bytes == signature)
     }
 }

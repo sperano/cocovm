@@ -38,13 +38,17 @@ impl Default for RemoteStick {
 }
 
 impl CocoApp {
-    /// `screen_text`: the text screen decoded as lines, plus the video-mode
-    /// summary and BASIC's text cursor.
+    /// `screen_text`: decoded lines, video mode, and validated insertion point.
     pub(crate) fn screen_text(&mut self) -> crate::control::Reply {
-        crate::control::Reply::Screen {
-            lines: self.machine.text_screen_lines(),
+        crate::control::Reply::Screen(self.screen_snapshot())
+    }
+
+    pub(crate) fn screen_snapshot(&mut self) -> crate::control::ScreenSnapshot {
+        let screen = self.machine.text_screen();
+        crate::control::ScreenSnapshot {
+            lines: screen.lines,
             mode: self.machine.video_mode_summary(),
-            cursor: self.machine.basic_text_cursor(),
+            cursor: screen.cursor,
         }
     }
 

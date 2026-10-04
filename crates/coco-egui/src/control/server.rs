@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 #[cfg(test)]
 use super::{Action, MCP_PATH, tool_defs};
 use super::{
-    CONTROL_IO_TIMEOUT, CONTROL_REPLY_TIMEOUT, Incoming, MAX_CONTROL_CONNECTIONS,
+    CONTROL_IO_TIMEOUT, CONTROL_REPLY_TIMEOUT, ControlError, Incoming, MAX_CONTROL_CONNECTIONS,
     MAX_INCOMING_CONTROL_REQUESTS, Reply, ReplyHandle, Request, Response, Wake, http, mcp, tools,
 };
 
@@ -301,7 +301,7 @@ struct QueueBackend {
 }
 
 impl tools::Backend for QueueBackend {
-    fn call(&mut self, req: &Request) -> Result<Reply, String> {
+    fn call(&mut self, req: &Request) -> Result<Reply, ControlError> {
         let (reply, wait) = ReplyWait::pair();
         let incoming = Incoming {
             request: req.clone(),
@@ -309,8 +309,8 @@ impl tools::Backend for QueueBackend {
         };
         match self.tx.try_send(incoming) {
             Ok(()) => {}
-            Err(TrySendError::Full(_)) => return Err(CONTROL_OVERLOADED.to_string()),
-            Err(TrySendError::Disconnected(_)) => return Err(CONTROL_SHUTTING_DOWN.to_string()),
+            Err(TrySendError::Full(_)) => return Err(CONTROL_OVERLOADED.into()),
+            Err(TrySendError::Disconnected(_)) => return Err(CONTROL_SHUTTING_DOWN.into()),
         }
         self.wake.request();
         self.wait_for_reply(wait)
@@ -318,11 +318,15 @@ impl tools::Backend for QueueBackend {
 }
 
 impl QueueBackend {
-    fn wait_for_reply(&self, wait: ReplyWait) -> Result<Reply, String> {
+    fn wait_for_reply(&self, wait: ReplyWait) -> Result<Reply, ControlError> {
         self.wait_for_reply_until(wait, Instant::now() + CONTROL_REPLY_TIMEOUT)
     }
 
-    fn wait_for_reply_until(&self, wait: ReplyWait, deadline: Instant) -> Result<Reply, String> {
+    fn wait_for_reply_until(
+        &self,
+        wait: ReplyWait,
+        deadline: Instant,
+    ) -> Result<Reply, ControlError> {
         let mut next_disconnect_check = Instant::now() + CONTROL_DISCONNECT_POLL_INTERVAL;
         loop {
             match wait.rx.recv_timeout(CONTROL_SHUTDOWN_POLL_INTERVAL) {
@@ -330,21 +334,21 @@ impl QueueBackend {
                 Ok(Response::Err(msg)) => return Err(msg),
                 Err(RecvTimeoutError::Disconnected) => {
                     wait.abandon();
-                    return Err(CONTROL_SHUTTING_DOWN.to_string());
+                    return Err(CONTROL_SHUTTING_DOWN.into());
                 }
                 Err(RecvTimeoutError::Timeout) if self.stop.load(Ordering::Acquire) => {
                     wait.abandon();
-                    return Err(CONTROL_SHUTTING_DOWN.to_string());
+                    return Err(CONTROL_SHUTTING_DOWN.into());
                 }
                 Err(RecvTimeoutError::Timeout)
                     if Instant::now() >= next_disconnect_check && self.client_disconnected() =>
                 {
                     wait.abandon();
-                    return Err(CONTROL_CLIENT_DISCONNECTED.to_string());
+                    return Err(CONTROL_CLIENT_DISCONNECTED.into());
                 }
                 Err(RecvTimeoutError::Timeout) if Instant::now() >= deadline => {
                     wait.abandon();
-                    return Err(CONTROL_REPLY_TIMED_OUT.to_string());
+                    return Err(CONTROL_REPLY_TIMED_OUT.into());
                 }
                 Err(RecvTimeoutError::Timeout) => {
                     if Instant::now() >= next_disconnect_check {
