@@ -1,6 +1,7 @@
 //! Maps `tools/list` and `tools/call` onto the [`protocol`] request/reply
 //! types.
 
+use coco_core::TextCursor;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
@@ -22,10 +23,12 @@ pub trait Backend {
     fn call(&mut self, req: &Request) -> Result<Reply, String>;
 }
 
-/// The `tools/list` result; without `structured_output` (clients older than
-/// protocol 2025-06-18) the tools carry no `outputSchema`.
-pub fn list(structured_output: bool) -> Value {
-    let mut tools = tool_defs::definitions();
+/// The `tools/list` result. `include_annotations` adds each tool's
+/// behavior hints (protocol 2025-03-26 on); without `structured_output`
+/// (clients older than protocol 2025-06-18) the tools carry no
+/// `outputSchema`.
+pub fn list(include_annotations: bool, structured_output: bool) -> Value {
+    let mut tools = tool_defs::definitions(include_annotations);
     if !structured_output {
         for tool in &mut tools {
             remove_key(tool, OUTPUT_SCHEMA);
@@ -149,8 +152,21 @@ fn vms_json(vms: &[VmInfo]) -> Value {
     json!({"vms": vms})
 }
 
-fn format_screen(lines: &[String], mode: &str) -> String {
-    format!("```\n{}\n```\n{mode}", lines.join("\n"))
+fn format_screen(lines: &[String], mode: &str, cursor: Option<TextCursor>) -> String {
+    let cursor = match cursor {
+        Some(TextCursor { row, col }) => format!("cursor: row {row}, column {col} (0-based)"),
+        None => "cursor: unknown (graphics mode, or BASIC is not driving this screen)".to_string(),
+    };
+    format!("```\n{}\n```\n{mode}\n{cursor}", lines.join("\n"))
+}
+
+/// `screen_text`'s `structuredContent`; `cursor` is left out when unknown.
+fn screen_json(lines: &[String], mode: &str, cursor: Option<TextCursor>) -> Value {
+    let mut screen = json!({"lines": lines, "mode": mode});
+    if let Some(TextCursor { row, col }) = cursor {
+        screen["cursor"] = json!({"row": row, "col": col});
+    }
+    screen
 }
 
 fn hex_dump(addr: u16, bytes: &[u8]) -> String {
@@ -209,9 +225,13 @@ fn dispatch_screen_text(backend: &mut dyn Backend, args: Value) -> Result<Value,
         action: Action::ScreenText,
     };
     Ok(finish(backend, req, |reply| match reply {
-        Reply::Screen { lines, mode } => Some(structured_result(
-            format_screen(&lines, &mode),
-            json!({"lines": lines, "mode": mode}),
+        Reply::Screen {
+            lines,
+            mode,
+            cursor,
+        } => Some(structured_result(
+            format_screen(&lines, &mode, cursor),
+            screen_json(&lines, &mode, cursor),
         )),
         _ => None,
     }))

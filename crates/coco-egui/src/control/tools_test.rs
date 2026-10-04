@@ -63,6 +63,37 @@ fn screenshot_returns_an_image_block() {
 }
 
 #[test]
+fn screen_text_reports_the_cursor_after_the_mode() {
+    let mut mock = MockBackend::new(vec![Ok(Reply::Screen {
+        lines: vec!["OK".into(), String::new()],
+        mode: "video mode: CoCo-compatible text, base=$0400".into(),
+        cursor: Some(coco_core::TextCursor { row: 1, col: 0 }),
+    })]);
+    let result = call(&mut mock, call_params("screen_text", json!({})), STRUCTURED).unwrap();
+    assert_eq!(
+        result["content"][0]["text"],
+        json!(
+            "```\nOK\n\n```\nvideo mode: CoCo-compatible text, base=$0400\n\
+             cursor: row 1, column 0 (0-based)"
+        )
+    );
+}
+
+#[test]
+fn screen_text_without_a_cursor_says_so() {
+    let mut mock = MockBackend::new(vec![Ok(Reply::Screen {
+        lines: vec!["<no text buffer>".into()],
+        mode: "video mode: CoCo-compatible graphics (PMODE), base=$0E00".into(),
+        cursor: None,
+    })]);
+    let result = call(&mut mock, call_params("screen_text", json!({})), STRUCTURED).unwrap();
+    let text = result["content"][0]["text"].as_str().unwrap();
+    assert!(
+        text.ends_with("\ncursor: unknown (graphics mode, or BASIC is not driving this screen)")
+    );
+}
+
+#[test]
 fn peek_formats_a_hex_dump_sixteen_bytes_per_line() {
     let bytes: Vec<u8> = (0..20).collect();
     let mut mock = MockBackend::new(vec![Ok(Reply::Bytes(bytes))]);
@@ -90,6 +121,7 @@ fn every_listed_tool_round_trips_through_the_mock() {
             Reply::Screen {
                 lines: vec!["HELLO".into()],
                 mode: "text 32x16".into(),
+                cursor: None,
             },
         ),
         (
@@ -122,7 +154,7 @@ fn every_listed_tool_round_trips_through_the_mock() {
     ];
     assert_eq!(
         cases.len(),
-        tool_defs::definitions().len(),
+        tool_defs::definitions(true).len(),
         "every tool must be covered here"
     );
 
@@ -190,7 +222,7 @@ fn assert_conforms(value: &Value, schema: &Value, path: &str) {
 }
 
 fn output_schema(name: &str) -> Value {
-    tool_defs::definitions()
+    tool_defs::definitions(true)
         .into_iter()
         .find(|d| d["name"] == name)
         .and_then(|mut d| d.get_mut(OUTPUT_SCHEMA).map(Value::take))
@@ -216,6 +248,16 @@ fn structured_cases() -> Vec<(&'static str, Value, Reply)> {
             Reply::Screen {
                 lines: vec!["HELLO".into(), "OK".into()],
                 mode: "video mode: CoCo-compatible text, base=$0400".into(),
+                cursor: Some(coco_core::TextCursor { row: 2, col: 0 }),
+            },
+        ),
+        (
+            "screen_text",
+            json!({}),
+            Reply::Screen {
+                lines: vec!["<no text buffer>".into()],
+                mode: "video mode: CoCo-compatible graphics (PMODE), base=$0E00".into(),
+                cursor: None,
             },
         ),
         (
@@ -250,7 +292,12 @@ fn structured_content_carries_the_reply_values() {
         ]}),
         json!({
             "lines": ["HELLO", "OK"],
-            "mode": "video mode: CoCo-compatible text, base=$0400"
+            "mode": "video mode: CoCo-compatible text, base=$0400",
+            "cursor": {"row": 2, "col": 0}
+        }),
+        json!({
+            "lines": ["<no text buffer>"],
+            "mode": "video mode: CoCo-compatible graphics (PMODE), base=$0E00"
         }),
         json!({"addr": 0xFFFE, "bytes": [0x00, 0x7F, 0x80, 0xFF]}),
     ];
@@ -288,10 +335,10 @@ fn list_declares_output_schemas_only_for_structured_clients() {
             .iter()
             .any(|t| t.get(OUTPUT_SCHEMA).is_some())
     };
-    assert!(has_schema(&list(STRUCTURED)));
-    assert!(!has_schema(&list(TEXT_ONLY)));
+    assert!(has_schema(&list(true, STRUCTURED)));
+    assert!(!has_schema(&list(true, TEXT_ONLY)));
     assert_eq!(
-        list(TEXT_ONLY)["tools"].as_array().unwrap().len(),
-        tool_defs::definitions().len()
+        list(true, TEXT_ONLY)["tools"].as_array().unwrap().len(),
+        tool_defs::definitions(true).len()
     );
 }
