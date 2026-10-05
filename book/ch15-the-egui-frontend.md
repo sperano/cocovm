@@ -1543,25 +1543,27 @@ Everything up to here has been the emulator's own window. This section is
 about a second window entirely — and about a category of code the course
 has not touched in fourteen weeks.
 
-Run the `coco` binary — no arguments, or several — and you do not get a
-booted machine at all. You get the *manager*: a window in the style of
-VirtualBox or Parallels, listing every machine you have defined, with a
-deck-style transport — power on, suspend to disk, power off — and a detail
-pane for editing hardware and attached media.
-The dispatch in `main()` is unconditional now: "the app always opens the
-CoCoVM manager window" ([`crates/coco-egui/src/main.rs:155-157`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L155-L157)) — and
+Run the `coco` binary with no arguments and you do not get a booted machine
+at all. You get the *manager*: a window in the style of VirtualBox or
+Parallels, listing every machine you have defined, with a deck-style
+transport — power on, suspend to disk, power off — and a detail pane for
+editing hardware and attached media. The manager is the window `main()`
+always opens: "the app always opens the CoCoVM manager window; a named
+machine is started from that window's own machine definitions"
+([`crates/coco-egui/src/main.rs:191-193`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/main.rs#L191-L193)) — and
 everything downstream of it is in
-[`crates/coco-egui/src/manager.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs) and its submodules. `coco` used to fork on
-argument count instead — no arguments opened the manager, any argument at
-all booted a machine directly from a much larger CLI surface (`--machine`,
-`--ram`, `--rom`, DriveWire and cassette flags, and so on) — but that
-direct-boot path predated machine definitions, and once the manager could
-express every one of those choices as data, keeping a second, parallel way
-to express them in flags was pure duplication. Every capability the old
-flags exposed is still reachable, just from the manager's Machine menu
-instead of a boot-time argument; only the shortcut of skipping the manager
-window entirely is gone, and a future CLI will be rebuilt on top of the
-manager's own machine definitions rather than beside them.
+[`crates/coco-egui/src/manager.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/manager.rs) and its submodules. Name a saved
+machine's slug and the manager starts that machine as it opens, so a machine
+you run often is one word away without hunting for its row in the list. `coco`
+used to fork on argument count instead — no arguments opened the manager, any
+argument at all booted a machine directly from a much larger CLI surface
+(`--machine`, `--ram`, `--rom`, DriveWire and cassette flags, and so on) —
+but that direct-boot path predated machine definitions, and once the manager
+could express every one of those choices as data, keeping a second, parallel
+way to express them in flags was pure duplication. Every capability the old
+flags exposed is still reachable from the manager's Machine menu; the slug
+rebuilds the shortcut of skipping the selection step, on top of the manager's
+own definitions rather than beside them.
 
 This is worth studying for two reasons that have nothing to do with the
 6809. First, it is the shape any serious frontend eventually needs around a

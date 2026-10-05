@@ -210,9 +210,7 @@ impl ManagerApp {
         match vm {
             Some(slug) => {
                 let idx = self
-                    .entries
-                    .iter()
-                    .position(|e| &e.slug == slug)
+                    .entry_index(slug)
                     .ok_or_else(|| format!("no VM named '{slug}'"))?;
                 if require_running && !self.entries[idx].is_running() {
                     return Err(format!("VM '{slug}' is not running; call start_vm first"));
