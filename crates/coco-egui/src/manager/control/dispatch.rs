@@ -52,6 +52,8 @@ impl ManagerApp {
         match action {
             Action::ListVms => reply.reply(Response::Ok(Reply::Vms(self.vm_infos()))),
             Action::StartVm => reply.reply(response(self.start_vm_action(&vm))),
+            Action::StopVm => reply.reply(response(self.stop_vm_action(&vm))),
+            Action::SuspendVm => reply.reply(response(self.suspend_vm_action(&vm))),
             Action::ScreenText => {
                 let result = self
                     .resolve_alive(&vm)
@@ -150,25 +152,6 @@ impl ManagerApp {
             .expect("caller resolved this entry's VM as present")
     }
 
-    /// `start_vm`: resolve without requiring Running (a Suspended or Powered
-    /// Off target is exactly what this brings up), no-op if already Running,
-    /// otherwise resume or launch and report the outcome.
-    fn start_vm_action(&mut self, vm: &Option<String>) -> Result<Reply, String> {
-        let idx = self.resolve_vm(vm, false)?;
-        if self.entries[idx].is_running() {
-            return Ok(Reply::Done);
-        }
-        if self.entries[idx].suspended {
-            self.resume_vm(idx);
-        } else {
-            self.start_vm(idx);
-        }
-        match self.entries[idx].launch_error.take() {
-            Some(e) => Err(e),
-            None => Ok(Reply::Done),
-        }
-    }
-
     /// `insert_disk`: [`UI_DRIVES`], not `coco_core::fdc::DRIVE_COUNT` — the
     /// UI's own smaller exposed drive count, which is what `CocoApp::disk_paths`
     /// is actually sized to (see its field doc).
@@ -193,10 +176,15 @@ impl ManagerApp {
     }
 
     /// `wait`: defer until `CocoApp::fields_run` reaches its current value
-    /// plus `fields` (clamped to [`crate::control::MAX_WAIT_FIELDS`]).
+    /// plus `fields` (clamped to [`crate::control::MAX_WAIT_FIELDS`]). A
+    /// paused VM is refused up front, as `type_text` and `press_keys` are:
+    /// its field count would never move.
     fn start_wait(&mut self, reply: ReplyHandle, vm: Option<String>, fields: u32) {
         let clamped = u64::from(fields.min(crate::control::MAX_WAIT_FIELDS));
         self.start_deferred(reply, vm, |app| {
+            if !app.running {
+                return Err(crate::app::PAUSED_ERROR.to_string());
+            }
             Ok((
                 PendingCondition::WaitUntilField(app.fields_run + clamped),
                 clamped,

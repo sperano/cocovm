@@ -6,12 +6,14 @@
 use coco_core::joystick::{AXIS_CENTER, AXIS_MAX};
 use serde_json::{Value, json};
 
+use super::enter_basic::BASIC_LINE_MAX_CHARS;
 use super::key_names;
-use super::protocol::VmStatus;
 use super::{
-    MAX_HOLD_FIELDS, MAX_PEEK_LEN, MAX_PHYSICAL_ADDR, MAX_POKE_LEN, MAX_TYPE_TEXT_CHARS,
-    MAX_WAIT_FIELDS, MAX_WAIT_PATTERN_CHARS,
+    MAX_ENTER_BASIC_CHARS, MAX_HOLD_FIELDS, MAX_PEEK_LEN, MAX_PHYSICAL_ADDR, MAX_POKE_LEN,
+    MAX_TYPE_TEXT_CHARS, MAX_WAIT_FIELDS, MAX_WAIT_PATTERN_CHARS,
 };
+
+mod vms;
 
 /// Highest floppy drive index a tool call may name — [`crate::UI_DRIVES`] is
 /// the manager's own exposed drive count (not `coco_core::fdc::DRIVE_COUNT`,
@@ -97,36 +99,6 @@ fn byte_schema() -> Value {
     json!({"type": "integer", "minimum": 0, "maximum": u8::MAX})
 }
 
-fn list_vms(include_annotations: bool) -> Value {
-    let statuses: Vec<&str> = VmStatus::ALL.iter().map(|s| s.as_str()).collect();
-    let vm = object_schema(
-        json!({
-            "slug": {"type": "string"},
-            "name": {"type": "string"},
-            "status": {"type": "string", "enum": statuses}
-        }),
-        &["slug", "name", "status"],
-    );
-    tool_with_output(
-        "list_vms",
-        "List every VM the manager knows, with its lifecycle status.",
-        object_schema(json!({}), &[]),
-        object_schema(json!({"vms": {"type": "array", "items": vm}}), &["vms"]),
-        READ_ONLY,
-        include_annotations,
-    )
-}
-
-fn start_vm(include_annotations: bool) -> Value {
-    tool(
-        "start_vm",
-        "Start (or resume) a VM by its manager slug; a no-op if it's already running.",
-        object_schema(json!({"vm": vm_property()}), &["vm"]),
-        DESTRUCTIVE_IDEMPOTENT,
-        include_annotations,
-    )
-}
-
 fn screen_text(include_annotations: bool) -> Value {
     tool_with_output(
         "screen_text",
@@ -167,6 +139,47 @@ fn type_text(include_annotations: bool) -> Value {
                 "text": {"type": "string", "maxLength": MAX_TYPE_TEXT_CHARS}
             }),
             &["text"],
+        ),
+        DESTRUCTIVE,
+        include_annotations,
+    )
+}
+
+fn enter_basic(include_annotations: bool) -> Value {
+    tool_with_output(
+        "enter_basic",
+        format!(
+            "Type a multi-line BASIC listing at the BASIC prompt, one line at a time (ENTER \
+             after each; blank lines are skipped). With \"new\": true, types NEW first. Takes \
+             about 0.1 s per character, so a long listing runs for minutes. The whole listing \
+             is checked first: at most {MAX_ENTER_BASIC_CHARS} characters, at most \
+             {BASIC_LINE_MAX_CHARS} per line, and only characters on the CoCo keyboard; \
+             otherwise nothing is typed. Stops at the first line BASIC answers with an error \
+             (such as ?SN ERROR or ?OM ERROR), and reports that line, the error, and the \
+             screen; an error printed later, such as by a long-running RUN, is not caught. \
+             On success, returns the line count and the final screen."
+        ),
+        object_schema(
+            json!({
+                "vm": vm_property(),
+                "listing": {"type": "string", "maxLength": MAX_ENTER_BASIC_CHARS},
+                "new": {
+                    "type": "boolean",
+                    "description": "Type NEW first, erasing the program in memory."
+                }
+            }),
+            &["listing"],
+        ),
+        object_schema(
+            json!({
+                "lines": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Listing lines typed, not counting NEW."
+                },
+                "screen": screen_schema()
+            }),
+            &["lines", "screen"],
         ),
         DESTRUCTIVE,
         include_annotations,
@@ -285,7 +298,8 @@ fn set_running(include_annotations: bool) -> Value {
 fn wait(include_annotations: bool) -> Value {
     tool(
         "wait",
-        "Let video fields elapse before replying (60 fields is about 1 second).",
+        "Let video fields elapse before replying (60 fields is about 1 second). Fails if the \
+         VM is or becomes paused.",
         object_schema(
             json!({
                 "vm": vm_property(),
@@ -302,8 +316,8 @@ fn wait_for_text(include_annotations: bool) -> Value {
     tool_with_output(
         "wait_for_text",
         "Wait until decoded screen text matches a literal string or regular expression. Returns \
-         the matching screen, video mode, and cursor. On timeout, returns an error with the last \
-         screen state.",
+         the matching screen, video mode, and cursor. On timeout, or if the VM is or becomes \
+         paused before a match, returns an error with the last screen state.",
         object_schema(
             json!({
                 "vm": vm_property(),
@@ -439,11 +453,14 @@ fn poke(include_annotations: bool) -> Value {
 /// Every tool `tools/list` reports, in the order `tools/call` accepts them.
 pub fn definitions(include_annotations: bool) -> Vec<Value> {
     vec![
-        list_vms(include_annotations),
-        start_vm(include_annotations),
+        vms::list_vms(include_annotations),
+        vms::start_vm(include_annotations),
+        vms::stop_vm(include_annotations),
+        vms::suspend_vm(include_annotations),
         screen_text(include_annotations),
         screenshot(include_annotations),
         type_text(include_annotations),
+        enter_basic(include_annotations),
         press_keys(include_annotations),
         joystick(include_annotations),
         insert_disk(include_annotations),

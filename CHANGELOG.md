@@ -8,14 +8,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `stop_vm` and `suspend_vm` MCP tools, which work like the manager's Stop
+  and Suspend: both write modified floppies and tapes back to their files
+  first. If a write-back fails, `stop_vm` still powers the VM off and
+  returns an error naming the file, while `suspend_vm` leaves the VM
+  running.
 - Structured MCP tool results. For clients on protocol 2025-06-18,
   `list_vms`, `screen_text`, and `peek` declare an `outputSchema` and return
   `structuredContent` next to the existing text: the VM list; the screen
   lines, mode, and cursor; and the address and bytes. Older clients get the
   text alone. Requests with an unsupported `MCP-Protocol-Version` header are
   rejected with HTTP 400.
+- MCP `enter_basic` tool. It types a multi-line BASIC listing one line at a
+  time, without `type_text`'s 600-character limit, and can type `NEW` first.
+  It rejects the whole listing before typing when the listing is longer than
+  8,192 characters, a line is longer than BASIC's 249-character input line,
+  or a character has no CoCo key. It stops at the first line that BASIC
+  answers with an error and reports that line, the error, and the screen.
+
+### Fixed
+- An MCP session no longer expires while one of its requests is still
+  running. The 5-minute idle timeout now starts when the response is sent,
+  so a long `enter_basic` call doesn't end the client's session.
 
 ### Changed
+- The MCP server's `list_vms` tool also reports each VM's model, RAM size,
+  CPU, cartridge, and mounted media.
+- A pending MCP `wait`, `wait_for_text`, `type_text`, or `press_keys` call
+  fails as soon as its VM is paused or suspended, instead of timing out.
+  The error names the tool that resumes the VM.
 - The MCP server's `screen_text` tool reports where BASIC's next character
   lands, as a 0-based row and column, on the 32-column screen and the
   `WIDTH 40`/`WIDTH 80` screens. In PMODE graphics it now says there is no

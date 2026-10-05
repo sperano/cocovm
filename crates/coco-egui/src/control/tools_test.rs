@@ -1,5 +1,5 @@
+use super::vms::tests::{sample_vms, sample_vms_json};
 use super::*;
-use crate::control::protocol::VmStatus;
 
 /// `call`/`list` as a protocol 2025-06-18 client sees them.
 const STRUCTURED: bool = true;
@@ -103,42 +103,53 @@ fn screen_text_without_a_cursor_says_so() {
 
 #[test]
 fn every_listed_tool_round_trips_through_the_mock() {
-    let cases: Vec<(&str, Value, Reply)> = vec![
-        ("list_vms", json!({}), Reply::Vms(vec![])),
-        ("start_vm", json!({"vm": "coco3"}), Reply::Done),
-        ("screen_text", json!({}), screen_reply("HELLO")),
+    let cases: Vec<(&str, Value, Vec<Reply>)> = vec![
+        ("list_vms", json!({}), vec![Reply::Vms(vec![])]),
+        ("start_vm", json!({"vm": "coco3"}), vec![Reply::Done]),
+        ("stop_vm", json!({"vm": "coco3"}), vec![Reply::Done]),
+        ("suspend_vm", json!({"vm": "coco3"}), vec![Reply::Done]),
+        ("screen_text", json!({}), vec![screen_reply("HELLO")]),
         (
             "screenshot",
             json!({}),
-            Reply::Screenshot {
+            vec![Reply::Screenshot {
                 png_base64: "YQ==".into(),
                 width: 640,
                 height: 240,
-            },
+            }],
         ),
-        ("type_text", json!({"text": "HI\n"}), Reply::Done),
-        ("press_keys", json!({"keys": ["A"]}), Reply::Done),
-        ("joystick", json!({"stick": "left"}), Reply::Done),
+        ("type_text", json!({"text": "HI\n"}), vec![Reply::Done]),
+        (
+            "enter_basic",
+            json!({"listing": "10 PRINT 1"}),
+            vec![Reply::Done, screen_reply("OK")],
+        ),
+        ("press_keys", json!({"keys": ["A"]}), vec![Reply::Done]),
+        ("joystick", json!({"stick": "left"}), vec![Reply::Done]),
         (
             "insert_disk",
             json!({"drive": 0, "path": "/tmp/x.dsk"}),
-            Reply::Done,
+            vec![Reply::Done],
         ),
-        ("eject_disk", json!({"drive": 0}), Reply::Done),
-        ("reset", json!({}), Reply::Done),
-        ("set_running", json!({"running": true}), Reply::Done),
-        ("wait", json!({"fields": 30}), Reply::Done),
+        ("eject_disk", json!({"drive": 0}), vec![Reply::Done]),
+        ("reset", json!({}), vec![Reply::Done]),
+        ("set_running", json!({"running": true}), vec![Reply::Done]),
+        ("wait", json!({"fields": 30}), vec![Reply::Done]),
         (
             "wait_for_text",
             json!({"pattern": "OK", "timeout_fields": 60}),
-            screen_reply("OK"),
+            vec![screen_reply("OK")],
         ),
         (
             "peek",
             json!({"addr": 0, "len": 4}),
-            Reply::Bytes(vec![1, 2, 3, 4]),
+            vec![Reply::Bytes(vec![1, 2, 3, 4])],
         ),
-        ("poke", json!({"addr": 0, "bytes": [1, 2, 3]}), Reply::Done),
+        (
+            "poke",
+            json!({"addr": 0, "bytes": [1, 2, 3]}),
+            vec![Reply::Done],
+        ),
     ];
     assert_eq!(
         cases.len(),
@@ -146,8 +157,8 @@ fn every_listed_tool_round_trips_through_the_mock() {
         "every tool must be covered here"
     );
 
-    for (name, args, reply) in cases {
-        let mut mock = MockBackend::new(vec![Ok(reply)]);
+    for (name, args, replies) in cases {
+        let mut mock = MockBackend::new(replies.into_iter().map(Ok).collect());
         let result = call(&mut mock, call_params(name, args), STRUCTURED)
             .unwrap_or_else(|e| panic!("{name}: {e:?}"));
         assert_eq!(
@@ -247,14 +258,41 @@ fn wait_for_text_timeout_error_formats_the_last_screen() {
 }
 
 /// Checks `value` against the JSON Schema subset `tool_defs` uses (`type`,
-/// `properties`, `required`, `items`, `enum`, `minimum`, `maximum`,
-/// `maxItems`), and rejects properties the schema doesn't name.
+/// including a list of types, `properties`, `required`, `items`, `enum`,
+/// `minimum`, `maximum`, `maxItems`), and rejects properties the schema
+/// doesn't name.
 fn assert_conforms(value: &Value, schema: &Value, path: &str) {
-    match schema["type"].as_str().expect("schema has a type") {
+    match &schema["type"] {
+        Value::String(kind) => assert_conforms_to_type(value, kind, schema, path),
+        Value::Array(kinds) => {
+            let kind = kinds
+                .iter()
+                .filter_map(Value::as_str)
+                .find(|&kind| json_type_matches(value, kind))
+                .unwrap_or_else(|| panic!("{path}: {value} matches none of {kinds:?}"));
+            assert_conforms_to_type(value, kind, schema, path);
+        }
+        other => panic!("{path}: schema type {other} not handled here"),
+    }
+}
+
+fn json_type_matches(value: &Value, kind: &str) -> bool {
+    match kind {
+        "object" => value.is_object(),
+        "array" => value.is_array(),
+        "string" => value.is_string(),
+        "integer" => value.is_i64() || value.is_u64(),
+        "boolean" => value.is_boolean(),
+        "null" => value.is_null(),
+        other => panic!("schema type {other} not handled here"),
+    }
+}
+
+fn assert_conforms_to_type(value: &Value, kind: &str, schema: &Value, path: &str) {
+    assert!(json_type_matches(value, kind), "{path}: not a {kind}");
+    match kind {
         "object" => {
-            let object = value
-                .as_object()
-                .unwrap_or_else(|| panic!("{path}: not an object"));
+            let object = value.as_object().unwrap();
             for key in schema["required"].as_array().into_iter().flatten() {
                 let key = key.as_str().unwrap();
                 assert!(object.contains_key(key), "{path}: missing {key}");
@@ -266,9 +304,7 @@ fn assert_conforms(value: &Value, schema: &Value, path: &str) {
             }
         }
         "array" => {
-            let items = value
-                .as_array()
-                .unwrap_or_else(|| panic!("{path}: not an array"));
+            let items = value.as_array().unwrap();
             if let Some(max) = schema["maxItems"].as_u64() {
                 assert!(items.len() as u64 <= max, "{path}: over maxItems");
             }
@@ -277,16 +313,12 @@ fn assert_conforms(value: &Value, schema: &Value, path: &str) {
             }
         }
         "string" => {
-            assert!(value.is_string(), "{path}: not a string");
             if let Some(allowed) = schema["enum"].as_array() {
                 assert!(allowed.contains(value), "{path}: {value} not in enum");
             }
         }
-        "boolean" => assert!(value.is_boolean(), "{path}: not a boolean"),
         "integer" => {
-            let n = value
-                .as_i64()
-                .unwrap_or_else(|| panic!("{path}: not an integer"));
+            let n = value.as_i64().unwrap();
             if let Some(min) = schema["minimum"].as_i64() {
                 assert!(n >= min, "{path}: {n} below minimum");
             }
@@ -294,7 +326,7 @@ fn assert_conforms(value: &Value, schema: &Value, path: &str) {
                 assert!(n <= max, "{path}: {n} above maximum");
             }
         }
-        other => panic!("{path}: schema type {other} not handled here"),
+        _ => {}
     }
 }
 
@@ -308,17 +340,8 @@ fn output_schema(name: &str) -> Value {
 
 /// One success case for each tool that declares an `outputSchema`.
 fn structured_cases() -> Vec<(&'static str, Value, Reply)> {
-    let vms = VmStatus::ALL
-        .iter()
-        .enumerate()
-        .map(|(i, &status)| VmInfo {
-            slug: format!("vm{i}"),
-            name: format!("VM {i}"),
-            status,
-        })
-        .collect();
     vec![
-        ("list_vms", json!({}), Reply::Vms(vms)),
+        ("list_vms", json!({}), Reply::Vms(sample_vms())),
         (
             "screen_text",
             json!({}),
@@ -376,11 +399,7 @@ fn structured_content_conforms_to_the_output_schema() {
 fn structured_content_carries_the_reply_values() {
     let cases = structured_cases();
     let expected = [
-        json!({"vms": [
-            {"slug": "vm0", "name": "VM 0", "status": "running"},
-            {"slug": "vm1", "name": "VM 1", "status": "suspended"},
-            {"slug": "vm2", "name": "VM 2", "status": "powered_off"}
-        ]}),
+        sample_vms_json(),
         json!({
             "lines": ["HELLO", "OK"],
             "mode": "video mode: CoCo-compatible text, base=$0400",

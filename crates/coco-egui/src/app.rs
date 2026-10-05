@@ -6,7 +6,7 @@
 use crate::*;
 
 mod control;
-pub(crate) use control::{RemoteHold, RemoteStick};
+pub(crate) use control::{PAUSED_ERROR, RemoteHold, RemoteStick};
 mod frame;
 #[cfg(test)]
 pub(crate) use frame::SUSPENDED_SCRIM;
