@@ -229,8 +229,10 @@ pub(crate) struct CocoApp {
     /// `wait_for_text` that asked for one (`app/fast_forward.rs`): while
     /// set, [`Self::step_emulation`] runs fields back to back in host-time
     /// slices and drops their audio, instead of pacing them by the wall
-    /// clock. Cleared when the run reaches its target, when the VM pauses,
-    /// or by the manager once the request that started it resolves.
+    /// clock. Cleared when the run reaches its target or screen text, when
+    /// a breakpoint pauses the VM mid-slice, or by the manager once the
+    /// request that started it resolves (which a pause from outside, such
+    /// as `set_running` or a suspend, triggers in the same update).
     pub(crate) fast_forward: Option<fast_forward::FastForward>,
     /// Mirror of [`crate::manager::ManagerApp`]'s global `toolbar_icons_only`
     /// (`config.rs`), read by `chrome::toolbar`; the manager rewrites it every
