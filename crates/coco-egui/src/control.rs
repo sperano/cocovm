@@ -20,6 +20,7 @@ pub mod key_names;
 pub mod mcp;
 pub mod protocol;
 mod server;
+mod session;
 pub mod tool_defs;
 pub mod tools;
 

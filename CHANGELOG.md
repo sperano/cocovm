@@ -21,6 +21,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   or a character has no CoCo key. It stops at the first line that BASIC
   answers with an error and reports that line, the error, and the screen.
 
+### Fixed
+- An MCP session no longer expires while one of its requests is still
+  running. The 5-minute idle timeout now starts when the response is sent,
+  so a long `enter_basic` call doesn't end the client's session.
+
 ### Changed
 - The MCP server's `screen_text` tool reports where BASIC's next character
   lands, as a 0-based row and column, on the 32-column screen and the
