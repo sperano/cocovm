@@ -253,7 +253,7 @@ impl ManagerApp {
         let field_rate_hz = app.machine.config.video.field_rate_hz();
         let pending = PendingControl::new(reply, slug, condition, timeout_fields, field_rate_hz);
         self.pending.push(if fast_forward {
-            pending.fast_forwarding()
+            pending.with_fast_forward()
         } else {
             pending
         });
@@ -290,7 +290,7 @@ impl ManagerApp {
                 let pending =
                     PendingControl::new(reply, slug, condition, expected_fields, field_rate_hz);
                 self.pending.push(if fast_forward {
-                    pending.fast_forwarding()
+                    pending.with_fast_forward()
                 } else {
                     pending
                 });

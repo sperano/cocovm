@@ -46,7 +46,6 @@ pub(crate) struct FastForward {
 }
 
 /// Why a fast-forward slice stopped running fields.
-#[derive(Debug, PartialEq, Eq)]
 enum SliceEnd {
     /// The run reached its target field or its screen text.
     Finished,

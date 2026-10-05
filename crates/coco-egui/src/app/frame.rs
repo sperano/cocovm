@@ -185,12 +185,12 @@ impl CocoApp {
     /// (`audio::UNDERRUN_FADE_SECS`), as it does over any gap.
     fn emit_audio(&mut self, discard: bool) {
         let sample_rate = self.machine.audio_sample_rate();
+        // `take_audio` drains the machine's buffer either way; a discarded
+        // `Drain` removes its samples without yielding them.
         let samples = self.machine.take_audio();
-        if discard {
-            drop(samples);
-            return;
+        if !discard {
+            self.audio.push_samples(samples, sample_rate);
         }
-        self.audio.push_samples(samples, sample_rate);
     }
 
     /// Ask for the next frame: right away while a fast-forward is still in

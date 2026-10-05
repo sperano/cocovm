@@ -507,7 +507,7 @@ fn push_expired_fast_forward_wait(
         NO_FIELDS,
         FIELD_RATE_HZ,
     )
-    .fast_forwarding();
+    .with_fast_forward();
     pending.deadline = now - Duration::from_secs(1);
     manager.pending.push(pending);
     rx

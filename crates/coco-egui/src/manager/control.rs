@@ -47,7 +47,7 @@ pub(super) struct PendingControl {
 
 impl PendingControl {
     /// Mark this request as the owner of its target's fast-forward.
-    fn fast_forwarding(mut self) -> Self {
+    fn with_fast_forward(mut self) -> Self {
         self.fast_forward = true;
         self
     }
