@@ -189,7 +189,8 @@ fn enter_basic(include_annotations: bool) -> Value {
              {BASIC_LINE_MAX_CHARS} per line, and only characters on the CoCo keyboard; \
              otherwise nothing is typed. Stops at the first line BASIC answers with an error \
              (such as ?SN ERROR or ?OM ERROR), and reports that line, the error, and the \
-             screen. On success, returns the line count and the final screen."
+             screen; an error printed later, such as by a long-running RUN, is not caught. \
+             On success, returns the line count and the final screen."
         ),
         object_schema(
             json!({
