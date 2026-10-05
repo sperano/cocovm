@@ -9,13 +9,29 @@ use std::sync::mpsc;
 
 use eframe::egui;
 
-use super::{DETAIL_SECTION_GAP, ManagerApp, WINDOW_SIZE};
+use super::{ManagerApp, WINDOW_SIZE};
 
 /// What the dialog asks before fetching anything.
-const PROMPT_TEXT: &str = "CoCoVM needs to download some copyrighted assets (ROMs, cartridges, images) to function properly.";
+const PROMPT_TEXT: &str =
+    "Download the ROMs, cartridges, and images CoCoVM needs to start your machines.";
 
 /// Window size while the dialog is the only content.
-pub(super) const DIALOG_WINDOW_SIZE: [f32; 2] = [500.0, 190.0];
+pub(crate) const DIALOG_WINDOW_SIZE: [f32; 2] = [480.0, 280.0];
+const CONTENT_MARGIN: i8 = 24;
+const FOOTER_MARGIN: i8 = 16;
+const SECTION_GAP: f32 = 16.0;
+const TEXT_GAP: f32 = 6.0;
+const BUTTON_GAP: f32 = 8.0;
+const ICON_SIZE: f32 = 56.0;
+const TITLE_SIZE: f32 = 22.0;
+const BODY_SIZE: f32 = 14.0;
+const NOTE_SIZE: f32 = 12.0;
+const BUTTON_SIZE: [f32; 2] = [104.0, 32.0];
+const BUTTON_RADIUS: u8 = 6;
+const PRIMARY_FILL: egui::Color32 = egui::Color32::from_rgb(11, 99, 206);
+const SECONDARY_DARK: egui::Color32 = egui::Color32::from_rgb(180, 180, 180);
+const SECONDARY_LIGHT: egui::Color32 = egui::Color32::from_rgb(96, 96, 96);
+const ICON_BYTES: &[u8] = include_bytes!("../../assets/coco3-console-8bit.png");
 
 /// What one dialog frame resolved to.
 pub(super) enum Verdict {
@@ -39,6 +55,7 @@ pub(crate) struct AssetDialog {
     job: Option<mpsc::Receiver<Result<(), String>>>,
     /// Failure from the last attempt, shown above the buttons for a retry.
     error: Option<String>,
+    icon: Option<egui::TextureHandle>,
 }
 
 impl AssetDialog {
@@ -49,6 +66,7 @@ impl AssetDialog {
             install_dir,
             job: None,
             error: None,
+            icon: None,
         }
     }
 
@@ -108,48 +126,130 @@ impl AssetDialog {
             );
             return Verdict::Installed;
         }
-        let mut verdict = Verdict::Pending;
-        egui::CentralPanel::default().show(ctx, |ui| {
-            verdict = self.draw_body(ui);
-        });
+        let verdict = egui::TopBottomPanel::bottom("asset_actions")
+            .frame(
+                egui::Frame::new()
+                    .fill(ctx.style().visuals.panel_fill)
+                    .inner_margin(egui::Margin::symmetric(CONTENT_MARGIN, FOOTER_MARGIN)),
+            )
+            .show(ctx, |ui| self.draw_actions(ui))
+            .inner;
+        egui::CentralPanel::default()
+            .frame(egui::Frame::central_panel(&ctx.style()).inner_margin(CONTENT_MARGIN))
+            .show(ctx, |ui| {
+                egui::ScrollArea::vertical().show(ui, |ui| self.draw_body(ui));
+            });
         verdict
     }
 
-    /// The dialog's contents: heading, prompt, missing count, any error from
-    /// the last attempt, then either a progress row or the button row.
-    fn draw_body(&mut self, ui: &mut egui::Ui) -> Verdict {
-        ui.heading("Download assets");
-        ui.add_space(DETAIL_SECTION_GAP);
-        ui.label(PROMPT_TEXT);
-        let count = self.missing.len();
-        ui.label(format!(
-            "{count} file{} missing.",
-            if count == 1 { " is" } else { "s are" }
-        ));
-        if let Some(err) = &self.error {
-            ui.colored_label(
-                ui.visuals().error_fg_color,
-                format!("Download failed: {err}"),
-            );
-        }
-        ui.add_space(DETAIL_SECTION_GAP);
-        if self.job.is_some() {
-            ui.horizontal(|ui| {
-                ui.spinner();
-                ui.label(format!("Downloading {}…", self.assets_url));
+    fn draw_header(&mut self, ui: &mut egui::Ui) {
+        let icon = self.icon.get_or_insert_with(|| {
+            let image = image::load_from_memory(ICON_BYTES)
+                .expect("embedded icon PNG is valid")
+                .into_rgba8();
+            let size = [image.width() as usize, image.height() as usize];
+            ui.ctx().load_texture(
+                "asset_dialog_icon",
+                egui::ColorImage::from_rgba_unmultiplied(size, image.as_raw()),
+                egui::TextureOptions::LINEAR,
+            )
+        });
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = SECTION_GAP;
+            ui.add(egui::Image::new(&*icon).fit_to_exact_size(egui::Vec2::splat(ICON_SIZE)));
+            ui.vertical(|ui| {
+                ui.label(
+                    egui::RichText::new("Set up CoCoVM")
+                        .size(TITLE_SIZE)
+                        .strong(),
+                );
+                ui.label(
+                    egui::RichText::new("Download required files")
+                        .size(BODY_SIZE)
+                        .color(secondary_color(ui)),
+                );
             });
+        });
+    }
+
+    fn draw_body(&mut self, ui: &mut egui::Ui) {
+        ui.spacing_mut().item_spacing.y = TEXT_GAP;
+        self.draw_header(ui);
+        ui.add_space(SECTION_GAP);
+        ui.label(
+            egui::RichText::new(PROMPT_TEXT)
+                .size(BODY_SIZE)
+                .color(ui.visuals().strong_text_color()),
+        );
+        if let Some(err) = &self.error {
+            ui.add_space(TEXT_GAP);
+            ui.colored_label(ui.visuals().error_fg_color, "Download failed. Try again.");
+            ui.collapsing("Show details", |ui| {
+                ui.label(err);
+            });
+            return;
+        }
+        let count = self.missing.len();
+        ui.label(
+            egui::RichText::new(format!(
+                "{count} file{} to install.",
+                if count == 1 { "" } else { "s" }
+            ))
+            .color(secondary_color(ui)),
+        );
+        ui.add_space(TEXT_GAP);
+        ui.label(
+            egui::RichText::new("These files include copyrighted software and artwork.")
+                .size(NOTE_SIZE)
+                .color(secondary_color(ui)),
+        );
+    }
+
+    /// Keep the actions visible even when a long error needs to scroll.
+    fn draw_actions(&mut self, ui: &mut egui::Ui) -> Verdict {
+        if self.job.is_some() {
+            ui.allocate_ui_with_layout(
+                egui::vec2(ui.available_width(), BUTTON_SIZE[1]),
+                egui::Layout::left_to_right(egui::Align::Center),
+                |ui| {
+                    ui.spinner();
+                    ui.label("Downloading and installing…");
+                },
+            );
             return Verdict::Pending;
         }
         let mut verdict = Verdict::Pending;
-        ui.horizontal(|ui| {
-            if ui.button("Download").clicked() {
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.spacing_mut().item_spacing.x = BUTTON_GAP;
+            let label = if self.error.is_some() {
+                "Try again"
+            } else {
+                "Download"
+            };
+            let download =
+                egui::Button::new(egui::RichText::new(label).color(egui::Color32::WHITE))
+                    .fill(PRIMARY_FILL)
+                    .corner_radius(BUTTON_RADIUS)
+                    .min_size(BUTTON_SIZE.into());
+            if ui.add(download).clicked() {
                 self.start_download(ui.ctx());
             }
-            if ui.button("Cancel").clicked() {
+            let cancel = egui::Button::new("Cancel")
+                .corner_radius(BUTTON_RADIUS)
+                .min_size(BUTTON_SIZE.into());
+            if ui.add(cancel).clicked() {
                 verdict = Verdict::Cancelled;
             }
         });
         verdict
+    }
+}
+
+fn secondary_color(ui: &egui::Ui) -> egui::Color32 {
+    if ui.visuals().dark_mode {
+        SECONDARY_DARK
+    } else {
+        SECONDARY_LIGHT
     }
 }
 

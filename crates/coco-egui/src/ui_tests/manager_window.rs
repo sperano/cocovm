@@ -127,11 +127,11 @@ fn asset_dialog_cancel_quits_without_downloading() {
         ));
         app
     });
-    harness.set_size(egui::vec2(500.0, 190.0));
+    harness.set_size(manager::assets::DIALOG_WINDOW_SIZE.into());
     harness.step();
 
     harness.get_by_label(
-        "CoCoVM needs to download some copyrighted assets (ROMs, cartridges, images) to function properly.",
+        "Download the ROMs, cartridges, and images CoCoVM needs to start your machines.",
     );
     assert!(
         harness.query_by_label("New").is_none(),
