@@ -123,8 +123,9 @@ pub fn run(
             if let Some(slug) = &machine
                 && let Err(error) = app.start_vm_by_slug(slug)
             {
-                eprintln!("coco: cannot start '{slug}': {error}");
-                std::process::exit(1);
+                return Err(
+                    std::io::Error::other(format!("cannot start '{slug}': {error}")).into(),
+                );
             }
             Ok(Box::new(app))
         }),

@@ -12,8 +12,7 @@ impl ManagerApp {
     /// otherwise resume or launch and report the outcome.
     pub(super) fn start_vm_action(&mut self, vm: &Option<String>) -> Result<Reply, String> {
         let idx = self.resolve_vm(vm, false)?;
-        let slug = self.entries[idx].slug.clone();
-        self.start_vm_by_slug(&slug)?;
+        self.start_entry(idx)?;
         Ok(Reply::Done)
     }
 

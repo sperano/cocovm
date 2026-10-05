@@ -40,8 +40,8 @@ fn test_manager(
     )
 }
 
-/// `start_vm_by_slug` is the CLI's and MCP's common start path: it finds
-/// the entry by slug, starts it, and reports the launch error.
+/// `start_vm_by_slug` is the CLI's start path: it finds the entry by slug,
+/// starts it, and reports the launch error.
 #[test]
 fn start_vm_by_slug_starts_the_named_machine() {
     let machines_dir = TempDir::new("lifecycle-slug-machines");
