@@ -120,8 +120,10 @@ fields or matching screen text, and read or write memory. The VM list includes
 each machine's model, RAM size, CPU, cartridge, and mounted media. Like the
 manager's Stop and Suspend buttons, `stop_vm` and `suspend_vm` write modified
 floppies and tapes back to their files first. Screen matching accepts a literal
-string or regular expression. Call `tools/list` through an MCP client for the
-complete schemas.
+string or regular expression. Memory tools address the CPU's current memory map
+by default. With `physical` set, they address installed RAM directly, from
+offset 0 to the end of RAM. `peek` returns a hex dump with an ASCII column. Call
+`tools/list` through an MCP client for the complete schemas.
 
 The `enter_basic` tool types a multi-line BASIC listing one line at a time and
 stops at the first line that BASIC answers with an error, such as `?SN ERROR`.

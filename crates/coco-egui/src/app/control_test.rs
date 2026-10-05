@@ -1,4 +1,4 @@
-use crate::control::Reply;
+use crate::control::{MemAddr, Reply};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 
@@ -246,4 +246,80 @@ fn remote_reset_soft_preserves_ram_hard_power_cycle_clears_it() {
     app.poke_bytes(0x0400, &[0xCD]).unwrap();
     app.remote_reset(true);
     assert_ne!(app.peek_bytes(0x0400, 1), vec![0xCD]);
+}
+
+/// The RAM offset logical `addr` decodes to under the current GIME map
+/// (`SystemBus::phys`, outside the MC3 constant page).
+fn physical_offset_of(app: &CocoApp, addr: u16) -> u32 {
+    let ram_mask = app.machine.bus.ram.len() - 1;
+    (app.machine.bus.gime.translate(addr) & ram_mask) as u32
+}
+
+#[test]
+fn physical_peek_sees_a_logical_poke_through_the_mmu() {
+    let mut app = boot();
+    app.poke_bytes(0x0400, &[0x5A, 0xA5]).unwrap();
+    let phys = physical_offset_of(&app, 0x0400);
+    assert_eq!(
+        app.peek_memory(MemAddr::Physical(phys), 2).unwrap(),
+        vec![0x5A, 0xA5]
+    );
+}
+
+#[test]
+fn physical_poke_lands_in_ram_behind_the_logical_map() {
+    let mut app = boot();
+    let phys = physical_offset_of(&app, 0x0400);
+    app.poke_memory(MemAddr::Physical(phys), &[0x11, 0x22])
+        .unwrap();
+    assert_eq!(app.peek_bytes(0x0400, 2), vec![0x11, 0x22]);
+}
+
+#[test]
+fn physical_peek_reaches_the_last_byte_of_installed_ram() {
+    let mut app = boot();
+    let last = app.machine.bus.ram.len() - 1;
+    app.machine.bus.ram[last] = 0x77;
+    assert_eq!(
+        app.peek_memory(MemAddr::Physical(last as u32), 1).unwrap(),
+        vec![0x77]
+    );
+}
+
+#[test]
+fn physical_range_past_installed_ram_is_rejected() {
+    let mut app = boot();
+    let ram_len = app.machine.bus.ram.len() as u32;
+    let err = app
+        .peek_memory(MemAddr::Physical(ram_len - 1), 2)
+        .expect_err("a read past the end of RAM must be rejected");
+    assert!(err.contains("installed RAM"), "{err}");
+    app.poke_memory(MemAddr::Physical(ram_len), &[0])
+        .expect_err("a write past the end of RAM must be rejected");
+}
+
+#[test]
+fn empty_physical_poke_at_the_end_of_ram_is_a_no_op() {
+    let mut app = boot();
+    let ram_len = app.machine.bus.ram.len() as u32;
+    app.poke_memory(MemAddr::Physical(ram_len), &[]).unwrap();
+}
+
+#[test]
+fn physical_poke_rejects_more_than_max_poke_len() {
+    let mut app = boot();
+    let too_many = vec![0; crate::control::MAX_POKE_LEN + 1];
+    let err = app
+        .poke_memory(MemAddr::Physical(0), &too_many)
+        .expect_err("oversized poke must be rejected");
+    assert!(err.contains("at most"));
+}
+
+#[test]
+fn physical_peek_clamps_to_max_peek_len() {
+    let app = boot();
+    let bytes = app
+        .peek_memory(MemAddr::Physical(0), crate::control::MAX_PEEK_LEN + 1000)
+        .unwrap();
+    assert_eq!(bytes.len(), crate::control::MAX_PEEK_LEN as usize);
 }

@@ -132,14 +132,25 @@ pub enum Action {
     },
     /// Read `len` bytes from `addr` without side effects.
     Peek {
-        addr: u16,
+        addr: MemAddr,
         len: u16,
     },
-    /// Write `bytes` starting at `addr`, with bus side effects.
+    /// Write `bytes` starting at `addr`: through the bus, with its side
+    /// effects, for a logical address; straight into RAM for a physical one.
     Poke {
-        addr: u16,
+        addr: MemAddr,
         bytes: Vec<u8>,
     },
+}
+
+/// Where an [`Action::Peek`]/[`Action::Poke`] address points.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MemAddr {
+    /// A CPU address, decoded through the current MMU (or SAM) map.
+    Logical(u16),
+    /// A byte offset into installed RAM, bypassing the memory map: the
+    /// offsets the debugger's Physical RAM view shows.
+    Physical(u32),
 }
 
 /// Which joystick port a [`Action::Joystick`] request drives.

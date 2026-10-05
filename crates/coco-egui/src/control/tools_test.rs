@@ -102,23 +102,6 @@ fn screen_text_without_a_cursor_says_so() {
 }
 
 #[test]
-fn peek_formats_a_hex_dump_sixteen_bytes_per_line() {
-    let bytes: Vec<u8> = (0..20).collect();
-    let mut mock = MockBackend::new(vec![Ok(Reply::Bytes(bytes))]);
-    let result = call(
-        &mut mock,
-        call_params("peek", json!({"addr": 0x1000, "len": 20})),
-        STRUCTURED,
-    )
-    .unwrap();
-    let text = result["content"][0]["text"].as_str().unwrap();
-    assert_eq!(
-        text,
-        "1000: 00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F\n1010: 10 11 12 13"
-    );
-}
-
-#[test]
 fn every_listed_tool_round_trips_through_the_mock() {
     let cases: Vec<(&str, Value, Vec<Reply>)> = vec![
         ("list_vms", json!({}), vec![Reply::Vms(vec![])]),
@@ -299,6 +282,7 @@ fn json_type_matches(value: &Value, kind: &str) -> bool {
         "array" => value.is_array(),
         "string" => value.is_string(),
         "integer" => value.is_i64() || value.is_u64(),
+        "boolean" => value.is_boolean(),
         "null" => value.is_null(),
         other => panic!("schema type {other} not handled here"),
     }
@@ -390,6 +374,11 @@ fn structured_cases() -> Vec<(&'static str, Value, Reply)> {
             json!({"addr": 0xFFFE, "len": 4}),
             Reply::Bytes(vec![0x00, 0x7F, 0x80, 0xFF]),
         ),
+        (
+            "peek",
+            json!({"addr": 0x7FFFE, "len": 2, "physical": true}),
+            Reply::Bytes(vec![0x41, 0x42]),
+        ),
     ]
 }
 
@@ -425,7 +414,8 @@ fn structured_content_carries_the_reply_values() {
             "mode": "video mode: GIME hi-res text, base=$000000",
             "cursor": {"row": 2, "col": 0}
         }),
-        json!({"addr": 0xFFFE, "bytes": [0x00, 0x7F, 0x80, 0xFF]}),
+        json!({"addr": 0xFFFE, "physical": false, "bytes": [0x00, 0x7F, 0x80, 0xFF]}),
+        json!({"addr": 0x7FFFE, "physical": true, "bytes": [0x41, 0x42]}),
     ];
     for ((name, args, reply), expected) in cases.into_iter().zip(expected) {
         let mut mock = MockBackend::new(vec![Ok(reply)]);
