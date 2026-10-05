@@ -9,8 +9,8 @@ use serde_json::{Value, json};
 use super::key_names;
 use super::protocol::VmStatus;
 use super::{
-    MAX_HOLD_FIELDS, MAX_PEEK_LEN, MAX_POKE_LEN, MAX_TYPE_TEXT_CHARS, MAX_WAIT_FIELDS,
-    MAX_WAIT_PATTERN_CHARS,
+    MAX_HOLD_FIELDS, MAX_PEEK_LEN, MAX_PHYSICAL_ADDR, MAX_POKE_LEN, MAX_TYPE_TEXT_CHARS,
+    MAX_WAIT_FIELDS, MAX_WAIT_PATTERN_CHARS,
 };
 
 /// Highest floppy drive index a tool call may name — [`crate::UI_DRIVES`] is
@@ -95,10 +95,6 @@ fn vm_property() -> Value {
 
 fn byte_schema() -> Value {
     json!({"type": "integer", "minimum": 0, "maximum": u8::MAX})
-}
-
-fn address_schema() -> Value {
-    json!({"type": "integer", "minimum": 0, "maximum": u16::MAX})
 }
 
 fn list_vms(include_annotations: bool) -> Value {
@@ -362,29 +358,55 @@ fn screen_schema() -> Value {
     )
 }
 
+/// `peek`/`poke`'s `addr`: wide enough for a physical offset; a logical
+/// address above $FFFF is rejected at call time.
+fn memory_address_schema() -> Value {
+    json!({
+        "type": "integer",
+        "minimum": 0,
+        "maximum": MAX_PHYSICAL_ADDR,
+        "description": "CPU address ($0000-$FFFF) through the current memory map, \
+            or with `physical`, a byte offset into installed RAM."
+    })
+}
+
+fn physical_property() -> Value {
+    json!({
+        "type": "boolean",
+        "default": false,
+        "description": "Address installed RAM directly, bypassing the memory map: \
+            `addr` is an offset from 0 to the RAM size minus 1, as in the \
+            debugger's Physical RAM view. The whole range must fit in RAM."
+    })
+}
+
 fn peek(include_annotations: bool) -> Value {
     tool_with_output(
         "peek",
-        "Read bytes from VM memory without side effects.",
+        "Read bytes from VM memory without side effects. The text result is a \
+         hex dump with an ASCII column.",
         object_schema(
             json!({
                 "vm": vm_property(),
-                "addr": address_schema(),
-                "len": {"type": "integer", "minimum": 1, "maximum": MAX_PEEK_LEN}
+                "addr": memory_address_schema(),
+                "len": {"type": "integer", "minimum": 1, "maximum": MAX_PEEK_LEN},
+                "physical": physical_property()
             }),
             &["addr", "len"],
         ),
         object_schema(
             json!({
-                "addr": address_schema(),
+                "addr": memory_address_schema(),
+                "physical": {"type": "boolean"},
                 "bytes": {
                     "type": "array",
                     "maxItems": MAX_PEEK_LEN,
                     "items": byte_schema(),
-                    "description": "Bytes read from `addr` upward, wrapping past $FFFF."
+                    "description": "Bytes read from `addr` upward; a logical read wraps \
+                        past $FFFF."
                 }
             }),
-            &["addr", "bytes"],
+            &["addr", "physical", "bytes"],
         ),
         READ_ONLY,
         include_annotations,
@@ -394,16 +416,18 @@ fn peek(include_annotations: bool) -> Value {
 fn poke(include_annotations: bool) -> Value {
     tool(
         "poke",
-        "Write bytes to VM memory, with normal bus side effects.",
+        "Write bytes to VM memory. A logical write has normal bus side effects; \
+         a physical one stores straight into RAM.",
         object_schema(
             json!({
                 "vm": vm_property(),
-                "addr": address_schema(),
+                "addr": memory_address_schema(),
                 "bytes": {
                     "type": "array",
                     "maxItems": MAX_POKE_LEN,
                     "items": byte_schema()
-                }
+                },
+                "physical": physical_property()
             }),
             &["addr", "bytes"],
         ),

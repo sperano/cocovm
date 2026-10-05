@@ -117,7 +117,10 @@ The server provides tools to list and start virtual machines, read text or a PNG
 from the display, type text, press keys, move joysticks, manage disks, reset or
 pause a machine, wait for video fields or matching screen text, and read or
 write memory. Screen matching accepts a literal string or regular expression.
-Call `tools/list` through an MCP client for the complete schemas.
+Memory tools address the CPU's current memory map by default. With `physical`
+set, they address installed RAM directly, from offset 0 to the end of RAM.
+`peek` returns a hex dump with an ASCII column. Call `tools/list` through an
+MCP client for the complete schemas.
 
 Clients that negotiate MCP protocol version 2025-06-18 also receive structured
 results: `list_vms`, `screen_text`, `wait_for_text`, and `peek` declare an

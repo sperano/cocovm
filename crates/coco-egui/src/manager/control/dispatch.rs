@@ -119,12 +119,13 @@ impl ManagerApp {
             Action::Peek { addr, len } => {
                 let result = self
                     .resolve_alive(&vm)
-                    .map(|idx| Reply::Bytes(self.vm_ref(idx).peek_bytes(addr, len)));
+                    .and_then(|idx| self.vm_ref(idx).peek_memory(addr, len))
+                    .map(Reply::Bytes);
                 reply.reply(response(result));
             }
             Action::Poke { addr, bytes } => {
                 let result = self.resolve_vm(&vm, true).and_then(|idx| {
-                    self.vm_mut(idx).poke_bytes(addr, &bytes)?;
+                    self.vm_mut(idx).poke_memory(addr, &bytes)?;
                     Ok(Reply::Done)
                 });
                 reply.reply(response(result));

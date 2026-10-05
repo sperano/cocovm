@@ -12,8 +12,7 @@ use super::protocol::{
 };
 use super::tool_defs;
 
-/// Bytes shown per line of a [`peek`] hex dump.
-const HEX_DUMP_WIDTH: usize = 16;
+mod memory;
 /// Tool-definition key for the result schema (protocol 2025-06-18 on).
 const OUTPUT_SCHEMA: &str = "outputSchema";
 /// Tool-result key for the value matching [`OUTPUT_SCHEMA`].
@@ -88,8 +87,8 @@ fn dispatch(backend: &mut dyn Backend, params: Value) -> Result<Value, RpcError>
         "set_running" => dispatch_set_running(backend, args),
         "wait" => dispatch_wait(backend, args),
         "wait_for_text" => dispatch_wait_for_text(backend, args),
-        "peek" => dispatch_peek(backend, args),
-        "poke" => dispatch_poke(backend, args),
+        "peek" => memory::dispatch_peek(backend, args),
+        "poke" => memory::dispatch_poke(backend, args),
         other => Err(RpcError::new(
             INVALID_PARAMS,
             format!("unknown tool: {other}"),
@@ -181,23 +180,6 @@ fn format_control_error(error: &ControlError) -> String {
         Some(screen) => format!("{}\n{}", error.message, format_screen(screen)),
         None => error.message.clone(),
     }
-}
-
-fn hex_dump(addr: u16, bytes: &[u8]) -> String {
-    bytes
-        .chunks(HEX_DUMP_WIDTH)
-        .enumerate()
-        .map(|(i, chunk)| {
-            let line_addr = addr.wrapping_add((i * HEX_DUMP_WIDTH) as u16);
-            let hex = chunk
-                .iter()
-                .map(|b| format!("{b:02X}"))
-                .collect::<Vec<_>>()
-                .join(" ");
-            format!("{line_addr:04X}: {hex}")
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
 }
 
 #[derive(Deserialize)]
@@ -468,47 +450,6 @@ fn dispatch_wait_for_text(backend: &mut dyn Backend, args: Value) -> Result<Valu
         )),
         _ => None,
     }))
-}
-
-#[derive(Deserialize)]
-struct PeekArgs {
-    #[serde(default)]
-    vm: Option<String>,
-    addr: u16,
-    len: u16,
-}
-
-fn dispatch_peek(backend: &mut dyn Backend, args: Value) -> Result<Value, RpcError> {
-    let PeekArgs { vm, addr, len } = parse_args(args)?;
-    let req = Request {
-        vm,
-        action: Action::Peek { addr, len },
-    };
-    Ok(finish(backend, req, move |reply| match reply {
-        Reply::Bytes(bytes) => Some(structured_result(
-            hex_dump(addr, &bytes),
-            json!({"addr": addr, "bytes": bytes}),
-        )),
-        _ => None,
-    }))
-}
-
-#[derive(Deserialize)]
-struct PokeArgs {
-    #[serde(default)]
-    vm: Option<String>,
-    addr: u16,
-    bytes: Vec<u8>,
-}
-
-fn dispatch_poke(backend: &mut dyn Backend, args: Value) -> Result<Value, RpcError> {
-    let PokeArgs { vm, addr, bytes } = parse_args(args)?;
-    let message = format!("Wrote {} byte(s) at ${addr:04X}.", bytes.len());
-    let req = Request {
-        vm,
-        action: Action::Poke { addr, bytes },
-    };
-    Ok(finish(backend, req, |reply| done(reply, &message)))
 }
 
 #[cfg(test)]

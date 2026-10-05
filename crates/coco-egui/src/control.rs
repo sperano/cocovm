@@ -23,8 +23,8 @@ pub mod tool_defs;
 pub mod tools;
 
 pub use protocol::{
-    Action, ControlError, Reply, Request, Response, ScreenSnapshot, Stick, TextMatcher, VmInfo,
-    VmStatus,
+    Action, ControlError, MemAddr, Reply, Request, Response, ScreenSnapshot, Stick, TextMatcher,
+    VmInfo, VmStatus,
 };
 pub use server::ControlServer;
 
@@ -48,6 +48,10 @@ pub const DEFAULT_HOLD_FIELDS: u32 = 2;
 pub const MAX_PEEK_LEN: u16 = 4096;
 /// Most bytes a single `poke` may write.
 pub const MAX_POKE_LEN: usize = 4096;
+/// Highest physical RAM offset the `peek`/`poke` schemas admit: the last
+/// byte of the largest RAM option. The app rejects any offset past the
+/// target machine's own installed RAM.
+pub const MAX_PHYSICAL_ADDR: u32 = (coco_core::config::MemorySize::K2048.bytes() - 1) as u32;
 /// Most characters a single `type_text` may queue — about a minute of typing
 /// at the nominal tap pace, so the deferred reply stays bounded.
 pub const MAX_TYPE_TEXT_CHARS: usize = 600;
