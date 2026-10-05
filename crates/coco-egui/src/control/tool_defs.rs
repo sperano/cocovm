@@ -8,11 +8,12 @@ use serde_json::{Value, json};
 
 use super::enter_basic::BASIC_LINE_MAX_CHARS;
 use super::key_names;
-use super::protocol::VmStatus;
 use super::{
     MAX_ENTER_BASIC_CHARS, MAX_HOLD_FIELDS, MAX_PEEK_LEN, MAX_POKE_LEN, MAX_TYPE_TEXT_CHARS,
     MAX_WAIT_FIELDS, MAX_WAIT_PATTERN_CHARS,
 };
+
+mod vms;
 
 /// Highest floppy drive index a tool call may name — [`crate::UI_DRIVES`] is
 /// the manager's own exposed drive count (not `coco_core::fdc::DRIVE_COUNT`,
@@ -100,36 +101,6 @@ fn byte_schema() -> Value {
 
 fn address_schema() -> Value {
     json!({"type": "integer", "minimum": 0, "maximum": u16::MAX})
-}
-
-fn list_vms(include_annotations: bool) -> Value {
-    let statuses: Vec<&str> = VmStatus::ALL.iter().map(|s| s.as_str()).collect();
-    let vm = object_schema(
-        json!({
-            "slug": {"type": "string"},
-            "name": {"type": "string"},
-            "status": {"type": "string", "enum": statuses}
-        }),
-        &["slug", "name", "status"],
-    );
-    tool_with_output(
-        "list_vms",
-        "List every VM the manager knows, with its lifecycle status.",
-        object_schema(json!({}), &[]),
-        object_schema(json!({"vms": {"type": "array", "items": vm}}), &["vms"]),
-        READ_ONLY,
-        include_annotations,
-    )
-}
-
-fn start_vm(include_annotations: bool) -> Value {
-    tool(
-        "start_vm",
-        "Start (or resume) a VM by its manager slug; a no-op if it's already running.",
-        object_schema(json!({"vm": vm_property()}), &["vm"]),
-        DESTRUCTIVE_IDEMPOTENT,
-        include_annotations,
-    )
 }
 
 fn screen_text(include_annotations: bool) -> Value {
@@ -458,8 +429,10 @@ fn poke(include_annotations: bool) -> Value {
 /// Every tool `tools/list` reports, in the order `tools/call` accepts them.
 pub fn definitions(include_annotations: bool) -> Vec<Value> {
     vec![
-        list_vms(include_annotations),
-        start_vm(include_annotations),
+        vms::list_vms(include_annotations),
+        vms::start_vm(include_annotations),
+        vms::stop_vm(include_annotations),
+        vms::suspend_vm(include_annotations),
         screen_text(include_annotations),
         screenshot(include_annotations),
         type_text(include_annotations),

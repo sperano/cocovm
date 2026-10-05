@@ -52,6 +52,8 @@ impl ManagerApp {
         match action {
             Action::ListVms => reply.reply(Response::Ok(Reply::Vms(self.vm_infos()))),
             Action::StartVm => reply.reply(response(self.start_vm_action(&vm))),
+            Action::StopVm => reply.reply(response(self.stop_vm_action(&vm))),
+            Action::SuspendVm => reply.reply(response(self.suspend_vm_action(&vm))),
             Action::ScreenText => {
                 let result = self
                     .resolve_alive(&vm)
@@ -147,25 +149,6 @@ impl ManagerApp {
             .vm
             .as_ref()
             .expect("caller resolved this entry's VM as present")
-    }
-
-    /// `start_vm`: resolve without requiring Running (a Suspended or Powered
-    /// Off target is exactly what this brings up), no-op if already Running,
-    /// otherwise resume or launch and report the outcome.
-    fn start_vm_action(&mut self, vm: &Option<String>) -> Result<Reply, String> {
-        let idx = self.resolve_vm(vm, false)?;
-        if self.entries[idx].is_running() {
-            return Ok(Reply::Done);
-        }
-        if self.entries[idx].suspended {
-            self.resume_vm(idx);
-        } else {
-            self.start_vm(idx);
-        }
-        match self.entries[idx].launch_error.take() {
-            Some(e) => Err(e),
-            None => Ok(Reply::Done),
-        }
     }
 
     /// `insert_disk`: [`UI_DRIVES`], not `coco_core::fdc::DRIVE_COUNT` — the

@@ -113,12 +113,15 @@ To register the endpoint with Claude Code, run:
 claude mcp add --transport http cocovm http://127.0.0.1:6809/mcp
 ```
 
-The server provides tools to list and start virtual machines, read text or a PNG
-from the display, type text, enter a BASIC listing, press keys, move joysticks,
-manage disks, reset or pause a machine, wait for video fields or matching screen
-text, and read or write memory. Screen matching accepts a literal string or
-regular expression. Call `tools/list` through an MCP client for the complete
-schemas.
+The server provides tools to list, start, stop, and suspend virtual machines,
+read text or a PNG from the display, type text, enter a BASIC listing, press
+keys, move joysticks, manage disks, reset or pause a machine, wait for video
+fields or matching screen text, and read or write memory. The VM list includes
+each machine's model, RAM size, CPU, cartridge, and mounted media. Like the
+manager's Stop and Suspend buttons, `stop_vm` and `suspend_vm` write modified
+floppies and tapes back to their files first. Screen matching accepts a literal
+string or regular expression. Call `tools/list` through an MCP client for the
+complete schemas.
 
 The `enter_basic` tool types a multi-line BASIC listing one line at a time and
 stops at the first line that BASIC answers with an error, such as `?SN ERROR`.
