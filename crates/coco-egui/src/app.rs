@@ -7,6 +7,7 @@ use crate::*;
 
 mod control;
 pub(crate) use control::{PAUSED_ERROR, RemoteHold, RemoteStick};
+pub(crate) mod fast_forward;
 mod frame;
 #[cfg(test)]
 pub(crate) use frame::SUSPENDED_SCRIM;
@@ -224,6 +225,15 @@ pub(crate) struct CocoApp {
     /// monotonic for this VM's lifetime — the control protocol's `wait`
     /// request polls this to know when its target field count has elapsed.
     pub(crate) fields_run: u64,
+    /// An unthrottled run in progress for a control-protocol `wait` or
+    /// `wait_for_text` that asked for one (`app/fast_forward.rs`): while
+    /// set, [`Self::step_emulation`] runs fields back to back in host-time
+    /// slices and drops their audio, instead of pacing them by the wall
+    /// clock. Cleared when the run reaches its target or screen text, when
+    /// a breakpoint pauses the VM mid-slice, or by the manager once the
+    /// request that started it resolves (which a pause from outside, such
+    /// as `set_running` or a suspend, triggers in the same update).
+    pub(crate) fast_forward: Option<fast_forward::FastForward>,
     /// Mirror of [`crate::manager::ManagerApp`]'s global `toolbar_icons_only`
     /// (`config.rs`), read by `chrome::toolbar`; the manager rewrites it every
     /// frame (`manager/vm_windows.rs`), so it is not an [`AppParams`] field.
@@ -338,6 +348,7 @@ impl CocoApp {
             remote_held: None,
             remote_joy: [None, None],
             fields_run: 0,
+            fast_forward: None,
             toolbar_icons_only: false,
             status_bar_icons_only: false,
             hotkeys: crate::hotkeys::Hotkeys::default(),

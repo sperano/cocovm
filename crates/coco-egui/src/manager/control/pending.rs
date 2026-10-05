@@ -65,25 +65,29 @@ impl ManagerApp {
         if self.pending.is_empty() {
             return;
         }
+        self.prune_abandoned_pending();
         let mut still_pending = Vec::new();
         // `mem::take` rather than `self.pending.drain(..)`: the loop body's
         // `self.check_pending` needs to borrow `self`, which a
         // live draining borrow of `self.pending` would conflict with.
         for mut pending in std::mem::take(&mut self.pending) {
-            if pending.is_abandoned() {
-                continue;
-            }
-            match self.check_pending(&pending, now) {
-                Outcome::Done(reply) => pending.reply.reply(Response::Ok(reply)),
+            let response = match self.check_pending(&pending, now) {
+                Outcome::Done(reply) => Response::Ok(reply),
                 Outcome::Gone(error) | Outcome::Paused(error) | Outcome::TimedOut(error) => {
-                    pending.reply.reply(Response::Err(error));
+                    Response::Err(error)
                 }
-                Outcome::Waiting => still_pending.push(pending),
+                Outcome::Waiting => {
+                    still_pending.push(pending);
+                    continue;
+                }
                 Outcome::Progressed(remaining) => {
                     pending.note_progress(remaining, now);
                     still_pending.push(pending);
+                    continue;
                 }
-            }
+            };
+            self.release_pending(&pending);
+            pending.reply.reply(response);
         }
         self.pending = still_pending;
         if let Some(deadline) = self.pending.iter().map(|pending| pending.deadline).min() {

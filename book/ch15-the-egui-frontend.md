@@ -739,6 +739,81 @@ screen."
 > pixel geometry in §15.3, where error has no opportunity to build up
 > because nothing is carried forward.
 
+### Running without the clock: fast-forward
+
+Everything above assumes the right amount of emulated time is the amount
+of real time that passed. That is what a person at the keyboard wants, and
+it is the wrong answer for one caller: an automation client driving the
+machine through the application's built-in MCP server, the one the README
+shows how to register with Claude Code. A client that asks
+the `wait` tool for 3,600 fields is asking for a minute of emulated time,
+and under wall-clock pacing it gets a minute of real time too. Most of that
+minute is the host sleeping between repaints. The `fast_forward` option on
+`wait` and `wait_for_text` asks for the same fields without the sleeping,
+and the mechanism behind it lives in
+[`crates/coco-egui/src/app/fast_forward.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/fast_forward.rs).
+
+A fast-forward is a small struct on `CocoApp`: the `fields_run` count that
+ends the run, and an optional screen-text pattern that can end it sooner.
+While one is set, `step_emulation` takes a different branch. Instead of
+asking `fields_due` how many fields the clock owes, it runs fields back to
+back until the run ends or a host-time budget runs out:
+
+```rust
+pub(crate) const FAST_FORWARD_SLICE: Duration = Duration::from_millis(50);
+
+    fn run_fast_forward_fields(&mut self, deadline: Instant) -> SliceEnd {
+        loop {
+            let Some(run) = self.fast_forward.as_ref() else {
+                return SliceEnd::Finished;
+            };
+            let target_field = run.target_field;
+            self.run_fields(1);
+            if !self.running {
+                return SliceEnd::Paused;
+            }
+            if self.fields_run >= target_field || self.fast_forward_text_matches() {
+                return SliceEnd::Finished;
+            }
+            if Instant::now() >= deadline {
+                return SliceEnd::Budget;
+            }
+        }
+    }
+```
+
+The budget is the part that keeps the rest of the program alive. A run of
+3,600 fields done in one `update()` call would freeze every window for as
+long as it took, which is the spiral of death from the previous subsection
+with a different cause. Fifty milliseconds of fields, then a return to
+egui, then an immediate repaint request and another fifty milliseconds:
+the manager window still draws, its buttons still work, and the other
+running VMs still get their own owed fields in between. Those other VMs do
+run a little rougher meanwhile, since their audio cushion is sized for
+sixty updates a second and now gets twenty.
+
+Three things that the wall-clock branch does are deliberately not done
+here. The field count is not credited from elapsed time, so `field_debt`
+never sees the run. The audio the fields produce is drained from the
+machine and thrown away rather than pushed to the ring, because a minute
+of speaker output squeezed into three seconds is noise, and the ring's
+underrun fade (Chapter 11) lets the output go quiet on its own. And when
+the run ends, `reset_emulation_clock` runs, the same call a pause makes,
+so the first wall-clock update afterwards starts from zero instead of
+treating the seconds the run took as owed fields. The `total_runtime`
+statistic is credited with the emulated time instead, since by the
+machine's own clock it was powered on for that long.
+
+The text check is the one per-field cost. `wait_for_text` wants the screen
+that matched, not the screen a slice's worth of fields later, so the run
+decodes the text screen after every field when a pattern is set. A plain
+`wait` sets none and pays nothing. A breakpoint ends a run the same way it
+ends a wall-clock burst: `run_fields` clears `running`, the loop reports
+`Paused`, and the pending request on the manager side fails with the usual
+paused error. The manager also cancels the run whenever the request that
+started it goes away for any reason, including a timeout or a client that
+hung up, so a VM never races ahead with nobody waiting for it.
+
 With timing settled, the picture itself is next — and it is smaller than
 the timing was.
 

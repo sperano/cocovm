@@ -365,15 +365,29 @@ struct WaitArgs {
     #[serde(default)]
     vm: Option<String>,
     fields: u32,
+    #[serde(default)]
+    fast_forward: bool,
 }
 
 fn dispatch_wait(backend: &mut dyn Backend, args: Value) -> Result<Value, RpcError> {
-    let WaitArgs { vm, fields } = parse_args(args)?;
+    let WaitArgs {
+        vm,
+        fields,
+        fast_forward,
+    } = parse_args(args)?;
     // The app clamps the same way; report what actually elapsed.
-    let message = format!("Waited {} fields.", fields.min(super::MAX_WAIT_FIELDS));
+    let elapsed = fields.min(super::MAX_WAIT_FIELDS);
+    let message = if fast_forward {
+        format!("Fast-forwarded {elapsed} fields.")
+    } else {
+        format!("Waited {elapsed} fields.")
+    };
     let req = Request {
         vm,
-        action: Action::Wait { fields },
+        action: Action::Wait {
+            fields,
+            fast_forward,
+        },
     };
     Ok(finish(backend, req, |reply| done(reply, &message)))
 }
@@ -386,6 +400,8 @@ struct WaitForTextArgs {
     #[serde(default)]
     regex: bool,
     timeout_fields: u32,
+    #[serde(default)]
+    fast_forward: bool,
 }
 
 fn dispatch_wait_for_text(backend: &mut dyn Backend, args: Value) -> Result<Value, RpcError> {
@@ -394,6 +410,7 @@ fn dispatch_wait_for_text(backend: &mut dyn Backend, args: Value) -> Result<Valu
         pattern,
         regex,
         timeout_fields,
+        fast_forward,
     } = parse_args(args)?;
     let matcher = match TextMatcher::new(pattern, regex) {
         Ok(matcher) => matcher,
@@ -404,6 +421,7 @@ fn dispatch_wait_for_text(backend: &mut dyn Backend, args: Value) -> Result<Valu
         action: Action::WaitForText {
             matcher,
             timeout_fields,
+            fast_forward,
         },
     };
     Ok(finish(backend, req, |reply| match reply {

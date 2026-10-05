@@ -295,15 +295,27 @@ fn set_running(include_annotations: bool) -> Value {
     )
 }
 
+/// `wait`/`wait_for_text`'s opt-in to run unthrottled while they wait.
+fn fast_forward_property() -> Value {
+    json!({
+        "type": "boolean",
+        "default": false,
+        "description": "Run the VM as fast as the host allows until this call returns, \
+            instead of at real-time speed. Audio is dropped meanwhile. Fails if the VM \
+            is already fast-forwarding for another call."
+    })
+}
+
 fn wait(include_annotations: bool) -> Value {
     tool(
         "wait",
-        "Let video fields elapse before replying (60 fields is about 1 second). Fails if the \
-         VM is or becomes paused.",
+        "Let video fields elapse before replying (60 fields is about 1 second of emulated \
+         time; with fast_forward, much less real time). Fails if the VM is or becomes paused.",
         object_schema(
             json!({
                 "vm": vm_property(),
-                "fields": {"type": "integer", "minimum": 1, "maximum": MAX_WAIT_FIELDS}
+                "fields": {"type": "integer", "minimum": 1, "maximum": MAX_WAIT_FIELDS},
+                "fast_forward": fast_forward_property()
             }),
             &["fields"],
         ),
@@ -317,7 +329,9 @@ fn wait_for_text(include_annotations: bool) -> Value {
         "wait_for_text",
         "Wait until decoded screen text matches a literal string or regular expression. Returns \
          the matching screen, video mode, and cursor. On timeout, or if the VM is or becomes \
-         paused before a match, returns an error with the last screen state.",
+         paused before a match, returns an error with the last screen state. With \
+         fast_forward, the VM runs unthrottled and stops on the first field whose screen \
+         matches.",
         object_schema(
             json!({
                 "vm": vm_property(),
@@ -328,7 +342,8 @@ fn wait_for_text(include_annotations: bool) -> Value {
                     "minimum": 1,
                     "maximum": MAX_WAIT_FIELDS,
                     "description": "Maximum wait in video fields (60/s)."
-                }
+                },
+                "fast_forward": fast_forward_property()
             }),
             &["pattern", "timeout_fields"],
         ),

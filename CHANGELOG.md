@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- A `fast_forward` option on the MCP `wait` and `wait_for_text` tools. With
+  it, the VM runs as fast as the host allows until the call returns, with
+  audio dropped, instead of at real-time speed; a 3,600-field wait no longer
+  takes a minute. `wait_for_text` stops on the first field whose screen
+  matches. The run ends with the call, including on timeout or a dropped
+  connection, and a VM fast-forwards for one call at a time.
 - An optional slug argument to start a saved machine as the manager opens:
   `cocovm <slug>` starts that machine without selecting its row in the list.
 - `stop_vm` and `suspend_vm` MCP tools, which work like the manager's Stop
