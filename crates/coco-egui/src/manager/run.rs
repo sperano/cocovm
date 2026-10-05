@@ -10,11 +10,14 @@ use super::{MachineEntry, ManagerApp, WINDOW_SIZE, assets, control, rename};
 /// same path `main.rs` resolved `config` from (`None` when no home
 /// directory exists — `paths::config_dir` docs); the Settings dialog reads
 /// and writes it directly (`manager/settings.rs`), and re-levels the log
-/// subscriber through `log_reload`.
+/// subscriber through `log_reload`. `machine` is the CLI's optional slug:
+/// when given, that saved machine is started as the manager opens, so a
+/// direct launch no longer needs the list.
 pub fn run(
     config: crate::config::Config,
     config_path: Option<std::path::PathBuf>,
     log_reload: crate::startup::LogReload,
+    machine: Option<String>,
 ) -> eframe::Result<()> {
     let crate::config::Config {
         log_level_overridden,
@@ -65,6 +68,14 @@ pub fn run(
     }
     let entries = load_entries(machines_dir.as_deref());
     let machine_count = entries.len();
+    // Fail before any window opens when the requested slug has no definition,
+    // rather than flashing the manager and exiting from inside the viewport.
+    if let Some(slug) = &machine
+        && !entries.iter().any(|entry| entry.slug == slug.as_str())
+    {
+        eprintln!("coco: no machine named '{slug}'");
+        std::process::exit(1);
+    }
     eframe::run_native(
         "cocovm",
         options,
@@ -109,6 +120,12 @@ pub fn run(
             #[cfg(feature = "perf")]
             app.initialize_perf_scenario(&creation.egui_ctx)
                 .map_err(std::io::Error::other)?;
+            if let Some(slug) = &machine
+                && let Err(error) = app.start_vm_by_slug(slug)
+            {
+                eprintln!("coco: cannot start '{slug}': {error}");
+                std::process::exit(1);
+            }
             Ok(Box::new(app))
         }),
     )

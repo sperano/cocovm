@@ -40,6 +40,68 @@ fn test_manager(
     )
 }
 
+/// `start_vm_by_slug` is the CLI's and MCP's common start path: it finds
+/// the entry by slug, starts it, and reports the launch error.
+#[test]
+fn start_vm_by_slug_starts_the_named_machine() {
+    let machines_dir = TempDir::new("lifecycle-slug-machines");
+    let artifacts_root = TempDir::new("lifecycle-slug-artifacts");
+    let mut manager = test_manager(
+        machines_dir.path(),
+        artifacts_root.path(),
+        "slug-target",
+        base_def(),
+    );
+
+    manager
+        .start_vm_by_slug("slug-target")
+        .expect("launch should succeed");
+    assert!(
+        manager.entries[0].vm.is_some(),
+        "the named machine should be running"
+    );
+    assert_eq!(manager.entries[0].def.stats.starts, 1);
+}
+
+#[test]
+fn start_vm_by_slug_rejects_an_unknown_slug() {
+    let machines_dir = TempDir::new("lifecycle-slug-unknown-machines");
+    let artifacts_root = TempDir::new("lifecycle-slug-unknown-artifacts");
+    let mut manager = test_manager(
+        machines_dir.path(),
+        artifacts_root.path(),
+        "known",
+        base_def(),
+    );
+
+    let error = manager
+        .start_vm_by_slug("missing")
+        .expect_err("an unknown slug starts nothing");
+    assert!(error.contains("missing"), "{error}");
+    assert!(manager.entries[0].vm.is_none());
+}
+
+#[test]
+fn start_vm_by_slug_is_a_no_op_when_already_running() {
+    let machines_dir = TempDir::new("lifecycle-slug-twice-machines");
+    let artifacts_root = TempDir::new("lifecycle-slug-twice-artifacts");
+    let mut manager = test_manager(
+        machines_dir.path(),
+        artifacts_root.path(),
+        "slug-twice",
+        base_def(),
+    );
+
+    manager.start_vm_by_slug("slug-twice").expect("first start");
+    manager
+        .start_vm_by_slug("slug-twice")
+        .expect("second start");
+    assert_eq!(
+        manager.entries[0].def.stats.starts, 1,
+        "a second start of a running machine must not count as a fresh boot"
+    );
+}
+
 #[test]
 fn start_vm_increments_starts_and_persists() {
     let machines_dir = TempDir::new("lifecycle-start-machines");

@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- An optional slug argument to start a saved machine as the manager opens:
+  `cocovm <slug>` starts that machine without selecting its row in the list.
 - `stop_vm` and `suspend_vm` MCP tools, which work like the manager's Stop
   and Suspend: both write modified floppies and tapes back to their files
   first. If a write-back fails, `stop_vm` still powers the VM off and

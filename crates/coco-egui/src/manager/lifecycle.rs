@@ -69,6 +69,30 @@ impl ManagerApp {
         }
     }
 
+    /// Start (or resume) the machine named `slug`: the CLI's direct-launch
+    /// and the MCP `start_vm` action's common core. An already-Running
+    /// machine is a no-op. Returns the launch error the entry ends up with,
+    /// taking it out of `launch_error` — the caller owns how it's reported.
+    pub(super) fn start_vm_by_slug(&mut self, slug: &str) -> Result<(), String> {
+        let index = self
+            .entries
+            .iter()
+            .position(|entry| entry.slug == slug)
+            .ok_or_else(|| format!("no VM named '{slug}'"))?;
+        if self.entries[index].is_running() {
+            return Ok(());
+        }
+        if self.entries[index].suspended {
+            self.resume_vm(index);
+        } else {
+            self.start_vm(index);
+        }
+        match self.entries[index].launch_error.take() {
+            Some(error) => Err(error),
+            None => Ok(()),
+        }
+    }
+
     fn print_action(&self, action: &str, index: usize) {
         let slug = &self.entries[index].slug;
         println!(

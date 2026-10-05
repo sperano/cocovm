@@ -70,6 +70,19 @@ cargo run -p coco-egui
 
 For an optimized build, add `--release` to the `cargo run` command.
 
+## Launch a saved machine
+
+Run `cocovm` with no arguments to open the manager and choose a machine from the
+list. To start a saved machine as the manager opens, pass its slug:
+
+```sh
+cocovm my-coco
+```
+
+The slug is the stem of the machine's `<slug>.toml` file under the
+configuration directory's `machines/` folder; the manager shows it under the
+machine's Name field.
+
 ## Configure CoCoVM
 
 The manager's settings dialog covers the global application settings. CoCoVM
