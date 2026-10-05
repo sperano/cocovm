@@ -12,6 +12,12 @@ use coco_core::keyboard::Pos;
 use crate::typeahead::{FIELDS_PER_TAP, KeyTap};
 use crate::*;
 
+/// Why a paused VM refuses a request whose reply waits on fields to run
+/// (`type_text`, `press_keys`, `wait`). It names only `set_running`:
+/// `start_vm` is a no-op here, since a paused VM still reads Running
+/// (`manager::vm_status_label`).
+pub(crate) const PAUSED_ERROR: &str = "VM is paused; call set_running first";
+
 /// A `press_keys` hold in progress: the positions held down, released by
 /// [`CocoApp::run_fields`] (`app/frame.rs`) once `fields_left` reaches 0.
 pub(crate) struct RemoteHold {
@@ -83,7 +89,7 @@ impl CocoApp {
     /// the keyboard continuously; a busy target stretches each tap.
     pub(crate) fn start_remote_typing(&mut self, text: &str) -> Result<u64, String> {
         if !self.running {
-            return Err("VM is paused; call set_running or start_vm first".to_string());
+            return Err(PAUSED_ERROR.to_string());
         }
         if self.remote_type_ahead.is_active() {
             return Err("a type_text burst is still draining".to_string());
@@ -112,7 +118,7 @@ impl CocoApp {
         hold_fields: Option<u32>,
     ) -> Result<u64, String> {
         if !self.running {
-            return Err("VM is paused; call set_running or start_vm first".to_string());
+            return Err(PAUSED_ERROR.to_string());
         }
         if self.remote_held.is_some() {
             return Err("a press_keys hold is already in progress".to_string());
