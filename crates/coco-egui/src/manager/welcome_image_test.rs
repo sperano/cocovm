@@ -8,6 +8,7 @@ use super::*;
 use crate::machine_def::tests::TempDir;
 
 const INTERVAL: Duration = Duration::from_secs(10);
+const HALF_OPACITY: f32 = 0.5;
 
 /// A 2×2 opaque photo titled `title`.
 fn photo(title: &str) -> Photo {
@@ -180,4 +181,27 @@ fn a_change_crossfades_from_the_previous_image_then_drops_it() {
     assert_eq!(welcome.fade_progress(&ctx, start + FADE_DURATION), 1.0);
     assert!(welcome.fade.is_none(), "the fade ends on time");
     assert_eq!(welcome.fade_progress(&ctx, start + FADE_DURATION), 1.0);
+}
+
+#[test]
+fn dark_theme_tints_the_image_white() {
+    assert_eq!(
+        image_tint(&egui::Visuals::dark(), 1.0),
+        egui::Color32::WHITE
+    );
+}
+
+#[test]
+fn light_theme_tints_the_image_black() {
+    assert_eq!(
+        image_tint(&egui::Visuals::light(), 1.0),
+        egui::Color32::BLACK
+    );
+}
+
+#[test]
+fn theme_tint_preserves_partial_opacity() {
+    let tint = image_tint(&egui::Visuals::dark(), HALF_OPACITY);
+
+    assert_eq!(tint.to_srgba_unmultiplied(), [0xFF, 0xFF, 0xFF, 0x80]);
 }

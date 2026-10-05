@@ -186,19 +186,30 @@ impl WelcomeImage {
             return;
         };
         let rect = ui.available_rect_before_wrap();
+        let incoming_tint = image_tint(ui.visuals(), progress);
+        let outgoing_tint = image_tint(ui.visuals(), 1.0 - progress);
         if let Some(fade) = &self.fade {
-            ui.put(rect, fitted_image(&fade.previous, rect, 1.0 - progress));
+            ui.put(rect, fitted_image(&fade.previous, rect, outgoing_tint));
         }
-        ui.put(rect, fitted_image(texture, rect, progress));
+        ui.put(rect, fitted_image(texture, rect, incoming_tint));
     }
 }
 
-/// `texture` letterboxed into `rect` at `opacity` (0.0 invisible, 1.0 opaque).
-fn fitted_image(texture: &egui::TextureHandle, rect: egui::Rect, opacity: f32) -> egui::Image<'_> {
+/// The active theme foreground at `opacity` (0.0 invisible, 1.0 opaque).
+fn image_tint(visuals: &egui::Visuals, opacity: f32) -> egui::Color32 {
+    visuals.strong_text_color().gamma_multiply(opacity)
+}
+
+/// `texture` letterboxed into `rect` and colored with `tint`.
+fn fitted_image(
+    texture: &egui::TextureHandle,
+    rect: egui::Rect,
+    tint: egui::Color32,
+) -> egui::Image<'_> {
     egui::Image::new(texture)
         .max_size(rect.size())
         .maintain_aspect_ratio(true)
-        .tint(egui::Color32::WHITE.gamma_multiply(opacity))
+        .tint(tint)
 }
 
 #[cfg(test)]
