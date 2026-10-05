@@ -6,11 +6,12 @@
 use coco_core::joystick::{AXIS_CENTER, AXIS_MAX};
 use serde_json::{Value, json};
 
+use super::enter_basic::BASIC_LINE_MAX_CHARS;
 use super::key_names;
 use super::protocol::VmStatus;
 use super::{
-    MAX_HOLD_FIELDS, MAX_PEEK_LEN, MAX_POKE_LEN, MAX_TYPE_TEXT_CHARS, MAX_WAIT_FIELDS,
-    MAX_WAIT_PATTERN_CHARS,
+    MAX_ENTER_BASIC_CHARS, MAX_HOLD_FIELDS, MAX_PEEK_LEN, MAX_POKE_LEN, MAX_TYPE_TEXT_CHARS,
+    MAX_WAIT_FIELDS, MAX_WAIT_PATTERN_CHARS,
 };
 
 /// Highest floppy drive index a tool call may name — [`crate::UI_DRIVES`] is
@@ -171,6 +172,46 @@ fn type_text(include_annotations: bool) -> Value {
                 "text": {"type": "string", "maxLength": MAX_TYPE_TEXT_CHARS}
             }),
             &["text"],
+        ),
+        DESTRUCTIVE,
+        include_annotations,
+    )
+}
+
+fn enter_basic(include_annotations: bool) -> Value {
+    tool_with_output(
+        "enter_basic",
+        format!(
+            "Type a multi-line BASIC listing at the BASIC prompt, one line at a time (ENTER \
+             after each; blank lines are skipped). With \"new\": true, types NEW first. Takes \
+             about 0.1 s per character, so a long listing runs for minutes. The whole listing \
+             is checked first: at most {MAX_ENTER_BASIC_CHARS} characters, at most \
+             {BASIC_LINE_MAX_CHARS} per line, and only characters on the CoCo keyboard; \
+             otherwise nothing is typed. Stops at the first line BASIC answers with an error \
+             (such as ?SN ERROR or ?OM ERROR), and reports that line, the error, and the \
+             screen. On success, returns the line count and the final screen."
+        ),
+        object_schema(
+            json!({
+                "vm": vm_property(),
+                "listing": {"type": "string", "maxLength": MAX_ENTER_BASIC_CHARS},
+                "new": {
+                    "type": "boolean",
+                    "description": "Type NEW first, erasing the program in memory."
+                }
+            }),
+            &["listing"],
+        ),
+        object_schema(
+            json!({
+                "lines": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Listing lines typed, not counting NEW."
+                },
+                "screen": screen_schema()
+            }),
+            &["lines", "screen"],
         ),
         DESTRUCTIVE,
         include_annotations,
@@ -420,6 +461,7 @@ pub fn definitions(include_annotations: bool) -> Vec<Value> {
         screen_text(include_annotations),
         screenshot(include_annotations),
         type_text(include_annotations),
+        enter_basic(include_annotations),
         press_keys(include_annotations),
         joystick(include_annotations),
         insert_disk(include_annotations),

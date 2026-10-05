@@ -17,7 +17,7 @@ const HEX_DUMP_WIDTH: usize = 16;
 /// Tool-definition key for the result schema (protocol 2025-06-18 on).
 const OUTPUT_SCHEMA: &str = "outputSchema";
 /// Tool-result key for the value matching [`OUTPUT_SCHEMA`].
-const STRUCTURED_CONTENT: &str = "structuredContent";
+pub(super) const STRUCTURED_CONTENT: &str = "structuredContent";
 
 /// Sends one request and waits for its reply. Exists so `tools::call` can be
 /// tested against a mock instead of the real frame-loop queue.
@@ -88,6 +88,7 @@ fn dispatch(backend: &mut dyn Backend, params: Value) -> Result<Value, RpcError>
         "set_running" => dispatch_set_running(backend, args),
         "wait" => dispatch_wait(backend, args),
         "wait_for_text" => dispatch_wait_for_text(backend, args),
+        "enter_basic" => super::enter_basic::dispatch(backend, args),
         "peek" => dispatch_peek(backend, args),
         "poke" => dispatch_poke(backend, args),
         other => Err(RpcError::new(
@@ -97,7 +98,7 @@ fn dispatch(backend: &mut dyn Backend, params: Value) -> Result<Value, RpcError>
     }
 }
 
-fn parse_args<T: DeserializeOwned>(args: Value) -> Result<T, RpcError> {
+pub(super) fn parse_args<T: DeserializeOwned>(args: Value) -> Result<T, RpcError> {
     serde_json::from_value(args)
         .map_err(|e| RpcError::new(INVALID_PARAMS, format!("invalid arguments: {e}")))
 }
@@ -124,7 +125,7 @@ fn text_result(text: String) -> Value {
 /// A text result plus the `structuredContent` its tool's `outputSchema`
 /// describes. The text stays human-readable rather than the serialized JSON
 /// the spec suggests: it is what pre-2025-06-18 clients show the model.
-fn structured_result(text: String, structured: Value) -> Value {
+pub(super) fn structured_result(text: String, structured: Value) -> Value {
     json!({
         "content": [{"type": "text", "text": text}],
         STRUCTURED_CONTENT: structured,
@@ -132,7 +133,7 @@ fn structured_result(text: String, structured: Value) -> Value {
     })
 }
 
-fn error_result(text: String) -> Value {
+pub(super) fn error_result(text: String) -> Value {
     json!({"content": [{"type": "text", "text": text}], "isError": true})
 }
 
@@ -155,7 +156,7 @@ fn vms_json(vms: &[VmInfo]) -> Value {
     json!({"vms": vms})
 }
 
-fn format_screen(screen: &ScreenSnapshot) -> String {
+pub(super) fn format_screen(screen: &ScreenSnapshot) -> String {
     let cursor = match screen.cursor {
         Some(TextCursor { row, col }) => format!("cursor: row {row}, column {col} (0-based)"),
         None => "cursor: unknown (graphics mode, or BASIC is not driving this screen)".to_string(),
@@ -168,7 +169,7 @@ fn format_screen(screen: &ScreenSnapshot) -> String {
 }
 
 /// `screen_text`'s `structuredContent`; `cursor` is left out when unknown.
-fn screen_json(snapshot: &ScreenSnapshot) -> Value {
+pub(super) fn screen_json(snapshot: &ScreenSnapshot) -> Value {
     let mut screen = json!({"lines": snapshot.lines, "mode": snapshot.mode});
     if let Some(TextCursor { row, col }) = snapshot.cursor {
         screen["cursor"] = json!({"row": row, "col": col});
@@ -176,7 +177,7 @@ fn screen_json(snapshot: &ScreenSnapshot) -> Value {
     screen
 }
 
-fn format_control_error(error: &ControlError) -> String {
+pub(super) fn format_control_error(error: &ControlError) -> String {
     match &error.screen {
         Some(screen) => format!("{}\n{}", error.message, format_screen(screen)),
         None => error.message.clone(),

@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   lines, mode, and cursor; and the address and bytes. Older clients get the
   text alone. Requests with an unsupported `MCP-Protocol-Version` header are
   rejected with HTTP 400.
+- MCP `enter_basic` tool. It types a multi-line BASIC listing one line at a
+  time, without `type_text`'s 600-character limit, and can type `NEW` first.
+  It rejects the whole listing before typing when the listing is longer than
+  8,192 characters, a line is longer than BASIC's 249-character input line,
+  or a character has no CoCo key. It stops at the first line that BASIC
+  answers with an error and reports that line, the error, and the screen.
 
 ### Changed
 - The MCP server's `screen_text` tool reports where BASIC's next character
