@@ -18,6 +18,8 @@ const HEX_DUMP_WIDTH: usize = 16;
 const OUTPUT_SCHEMA: &str = "outputSchema";
 /// Tool-result key for the value matching [`OUTPUT_SCHEMA`].
 pub(super) const STRUCTURED_CONTENT: &str = "structuredContent";
+/// A tool's error text when the app answers with the wrong [`Reply`] variant.
+pub(super) const UNEXPECTED_REPLY: &str = "cocovm returned an unexpected reply";
 
 /// Sends one request and waits for its reply. Exists so `tools::call` can be
 /// tested against a mock instead of the real frame-loop queue.
@@ -112,8 +114,7 @@ fn finish(
     on_ok: impl FnOnce(Reply) -> Option<Value>,
 ) -> Value {
     match backend.call(&req) {
-        Ok(reply) => on_ok(reply)
-            .unwrap_or_else(|| error_result("cocovm returned an unexpected reply".into())),
+        Ok(reply) => on_ok(reply).unwrap_or_else(|| error_result(UNEXPECTED_REPLY.into())),
         Err(error) => error_result(format_control_error(&error)),
     }
 }

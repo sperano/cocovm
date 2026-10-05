@@ -11,15 +11,15 @@ use serde_json::{Value, json};
 use super::jsonrpc::RpcError;
 use super::protocol::{Action, ControlError, Reply, Request, ScreenSnapshot};
 use super::tools::{
-    Backend, error_result, format_control_error, format_screen, parse_args, screen_json,
-    structured_result,
+    Backend, UNEXPECTED_REPLY, error_result, format_control_error, format_screen, parse_args,
+    screen_json, structured_result,
 };
 use super::{MAX_ENTER_BASIC_CHARS, MAX_TYPE_TEXT_CHARS, key_names};
 
 /// Most characters Color BASIC's line input accepts for one line; it drops
 /// further keystrokes without any error. Measured against `coco3.rom`: all
 /// 249 typed characters echo, a 250th does not.
-pub const BASIC_LINE_MAX_CHARS: usize = 249;
+pub(super) const BASIC_LINE_MAX_CHARS: usize = 249;
 
 // Each line goes out as one `type_text` request, ENTER included.
 const _: () = assert!(BASIC_LINE_MAX_CHARS < MAX_TYPE_TEXT_CHARS);
@@ -105,7 +105,8 @@ fn parse_listing(listing: &str) -> Result<Vec<ListingLine<'_>>, String> {
     let length = listing.chars().count();
     if length > MAX_ENTER_BASIC_CHARS {
         return Err(format!(
-            "listing is {length} characters; at most {MAX_ENTER_BASIC_CHARS} per call"
+            "listing is {length} characters; at most {MAX_ENTER_BASIC_CHARS} per call; \
+             nothing was typed"
         ));
     }
     key_names::text_taps(listing)?;
@@ -119,15 +120,14 @@ fn parse_listing(listing: &str) -> Result<Vec<ListingLine<'_>>, String> {
             text,
         })
         .collect();
-    if let Some(line) = lines
+    let overlong = lines
         .iter()
-        .find(|line| line.text.chars().count() > BASIC_LINE_MAX_CHARS)
-    {
+        .map(|line| (line.number, line.text.chars().count()))
+        .find(|&(_, length)| length > BASIC_LINE_MAX_CHARS);
+    if let Some((number, length)) = overlong {
         return Err(format!(
-            "listing line {} is {} characters; BASIC accepts at most \
-             {BASIC_LINE_MAX_CHARS} per line; nothing was typed",
-            line.number,
-            line.text.chars().count()
+            "listing line {number} is {length} characters; BASIC accepts at most \
+             {BASIC_LINE_MAX_CHARS} per line; nothing was typed"
         ));
     }
     Ok(lines)
@@ -154,9 +154,11 @@ fn enter(
         screen = Some(typed.map_err(|cause| stop(0, None, cause))?);
     }
     for (entered, line) in lines.iter().enumerate() {
-        let label = format!("listing line {} ({:?})", line.number, line.text);
         let typed = type_line(backend, vm, line.text);
-        screen = Some(typed.map_err(|cause| stop(entered, Some(label), cause))?);
+        screen = Some(typed.map_err(|cause| {
+            let label = format!("listing line {} ({:?})", line.number, line.text);
+            stop(entered, Some(label), cause)
+        })?);
     }
     Ok(screen.expect("dispatch rejects an empty listing without new"))
 }
@@ -196,7 +198,7 @@ fn request(
 }
 
 fn unexpected_reply() -> Failure {
-    Failure::Control("cocovm returned an unexpected reply".into())
+    Failure::Control(UNEXPECTED_REPLY.into())
 }
 
 /// The error BASIC reported for the line just entered: after an error,
