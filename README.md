@@ -115,8 +115,14 @@ claude mcp add --transport http cocovm http://127.0.0.1:6809/mcp
 
 The server provides tools to list and start virtual machines, read text or a PNG
 from the display, type text, press keys, move joysticks, manage disks, reset or
-pause a machine, wait for video fields, and read or write memory. Call
-`tools/list` through an MCP client for the complete schemas.
+pause a machine, wait for video fields or matching screen text, and read or
+write memory. Screen matching accepts a literal string or regular expression.
+Call `tools/list` through an MCP client for the complete schemas.
+
+Clients that negotiate MCP protocol version 2025-06-18 also receive structured
+results: `list_vms`, `screen_text`, `wait_for_text`, and `peek` declare an
+output schema and return JSON alongside their text. Clients on earlier protocol
+versions receive the text only.
 
 ## Develop CoCoVM
 

@@ -164,7 +164,7 @@ fn deferred_capacity_is_reserved_before_vm_mutation() {
     let Response::Err(message) = rx.recv().expect("overload reply") else {
         panic!("expected overload error");
     };
-    assert!(message.contains("too many deferred"));
+    assert!(message.message.contains("too many deferred"));
     assert!(
         !app.entries[0]
             .vm
@@ -172,5 +172,45 @@ fn deferred_capacity_is_reserved_before_vm_mutation() {
             .unwrap()
             .remote_type_ahead
             .is_active()
+    );
+}
+
+#[test]
+fn wait_for_text_matches_immediately_on_a_paused_live_vm() {
+    let mut app = manager(vec![running_entry("live")]);
+    let pattern = app.entries[0].vm.as_mut().unwrap().screen_snapshot().lines[0].clone();
+    app.entries[0].vm.as_mut().unwrap().running = false;
+    let matcher = crate::control::TextMatcher::new(pattern, false).unwrap();
+    let (tx, rx) = mpsc::channel();
+
+    app.start_wait_for_text(ReplyHandle::new(tx), Some("live".to_string()), matcher, 60);
+
+    let Response::Ok(Reply::Screen(screen)) = rx.recv().expect("immediate screen reply") else {
+        panic!("expected matching screen");
+    };
+    assert!(!screen.lines.is_empty());
+    assert!(app.pending.is_empty());
+}
+
+#[test]
+fn wait_for_text_clamps_its_terminal_field_and_defers_a_miss() {
+    let mut app = manager(vec![running_entry("live")]);
+    let start_field = app.entries[0].vm.as_ref().unwrap().fields_run;
+    let matcher = crate::control::TextMatcher::new("NEVER PRESENT".to_string(), false).unwrap();
+    let (tx, _rx) = mpsc::channel();
+
+    app.start_wait_for_text(
+        ReplyHandle::new(tx),
+        Some("live".to_string()),
+        matcher,
+        crate::control::MAX_WAIT_FIELDS + 1,
+    );
+
+    let PendingCondition::WaitForText { terminal_field, .. } = app.pending[0].condition else {
+        panic!("expected text wait");
+    };
+    assert_eq!(
+        terminal_field,
+        start_field + u64::from(crate::control::MAX_WAIT_FIELDS)
     );
 }

@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Structured MCP tool results. For clients on protocol 2025-06-18,
+  `list_vms`, `screen_text`, and `peek` declare an `outputSchema` and return
+  `structuredContent` next to the existing text: the VM list; the screen
+  lines, mode, and cursor; and the address and bytes. Older clients get the
+  text alone. Requests with an unsupported `MCP-Protocol-Version` header are
+  rejected with HTTP 400.
+
+### Changed
+- The MCP server's `screen_text` tool reports where BASIC's next character
+  lands, as a 0-based row and column, on the 32-column screen and the
+  `WIDTH 40`/`WIDTH 80` screens. In PMODE graphics it now says there is no
+  text buffer instead of decoding graphics bytes as characters.
+
 ## [0.7.8] - 2026-10-03
 
 ### Added

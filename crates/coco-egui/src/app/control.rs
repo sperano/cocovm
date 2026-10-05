@@ -9,7 +9,7 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use coco_core::keyboard::Pos;
 
-use crate::typeahead::FIELDS_PER_TAP;
+use crate::typeahead::{FIELDS_PER_TAP, KeyTap};
 use crate::*;
 
 /// A `press_keys` hold in progress: the positions held down, released by
@@ -38,12 +38,17 @@ impl Default for RemoteStick {
 }
 
 impl CocoApp {
-    /// `screen_text`: the text screen decoded as lines, plus the video-mode
-    /// summary.
+    /// `screen_text`: decoded lines, video mode, and validated insertion point.
     pub(crate) fn screen_text(&mut self) -> crate::control::Reply {
-        crate::control::Reply::Screen {
-            lines: self.machine.text_screen_lines(),
+        crate::control::Reply::Screen(self.screen_snapshot())
+    }
+
+    pub(crate) fn screen_snapshot(&mut self) -> crate::control::ScreenSnapshot {
+        let screen = self.machine.text_screen();
+        crate::control::ScreenSnapshot {
+            lines: screen.lines,
             mode: self.machine.video_mode_summary(),
+            cursor: screen.cursor,
         }
     }
 
@@ -70,7 +75,10 @@ impl CocoApp {
     }
 
     /// `type_text`: queue `text` on [`Self::remote_type_ahead`], same
-    /// mapping as [`Self::enqueue_text`] uses for the host's own type-ahead.
+    /// mapping as [`Self::enqueue_text`] uses for the host's own type-ahead,
+    /// except that a character with no CoCo key rejects the whole call
+    /// (see [`crate::control::key_names::text_taps`]) instead of being
+    /// dropped.
     /// Returns the fields the burst takes to drain into a target that scans
     /// the keyboard continuously; a busy target stretches each tap.
     pub(crate) fn start_remote_typing(&mut self, text: &str) -> Result<u64, String> {
@@ -87,12 +95,11 @@ impl CocoApp {
                 crate::control::MAX_TYPE_TEXT_CHARS
             ));
         }
-        let taps = text.chars().filter_map(kbd::char_key);
-        let mut queued = 0;
-        for entry in taps {
-            self.remote_type_ahead.queue.push_back(entry.into());
-            queued += 1;
-        }
+        let taps = crate::control::key_names::text_taps(text)?;
+        let queued = taps.len() as u64;
+        self.remote_type_ahead
+            .queue
+            .extend(taps.into_iter().map(KeyTap::from));
         Ok(queued * FIELDS_PER_TAP)
     }
 

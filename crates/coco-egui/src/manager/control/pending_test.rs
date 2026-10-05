@@ -104,7 +104,7 @@ fn errors_when_the_target_vm_no_longer_exists() {
     manager.resolve_control_pending(&egui::Context::default());
 
     match rx.recv().expect("reply sent") {
-        Response::Err(msg) => assert!(msg.contains("no longer exists")),
+        Response::Err(error) => assert!(error.message.contains("no longer exists")),
         other => panic!("expected an Err reply, got {other:?}"),
     }
     assert!(manager.pending.is_empty());
@@ -125,7 +125,7 @@ fn errors_when_the_target_vm_has_stopped() {
     manager.resolve_control_pending(&egui::Context::default());
 
     match rx.recv().expect("reply sent") {
-        Response::Err(msg) => assert!(msg.contains("no longer running")),
+        Response::Err(error) => assert!(error.message.contains("no longer running")),
         other => panic!("expected an Err reply, got {other:?}"),
     }
     assert!(manager.pending.is_empty());
@@ -178,7 +178,7 @@ fn times_out_once_the_deadline_has_passed() {
     manager.resolve_control_pending_at(&egui::Context::default(), now);
 
     match rx.recv().expect("reply sent") {
-        Response::Err(msg) => assert!(msg.contains("timed out")),
+        Response::Err(error) => assert!(error.message.contains("timed out")),
         other => panic!("expected an Err reply, got {other:?}"),
     }
     assert!(manager.pending.is_empty());
@@ -216,7 +216,7 @@ fn type_text_past_its_deadline_lives_on_while_the_burst_still_drains() {
     let later = now + crate::manager::control::CONTROL_DEFER_MARGIN + Duration::from_secs(1);
     manager.resolve_control_pending_at(&egui::Context::default(), later);
     match rx.recv().expect("reply sent") {
-        Response::Err(msg) => assert!(msg.contains("timed out")),
+        Response::Err(error) => assert!(error.message.contains("timed out")),
         other => panic!("expected an Err reply, got {other:?}"),
     }
     assert!(manager.pending.is_empty());
@@ -286,4 +286,92 @@ fn abandoned_pending_request_is_reclaimed_without_a_reply() {
 
     assert!(manager.pending.is_empty());
     assert!(rx.try_recv().is_err());
+}
+
+#[test]
+fn text_match_wins_at_the_terminal_field_and_returns_the_snapshot() {
+    let mut manager = manager(vec![running_entry("live")]);
+    let snapshot = manager.entries[0].vm.as_mut().unwrap().screen_snapshot();
+    let pattern = format!("{}\n{}", snapshot.lines[0], snapshot.lines[1]);
+    let matcher = crate::control::TextMatcher::new(pattern, false).unwrap();
+    let terminal_field = manager.entries[0].vm.as_ref().unwrap().fields_run;
+    let (reply, rx) = reply_pair();
+    manager.pending.push(PendingControl::new(
+        reply,
+        "live".to_string(),
+        PendingCondition::WaitForText {
+            matcher,
+            terminal_field,
+        },
+        NO_FIELDS,
+        FIELD_RATE_HZ,
+    ));
+
+    manager.resolve_control_pending(&egui::Context::default());
+
+    let Response::Ok(Reply::Screen(screen)) = rx.recv().expect("screen reply") else {
+        panic!("expected a successful screen reply");
+    };
+    assert_eq!(screen.lines, snapshot.lines);
+}
+
+#[test]
+fn regex_wait_matches_across_screen_lines() {
+    let mut manager = manager(vec![running_entry("live")]);
+    let snapshot = manager.entries[0].vm.as_mut().unwrap().screen_snapshot();
+    let pattern = format!(
+        "{}\\n{}",
+        regex::escape(&snapshot.lines[0]),
+        regex::escape(&snapshot.lines[1])
+    );
+    let matcher = crate::control::TextMatcher::new(pattern, true).unwrap();
+    let (reply, rx) = reply_pair();
+    manager.pending.push(PendingControl::new(
+        reply,
+        "live".to_string(),
+        PendingCondition::WaitForText {
+            matcher,
+            terminal_field: u64::MAX,
+        },
+        crate::control::MAX_WAIT_FIELDS.into(),
+        FIELD_RATE_HZ,
+    ));
+
+    manager.resolve_control_pending(&egui::Context::default());
+
+    assert!(matches!(
+        rx.recv().expect("screen reply"),
+        Response::Ok(Reply::Screen(_))
+    ));
+}
+
+#[test]
+fn text_timeout_on_a_paused_vm_contains_the_last_screen() {
+    let mut manager = manager(vec![running_entry("paused")]);
+    manager.entries[0].vm.as_mut().unwrap().running = false;
+    let matcher = crate::control::TextMatcher::new("NEVER PRESENT".to_string(), false).unwrap();
+    let (reply, rx) = reply_pair();
+    let now = Instant::now();
+    let mut pending = PendingControl::new(
+        reply,
+        "paused".to_string(),
+        PendingCondition::WaitForText {
+            matcher,
+            terminal_field: u64::MAX,
+        },
+        1,
+        FIELD_RATE_HZ,
+    );
+    pending.deadline = now - Duration::from_secs(1);
+    manager.pending.push(pending);
+
+    manager.resolve_control_pending_at(&egui::Context::default(), now);
+
+    let Response::Err(error) = rx.recv().expect("timeout reply") else {
+        panic!("expected timeout error");
+    };
+    assert!(error.message.contains("timed out"));
+    let screen = error.screen.expect("timeout carries the last screen");
+    assert!(!screen.lines.is_empty());
+    assert!(!screen.mode.is_empty());
 }

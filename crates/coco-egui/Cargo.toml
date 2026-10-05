@@ -42,6 +42,9 @@ serde = { version = "1", features = ["derive"] }
 # MIT OR Apache-2.0. JSON-RPC message bodies for the built-in MCP server
 # (`control/jsonrpc.rs`, `control/mcp.rs`, `control/tools.rs`).
 serde_json = "1"
+# MIT OR Apache-2.0. Compiles `wait_for_text` patterns once before the
+# deferred screen matcher starts polling.
+regex = "1"
 # Both MIT OR Apache-2.0 (GPL-3.0-or-later-compatible); see
 # `paper_export.rs`'s module doc comment for the PNG/PDF dependency
 # rationale (T6). `flate2` is already resolved transitively through `image`'s
