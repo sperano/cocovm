@@ -103,6 +103,27 @@ fn start_vm_by_slug_is_a_no_op_when_already_running() {
 }
 
 #[test]
+fn start_vm_by_slug_surfaces_a_resume_failure() {
+    let machines_dir = TempDir::new("lifecycle-slug-failure-machines");
+    let mut entry = MachineEntry::new("stuck".to_string(), base_def());
+    // Suspended, but with no artifact root Resume has nowhere to restore
+    // from — the deterministic failure `start_entry` must pass back up.
+    entry.suspended = true;
+    let mut manager = ManagerApp::new(
+        None,
+        Some(machines_dir.path().to_path_buf()),
+        None,
+        vec![entry],
+        None,
+    );
+
+    let error = manager
+        .start_vm_by_slug("stuck")
+        .expect_err("resuming without a data directory fails");
+    assert!(error.contains(NO_DATA_DIR), "{error}");
+}
+
+#[test]
 fn start_vm_increments_starts_and_persists() {
     let machines_dir = TempDir::new("lifecycle-start-machines");
     let artifacts_root = TempDir::new("lifecycle-start-artifacts");
