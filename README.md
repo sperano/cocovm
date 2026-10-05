@@ -138,6 +138,12 @@ by default. With `physical` set, they address installed RAM directly, from
 offset 0 to the end of RAM. `peek` returns a hex dump with an ASCII column. Call
 `tools/list` through an MCP client for the complete schemas.
 
+The `wait` and `wait_for_text` tools run at real-time speed by default, so a
+3,600-field wait takes a minute. Set `fast_forward` to `true` to run the VM as
+fast as the host allows until the call returns. Audio is dropped during a
+fast-forward, and the emulator still responds to the other windows. A VM can
+fast-forward for one call at a time.
+
 The `enter_basic` tool types a multi-line BASIC listing one line at a time and
 stops at the first line that BASIC answers with an error, such as `?SN ERROR`.
 It checks the whole listing before it types anything: a listing can have up to

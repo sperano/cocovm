@@ -488,3 +488,86 @@ fn text_wait_on_a_paused_vm_fails_as_paused_with_the_last_screen() {
     let screen = error.screen.expect("paused error carries the last screen");
     assert!(!screen.lines.is_empty());
 }
+
+/// A `wait` that owns an unthrottled run on `manager`'s entry `slug`, with
+/// its deadline already passed at `now`, and its reply receiver.
+fn push_expired_fast_forward_wait(
+    manager: &mut ManagerApp,
+    slug: &str,
+    now: Instant,
+) -> mpsc::Receiver<Response> {
+    let (reply, rx) = reply_pair();
+    let vm = manager.entries[0].vm.as_mut().unwrap();
+    vm.start_fast_forward(u64::MAX, None)
+        .expect("a running VM accepts a fast-forward");
+    let mut pending = PendingControl::new(
+        reply,
+        slug.to_string(),
+        PendingCondition::WaitUntilField(u64::MAX),
+        NO_FIELDS,
+        FIELD_RATE_HZ,
+    )
+    .fast_forwarding();
+    pending.deadline = now - Duration::from_secs(1);
+    manager.pending.push(pending);
+    rx
+}
+
+#[test]
+fn a_timed_out_fast_forward_wait_cancels_its_run() {
+    let mut manager = manager(vec![running_entry("live")]);
+    let now = Instant::now();
+    let rx = push_expired_fast_forward_wait(&mut manager, "live", now);
+
+    manager.resolve_control_pending_at(&egui::Context::default(), now);
+
+    match rx.recv().expect("reply sent") {
+        Response::Err(error) => assert!(error.message.contains("timed out")),
+        other => panic!("expected an Err reply, got {other:?}"),
+    }
+    assert!(
+        !manager.entries[0].vm.as_ref().unwrap().is_fast_forwarding(),
+        "nobody is waiting for the run any more"
+    );
+}
+
+#[test]
+fn an_abandoned_fast_forward_wait_cancels_its_run() {
+    let mut manager = manager(vec![running_entry("live")]);
+    let now = Instant::now();
+    let _rx = push_expired_fast_forward_wait(&mut manager, "live", now);
+    manager.pending[0].reply.abandon_for_test();
+
+    manager.resolve_control_pending_at(&egui::Context::default(), now);
+
+    assert!(manager.pending.is_empty());
+    assert!(!manager.entries[0].vm.as_ref().unwrap().is_fast_forwarding());
+}
+
+#[test]
+fn a_request_without_a_run_leaves_another_requests_run_alone() {
+    let mut manager = manager(vec![running_entry("live")]);
+    let now = Instant::now();
+    let _owner_rx = push_expired_fast_forward_wait(&mut manager, "live", now);
+    // The owner's deadline is far off; a plain `wait` on the same VM expires.
+    manager.pending[0].deadline = now + Duration::from_secs(60);
+    let (reply, rx) = reply_pair();
+    let mut other = PendingControl::new(
+        reply,
+        "live".to_string(),
+        PendingCondition::WaitUntilField(u64::MAX),
+        NO_FIELDS,
+        FIELD_RATE_HZ,
+    );
+    other.deadline = now - Duration::from_secs(1);
+    manager.pending.push(other);
+
+    manager.resolve_control_pending_at(&egui::Context::default(), now);
+
+    match rx.recv().expect("reply sent") {
+        Response::Err(error) => assert!(error.message.contains("timed out")),
+        other => panic!("expected an Err reply, got {other:?}"),
+    }
+    assert_eq!(manager.pending.len(), 1, "the owner keeps waiting");
+    assert!(manager.entries[0].vm.as_ref().unwrap().is_fast_forwarding());
+}

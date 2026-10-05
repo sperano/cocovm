@@ -121,14 +121,20 @@ pub enum Action {
     SetRunning {
         running: bool,
     },
-    /// Let `fields` video fields elapse before replying.
+    /// Let `fields` video fields elapse before replying. With
+    /// `fast_forward`, the VM runs them as fast as the host allows, with
+    /// its audio dropped, instead of at the wall clock's pace.
     Wait {
         fields: u32,
+        fast_forward: bool,
     },
-    /// Wait until decoded screen text matches, or until `timeout_fields` pass.
+    /// Wait until decoded screen text matches, or until `timeout_fields`
+    /// pass. `fast_forward` as for [`Action::Wait`]; the run ends on the
+    /// first field after which the screen matches.
     WaitForText {
         matcher: TextMatcher,
         timeout_fields: u32,
+        fast_forward: bool,
     },
     /// Read `len` bytes from `addr` without side effects.
     Peek {

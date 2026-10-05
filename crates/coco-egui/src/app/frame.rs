@@ -139,16 +139,24 @@ impl CocoApp {
     /// Advance emulation for one host frame: input, joysticks, the field loop,
     /// audio, and the framebuffer upload. Runs before any chrome is drawn.
     /// `repaint_delay` describes this viewport's background presentation policy.
+    /// A fast-forward in progress (`app/fast_forward.rs`) replaces the
+    /// wall-clock field loop with one unthrottled slice, drops that slice's
+    /// audio, and asks for the next repaint right away.
     pub(crate) fn step_emulation(&mut self, ctx: &egui::Context, repaint_delay: Option<Duration>) {
         self.poll_drivewire_host();
         self.handle_input(ctx);
         self.drive_joysticks(ctx);
 
+        let fast_forwarding = self.running && self.is_fast_forwarding();
         if self.running {
-            let cushion = repaint_delay.unwrap_or_else(|| {
-                scheduling::foreground_cushion(self.machine.config.video.field_rate_hz())
-            });
-            self.run_emulation_fields(Some(cushion));
+            if fast_forwarding {
+                self.run_fast_forward_slice();
+            } else {
+                let cushion = repaint_delay.unwrap_or_else(|| {
+                    scheduling::foreground_cushion(self.machine.config.video.field_rate_hz())
+                });
+                self.run_emulation_fields(Some(cushion));
+            }
             // Only the save half runs here — re-finalizing would fold a same-field
             // capture into the already-landed recording, discarding its leader.
             if self.machine.bus.cassette.take_recording_landed()
@@ -156,9 +164,7 @@ impl CocoApp {
             {
                 self.cart_error = Some(e);
             }
-            let sample_rate = self.machine.audio_sample_rate();
-            self.audio
-                .push_samples(self.machine.take_audio(), sample_rate);
+            self.emit_audio(fast_forwarding);
         }
         if !self.running {
             // Includes breakpoints hit above, even if no paused repaint follows.
@@ -168,14 +174,38 @@ impl CocoApp {
 
         self.upload_framebuffer_texture(ctx);
         if self.running {
-            let now = std::time::Instant::now();
-            let interval = scheduling::service_interval(
-                self.machine.config.video.field_rate_hz(),
-                repaint_delay,
-            );
-            let deadline = self.schedule.service_deadline(now, interval);
-            scheduling::request_repaint_at(ctx, deadline);
+            self.schedule_next_service(ctx, repaint_delay);
         }
+    }
+
+    /// Feed the fields' audio to the output, or discard it for a
+    /// fast-forward slice: unthrottled fields produce audio far faster than
+    /// the device plays it, and nothing of it is worth hearing at that
+    /// speed. The ring runs dry meanwhile and the output fades to silence
+    /// (`audio::UNDERRUN_FADE_SECS`), as it does over any gap.
+    fn emit_audio(&mut self, discard: bool) {
+        let sample_rate = self.machine.audio_sample_rate();
+        let samples = self.machine.take_audio();
+        if discard {
+            drop(samples);
+            return;
+        }
+        self.audio.push_samples(samples, sample_rate);
+    }
+
+    /// Ask for the next frame: right away while a fast-forward is still in
+    /// progress, so its slices run back to back; otherwise at the next
+    /// service deadline of the wall-clock cadence.
+    fn schedule_next_service(&mut self, ctx: &egui::Context, repaint_delay: Option<Duration>) {
+        if self.is_fast_forwarding() {
+            ctx.request_repaint();
+            return;
+        }
+        let now = std::time::Instant::now();
+        let interval =
+            scheduling::service_interval(self.machine.config.video.field_rate_hz(), repaint_delay);
+        let deadline = self.schedule.service_deadline(now, interval);
+        scheduling::request_repaint_at(ctx, deadline);
     }
 
     /// Upload the framebuffer as `self.texture`. This is the only part of

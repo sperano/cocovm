@@ -195,6 +195,7 @@ fn wait_for_text_builds_a_literal_matcher_and_formats_cursor() {
         Action::WaitForText {
             matcher: TextMatcher::Literal(ref pattern),
             timeout_fields: 120,
+            fast_forward: false,
         } if pattern == "READY"
     ));
 }
@@ -457,4 +458,70 @@ fn list_declares_output_schemas_only_for_structured_clients() {
         list(true, TEXT_ONLY)["tools"].as_array().unwrap().len(),
         tool_defs::definitions(true).len()
     );
+}
+
+#[test]
+fn wait_passes_fast_forward_through_and_reports_it() {
+    let mut mock = MockBackend::new(vec![Ok(Reply::Done)]);
+    let result = call(
+        &mut mock,
+        call_params("wait", json!({"fields": 120, "fast_forward": true})),
+        STRUCTURED,
+    )
+    .unwrap();
+
+    assert_eq!(result["isError"], json!(false));
+    assert_eq!(
+        result["content"][0]["text"],
+        json!("Fast-forwarded 120 fields.")
+    );
+    assert_eq!(
+        mock.calls[0].action,
+        Action::Wait {
+            fields: 120,
+            fast_forward: true,
+        }
+    );
+}
+
+#[test]
+fn wait_defaults_to_real_time_pacing() {
+    let mut mock = MockBackend::new(vec![Ok(Reply::Done)]);
+    let result = call(
+        &mut mock,
+        call_params("wait", json!({"fields": 120})),
+        STRUCTURED,
+    )
+    .unwrap();
+
+    assert_eq!(result["content"][0]["text"], json!("Waited 120 fields."));
+    assert_eq!(
+        mock.calls[0].action,
+        Action::Wait {
+            fields: 120,
+            fast_forward: false,
+        }
+    );
+}
+
+#[test]
+fn wait_for_text_passes_fast_forward_through() {
+    let mut mock = MockBackend::new(vec![Ok(screen_reply("READY"))]);
+    call(
+        &mut mock,
+        call_params(
+            "wait_for_text",
+            json!({"pattern": "READY", "timeout_fields": 120, "fast_forward": true}),
+        ),
+        STRUCTURED,
+    )
+    .unwrap();
+
+    assert!(matches!(
+        mock.calls[0].action,
+        Action::WaitForText {
+            fast_forward: true,
+            ..
+        }
+    ));
 }

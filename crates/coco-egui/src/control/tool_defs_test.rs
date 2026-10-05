@@ -208,3 +208,16 @@ fn list_vms_status_enum_names_every_vm_status() {
     let names: Vec<&str> = VmStatus::ALL.iter().map(|s| s.as_str()).collect();
     assert_eq!(status["enum"], json!(names));
 }
+
+#[test]
+fn wait_tools_offer_an_optional_fast_forward_flag() {
+    let defs = definitions(true);
+    for name in ["wait", "wait_for_text"] {
+        let def = defs.iter().find(|d| d["name"] == name).unwrap();
+        let flag = &def["inputSchema"]["properties"]["fast_forward"];
+        assert_eq!(flag["type"], json!("boolean"), "{name}");
+        assert_eq!(flag["default"], json!(false), "{name}");
+        let required = def["inputSchema"]["required"].as_array().unwrap();
+        assert!(!required.contains(&json!("fast_forward")), "{name}");
+    }
+}
