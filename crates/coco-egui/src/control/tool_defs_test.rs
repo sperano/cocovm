@@ -1,11 +1,15 @@
 use super::*;
+use crate::control::protocol::VmStatus;
 
 const EXPECTED_NAMES: &[&str] = &[
     "list_vms",
     "start_vm",
+    "stop_vm",
+    "suspend_vm",
     "screen_text",
     "screenshot",
     "type_text",
+    "enter_basic",
     "press_keys",
     "joystick",
     "insert_disk",
@@ -60,10 +64,12 @@ fn names_match_expected_set_in_order() {
 }
 
 #[test]
-fn start_vm_requires_vm() {
+fn lifecycle_tools_require_vm() {
     let defs = definitions(true);
-    let start_vm = defs.iter().find(|d| d["name"] == "start_vm").unwrap();
-    assert_eq!(start_vm["inputSchema"]["required"], json!(["vm"]));
+    for name in ["start_vm", "stop_vm", "suspend_vm"] {
+        let def = defs.iter().find(|d| d["name"] == name).unwrap();
+        assert_eq!(def["inputSchema"]["required"], json!(["vm"]), "{name}");
+    }
 }
 
 #[test]
@@ -101,9 +107,12 @@ fn annotations_classify_read_only_and_mutating_tools() {
     let expected = [
         ("list_vms", true, false, true),
         ("start_vm", false, true, true),
+        ("stop_vm", false, true, true),
+        ("suspend_vm", false, true, true),
         ("screen_text", true, false, true),
         ("screenshot", true, false, true),
         ("type_text", false, true, false),
+        ("enter_basic", false, true, false),
         ("press_keys", false, true, false),
         ("joystick", false, true, true),
         ("insert_disk", false, true, false),
@@ -144,7 +153,13 @@ fn only_tools_with_structured_results_declare_an_output_schema() {
         .collect();
     assert_eq!(
         with_output,
-        ["list_vms", "screen_text", "wait_for_text", "peek"]
+        [
+            "list_vms",
+            "screen_text",
+            "enter_basic",
+            "wait_for_text",
+            "peek"
+        ]
     );
     for def in defs.iter().filter(|d| d.get("outputSchema").is_some()) {
         assert_eq!(def["outputSchema"]["type"], json!("object"));
@@ -162,6 +177,27 @@ fn screen_tools_declare_the_same_output_schema() {
             .clone()
     };
     assert_eq!(output("wait_for_text"), output("screen_text"));
+    assert_eq!(
+        output("enter_basic")["properties"]["screen"],
+        output("screen_text")
+    );
+}
+
+#[test]
+fn enter_basic_bounds_the_listing_and_states_the_line_limit() {
+    let defs = definitions(true);
+    let enter_basic = defs
+        .iter()
+        .find(|definition| definition["name"] == "enter_basic")
+        .unwrap();
+    assert_eq!(
+        enter_basic["inputSchema"]["properties"]["listing"]["maxLength"],
+        json!(crate::control::MAX_ENTER_BASIC_CHARS)
+    );
+    assert_eq!(enter_basic["inputSchema"]["required"], json!(["listing"]));
+    let description = enter_basic["description"].as_str().unwrap();
+    let line_limit = crate::control::enter_basic::BASIC_LINE_MAX_CHARS.to_string();
+    assert!(description.contains(&line_limit));
 }
 
 #[test]
@@ -171,4 +207,17 @@ fn list_vms_status_enum_names_every_vm_status() {
     let status = &list_vms["outputSchema"]["properties"]["vms"]["items"]["properties"]["status"];
     let names: Vec<&str> = VmStatus::ALL.iter().map(|s| s.as_str()).collect();
     assert_eq!(status["enum"], json!(names));
+}
+
+#[test]
+fn wait_tools_offer_an_optional_fast_forward_flag() {
+    let defs = definitions(true);
+    for name in ["wait", "wait_for_text"] {
+        let def = defs.iter().find(|d| d["name"] == name).unwrap();
+        let flag = &def["inputSchema"]["properties"]["fast_forward"];
+        assert_eq!(flag["type"], json!("boolean"), "{name}");
+        assert_eq!(flag["default"], json!(false), "{name}");
+        let required = def["inputSchema"]["required"].as_array().unwrap();
+        assert!(!required.contains(&json!("fast_forward")), "{name}");
+    }
 }

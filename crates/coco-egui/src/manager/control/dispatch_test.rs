@@ -156,10 +156,15 @@ fn deferred_capacity_is_reserved_before_vm_mutation() {
     }
     let (tx, rx) = mpsc::channel();
 
-    app.start_deferred(ReplyHandle::new(tx), Some("live".to_string()), |vm| {
-        let fields = vm.start_remote_typing("A")?;
-        Ok((PendingCondition::TypeTextDrained, fields))
-    });
+    app.start_deferred(
+        ReplyHandle::new(tx),
+        Some("live".to_string()),
+        false,
+        |vm| {
+            let fields = vm.start_remote_typing("A")?;
+            Ok((PendingCondition::TypeTextDrained, fields))
+        },
+    );
 
     let Response::Err(message) = rx.recv().expect("overload reply") else {
         panic!("expected overload error");
@@ -175,6 +180,66 @@ fn deferred_capacity_is_reserved_before_vm_mutation() {
     );
 }
 
+/// Dispatch `action` on `vm` through `dispatch_control` and return the
+/// receiver its reply lands on.
+fn dispatch(manager: &mut ManagerApp, vm: &str, action: Action) -> mpsc::Receiver<Response> {
+    let (tx, rx) = mpsc::channel();
+    let request = Request {
+        vm: Some(vm.to_string()),
+        action,
+    };
+    manager.dispatch_control(Incoming::new(request, ReplyHandle::new(tx)));
+    rx
+}
+
+#[test]
+fn wait_rejects_a_paused_vm_up_front() {
+    let mut app = manager(vec![running_entry("live")]);
+    app.entries[0].vm.as_mut().unwrap().set_running(false);
+
+    let rx = dispatch(
+        &mut app,
+        "live",
+        Action::Wait {
+            fields: 1,
+            fast_forward: false,
+        },
+    );
+
+    assert_eq!(
+        rx.try_recv().expect("immediate reply"),
+        Response::Err(crate::app::PAUSED_ERROR.into())
+    );
+    assert!(app.pending.is_empty());
+}
+
+#[test]
+fn pending_wait_fails_in_the_update_that_pauses_its_vm() {
+    let mut app = manager(vec![running_entry("live")]);
+    let wait = dispatch(
+        &mut app,
+        "live",
+        Action::Wait {
+            fields: 1,
+            fast_forward: false,
+        },
+    );
+    assert_eq!(app.pending.len(), 1, "a running VM defers the wait");
+
+    let pause = dispatch(&mut app, "live", Action::SetRunning { running: false });
+    assert_eq!(
+        pause.try_recv().expect("immediate reply"),
+        Response::Ok(Reply::Done)
+    );
+    app.resolve_control_pending(&eframe::egui::Context::default());
+
+    match wait.try_recv().expect("wait replied without timing out") {
+        Response::Err(error) => assert!(error.message.contains("was paused"), "{error}"),
+        other => panic!("expected an Err reply, got {other:?}"),
+    }
+    assert!(app.pending.is_empty());
+}
+
 #[test]
 fn wait_for_text_matches_immediately_on_a_paused_live_vm() {
     let mut app = manager(vec![running_entry("live")]);
@@ -183,7 +248,13 @@ fn wait_for_text_matches_immediately_on_a_paused_live_vm() {
     let matcher = crate::control::TextMatcher::new(pattern, false).unwrap();
     let (tx, rx) = mpsc::channel();
 
-    app.start_wait_for_text(ReplyHandle::new(tx), Some("live".to_string()), matcher, 60);
+    app.start_wait_for_text(
+        ReplyHandle::new(tx),
+        Some("live".to_string()),
+        matcher,
+        60,
+        false,
+    );
 
     let Response::Ok(Reply::Screen(screen)) = rx.recv().expect("immediate screen reply") else {
         panic!("expected matching screen");
@@ -204,6 +275,7 @@ fn wait_for_text_clamps_its_terminal_field_and_defers_a_miss() {
         Some("live".to_string()),
         matcher,
         crate::control::MAX_WAIT_FIELDS + 1,
+        false,
     );
 
     let PendingCondition::WaitForText { terminal_field, .. } = app.pending[0].condition else {
@@ -213,4 +285,93 @@ fn wait_for_text_clamps_its_terminal_field_and_defers_a_miss() {
         terminal_field,
         start_field + u64::from(crate::control::MAX_WAIT_FIELDS)
     );
+}
+
+#[test]
+fn fast_forward_wait_starts_a_run_the_pending_request_owns() {
+    let mut app = manager(vec![running_entry("live")]);
+
+    let _rx = dispatch(
+        &mut app,
+        "live",
+        Action::Wait {
+            fields: 10,
+            fast_forward: true,
+        },
+    );
+
+    assert_eq!(app.pending.len(), 1);
+    assert!(app.pending[0].fast_forward, "the request owns the run");
+    assert!(app.entries[0].vm.as_ref().unwrap().is_fast_forwarding());
+}
+
+#[test]
+fn a_second_fast_forward_wait_is_refused_while_one_runs() {
+    let mut app = manager(vec![running_entry("live")]);
+    let _first = dispatch(
+        &mut app,
+        "live",
+        Action::Wait {
+            fields: 10,
+            fast_forward: true,
+        },
+    );
+
+    let second = dispatch(
+        &mut app,
+        "live",
+        Action::Wait {
+            fields: 10,
+            fast_forward: true,
+        },
+    );
+
+    assert_eq!(
+        second.try_recv().expect("immediate reply"),
+        Response::Err(crate::app::fast_forward::FAST_FORWARD_BUSY_ERROR.into())
+    );
+    assert_eq!(app.pending.len(), 1, "the first request is unaffected");
+}
+
+#[test]
+fn fast_forward_wait_for_text_starts_a_run_until_the_match() {
+    let mut app = manager(vec![running_entry("live")]);
+    let matcher = crate::control::TextMatcher::new("NEVER PRESENT".to_string(), false).unwrap();
+    let (tx, _rx) = mpsc::channel();
+
+    app.start_wait_for_text(
+        ReplyHandle::new(tx),
+        Some("live".to_string()),
+        matcher,
+        60,
+        true,
+    );
+
+    assert_eq!(app.pending.len(), 1);
+    assert!(app.pending[0].fast_forward);
+    assert!(app.entries[0].vm.as_ref().unwrap().is_fast_forwarding());
+}
+
+#[test]
+fn fast_forward_wait_for_text_on_a_paused_vm_fails_with_the_screen() {
+    let mut app = manager(vec![running_entry("live")]);
+    app.entries[0].vm.as_mut().unwrap().set_running(false);
+    let matcher = crate::control::TextMatcher::new("NEVER PRESENT".to_string(), false).unwrap();
+    let (tx, rx) = mpsc::channel();
+
+    app.start_wait_for_text(
+        ReplyHandle::new(tx),
+        Some("live".to_string()),
+        matcher,
+        60,
+        true,
+    );
+
+    let Response::Err(error) = rx.try_recv().expect("immediate reply") else {
+        panic!("expected a paused error");
+    };
+    assert_eq!(error.message, crate::app::PAUSED_ERROR);
+    assert!(error.screen.is_some(), "the error carries the last screen");
+    assert!(app.pending.is_empty());
+    assert!(!app.entries[0].vm.as_ref().unwrap().is_fast_forwarding());
 }

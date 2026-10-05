@@ -69,6 +69,41 @@ impl ManagerApp {
         }
     }
 
+    /// Start (or resume) the machine named `slug`: the CLI's direct-launch
+    /// path. An unknown slug is an error; the launch itself is
+    /// [`Self::start_entry`].
+    pub(super) fn start_vm_by_slug(&mut self, slug: &str) -> Result<(), String> {
+        let index = self
+            .entry_index(slug)
+            .ok_or_else(|| format!("no machine named '{slug}'"))?;
+        self.start_entry(index)
+    }
+
+    /// Start (or resume) `entries[index]` — the launch core `start_vm_by_slug`
+    /// and the MCP `start_vm` action share. An already-Running machine is a
+    /// no-op. Returns the launch error the entry ends up with, taking it out
+    /// of `launch_error` — the caller owns how it's reported.
+    pub(super) fn start_entry(&mut self, index: usize) -> Result<(), String> {
+        if self.entries[index].is_running() {
+            return Ok(());
+        }
+        if self.entries[index].suspended {
+            self.resume_vm(index);
+        } else {
+            self.start_vm(index);
+        }
+        match self.entries[index].launch_error.take() {
+            Some(error) => Err(error),
+            None => Ok(()),
+        }
+    }
+
+    /// Index of the entry whose slug is `slug`, if any. Slugs are unique
+    /// (`machine_def.rs` "Identity = slug").
+    pub(super) fn entry_index(&self, slug: &str) -> Option<usize> {
+        self.entries.iter().position(|entry| entry.slug == slug)
+    }
+
     fn print_action(&self, action: &str, index: usize) {
         let slug = &self.entries[index].slug;
         println!(

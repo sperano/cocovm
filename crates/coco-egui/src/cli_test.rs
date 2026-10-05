@@ -38,6 +38,22 @@ fn log_level_comes_from_the_flag() {
 }
 
 #[test]
+fn machine_slug_comes_from_the_positional_parameter() {
+    use clap::Parser as _;
+
+    let parse = |args: &[&str]| Cli::try_parse_from(args).map(|cli| cli.machine).ok();
+    assert_eq!(parse(&["cocovm"]), Some(None));
+    assert_eq!(
+        parse(&["cocovm", "my-coco"]),
+        Some(Some("my-coco".to_string()))
+    );
+    assert_eq!(
+        parse(&["cocovm", "--log-level", "info", "my-coco"]),
+        Some(Some("my-coco".to_string()))
+    );
+}
+
+#[test]
 fn assets_url_comes_from_the_flag() {
     use clap::Parser as _;
 

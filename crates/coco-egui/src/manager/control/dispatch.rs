@@ -52,6 +52,8 @@ impl ManagerApp {
         match action {
             Action::ListVms => reply.reply(Response::Ok(Reply::Vms(self.vm_infos()))),
             Action::StartVm => reply.reply(response(self.start_vm_action(&vm))),
+            Action::StopVm => reply.reply(response(self.stop_vm_action(&vm))),
+            Action::SuspendVm => reply.reply(response(self.suspend_vm_action(&vm))),
             Action::ScreenText => {
                 let result = self
                     .resolve_alive(&vm)
@@ -65,13 +67,13 @@ impl ManagerApp {
                 reply.reply(response(result));
             }
             Action::TypeText { text } => {
-                self.start_deferred(reply, vm, |app| {
+                self.start_deferred(reply, vm, false, |app| {
                     let fields = app.start_remote_typing(&text)?;
                     Ok((PendingCondition::TypeTextDrained, fields))
                 });
             }
             Action::PressKeys { keys, hold_fields } => {
-                self.start_deferred(reply, vm, move |app| {
+                self.start_deferred(reply, vm, false, move |app| {
                     let fields = app.start_remote_hold(&keys, hold_fields)?;
                     Ok((PendingCondition::KeysReleased, fields))
                 });
@@ -111,20 +113,25 @@ impl ManagerApp {
                 });
                 reply.reply(response(result));
             }
-            Action::Wait { fields } => self.start_wait(reply, vm, fields),
+            Action::Wait {
+                fields,
+                fast_forward,
+            } => self.start_wait(reply, vm, fields, fast_forward),
             Action::WaitForText {
                 matcher,
                 timeout_fields,
-            } => self.start_wait_for_text(reply, vm, matcher, timeout_fields),
+                fast_forward,
+            } => self.start_wait_for_text(reply, vm, matcher, timeout_fields, fast_forward),
             Action::Peek { addr, len } => {
                 let result = self
                     .resolve_alive(&vm)
-                    .map(|idx| Reply::Bytes(self.vm_ref(idx).peek_bytes(addr, len)));
+                    .and_then(|idx| self.vm_ref(idx).peek_memory(addr, len))
+                    .map(Reply::Bytes);
                 reply.reply(response(result));
             }
             Action::Poke { addr, bytes } => {
                 let result = self.resolve_vm(&vm, true).and_then(|idx| {
-                    self.vm_mut(idx).poke_bytes(addr, &bytes)?;
+                    self.vm_mut(idx).poke_memory(addr, &bytes)?;
                     Ok(Reply::Done)
                 });
                 reply.reply(response(result));
@@ -147,25 +154,6 @@ impl ManagerApp {
             .vm
             .as_ref()
             .expect("caller resolved this entry's VM as present")
-    }
-
-    /// `start_vm`: resolve without requiring Running (a Suspended or Powered
-    /// Off target is exactly what this brings up), no-op if already Running,
-    /// otherwise resume or launch and report the outcome.
-    fn start_vm_action(&mut self, vm: &Option<String>) -> Result<Reply, String> {
-        let idx = self.resolve_vm(vm, false)?;
-        if self.entries[idx].is_running() {
-            return Ok(Reply::Done);
-        }
-        if self.entries[idx].suspended {
-            self.resume_vm(idx);
-        } else {
-            self.start_vm(idx);
-        }
-        match self.entries[idx].launch_error.take() {
-            Some(e) => Err(e),
-            None => Ok(Reply::Done),
-        }
     }
 
     /// `insert_disk`: [`UI_DRIVES`], not `coco_core::fdc::DRIVE_COUNT` — the
@@ -192,28 +180,47 @@ impl ManagerApp {
     }
 
     /// `wait`: defer until `CocoApp::fields_run` reaches its current value
-    /// plus `fields` (clamped to [`crate::control::MAX_WAIT_FIELDS`]).
-    fn start_wait(&mut self, reply: ReplyHandle, vm: Option<String>, fields: u32) {
+    /// plus `fields` (clamped to [`crate::control::MAX_WAIT_FIELDS`]). A
+    /// paused VM is refused up front, as `type_text` and `press_keys` are:
+    /// its field count would never move. With `fast_forward`, the VM runs
+    /// those fields unthrottled (`CocoApp::start_fast_forward`); the run is
+    /// cancelled when this request resolves.
+    fn start_wait(
+        &mut self,
+        reply: ReplyHandle,
+        vm: Option<String>,
+        fields: u32,
+        fast_forward: bool,
+    ) {
         let clamped = u64::from(fields.min(crate::control::MAX_WAIT_FIELDS));
-        self.start_deferred(reply, vm, |app| {
-            Ok((
-                PendingCondition::WaitUntilField(app.fields_run + clamped),
-                clamped,
-            ))
+        self.start_deferred(reply, vm, fast_forward, |app| {
+            if !app.running {
+                return Err(crate::app::PAUSED_ERROR.to_string());
+            }
+            let target = app.fields_run + clamped;
+            if fast_forward {
+                app.start_fast_forward(target, None)?;
+            }
+            Ok((PendingCondition::WaitUntilField(target), clamped))
         });
     }
 
+    /// `wait_for_text`: reply at once on a match, otherwise defer until the
+    /// screen matches or `timeout_fields` (clamped) have passed. With
+    /// `fast_forward`, the VM runs unthrottled until the match or the
+    /// terminal field, whichever comes first.
     fn start_wait_for_text(
         &mut self,
         reply: ReplyHandle,
         vm: Option<String>,
         matcher: TextMatcher,
         timeout_fields: u32,
+        fast_forward: bool,
     ) {
         if reply.is_abandoned() {
             return;
         }
-        self.pending.retain(|pending| !pending.is_abandoned());
+        self.prune_abandoned_pending();
         if self.pending.len() >= super::MAX_PENDING_CONTROL_REQUESTS {
             return reply.reply(Response::Err(super::CONTROL_PENDING_OVERLOADED.into()));
         }
@@ -231,34 +238,43 @@ impl ManagerApp {
         if timeout_fields == 0 {
             return reply.reply(Response::Err(text_timeout(snapshot)));
         }
+        let terminal_field = app.fields_run.saturating_add(timeout_fields);
+        if fast_forward {
+            // Refused while paused: a paused VM's screen can't change, so
+            // the wait would only ever time out, as the generic check reports.
+            if let Err(error) = app.start_fast_forward(terminal_field, Some(matcher.clone())) {
+                return reply.reply(Response::Err(ControlError::with_screen(error, snapshot)));
+            }
+        }
         let condition = PendingCondition::WaitForText {
             matcher,
-            terminal_field: app.fields_run.saturating_add(timeout_fields),
+            terminal_field,
         };
         let field_rate_hz = app.machine.config.video.field_rate_hz();
-        self.pending.push(PendingControl::new(
-            reply,
-            slug,
-            condition,
-            timeout_fields,
-            field_rate_hz,
-        ));
+        let pending = PendingControl::new(reply, slug, condition, timeout_fields, field_rate_hz);
+        self.pending.push(if fast_forward {
+            pending.with_fast_forward()
+        } else {
+            pending
+        });
     }
 
     /// Shared shape of the deferred actions: resolve a Running target, start
     /// the work on it (`start` yields the completion condition and the fields
     /// it should take), then defer the reply — or send the error back
-    /// immediately.
+    /// immediately. `fast_forward` records that `start` began an
+    /// unthrottled run this request owns.
     fn start_deferred(
         &mut self,
         reply: ReplyHandle,
         vm: Option<String>,
+        fast_forward: bool,
         start: impl FnOnce(&mut CocoApp) -> Result<(PendingCondition, u64), String>,
     ) {
         if reply.is_abandoned() {
             return;
         }
-        self.pending.retain(|pending| !pending.is_abandoned());
+        self.prune_abandoned_pending();
         if self.pending.len() >= super::MAX_PENDING_CONTROL_REQUESTS {
             return reply.reply(Response::Err(super::CONTROL_PENDING_OVERLOADED.into()));
         }
@@ -270,13 +286,15 @@ impl ManagerApp {
         let app = self.vm_mut(idx);
         let field_rate_hz = app.machine.config.video.field_rate_hz();
         match start(app) {
-            Ok((condition, expected_fields)) => self.pending.push(PendingControl::new(
-                reply,
-                slug,
-                condition,
-                expected_fields,
-                field_rate_hz,
-            )),
+            Ok((condition, expected_fields)) => {
+                let pending =
+                    PendingControl::new(reply, slug, condition, expected_fields, field_rate_hz);
+                self.pending.push(if fast_forward {
+                    pending.with_fast_forward()
+                } else {
+                    pending
+                });
+            }
             Err(e) => reply.reply(Response::Err(e.into())),
         }
     }

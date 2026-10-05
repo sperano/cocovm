@@ -3,18 +3,26 @@ use std::num::NonZeroU32;
 use clap::{Parser, ValueEnum};
 use tracing_subscriber::filter::LevelFilter;
 
-/// The app's whole CLI surface: the manager window is always what runs (see
-/// `main.rs`). Besides the log level, the other flags are the control
-/// listener's port, the asset bundle's URL, the toolbar and status-bar
-/// caption toggles, and the welcome-image cycle.
-/// Every field is `Option`: `None` means "not given here", so `config::resolve`
-/// can fall through to `config.toml` and then the built-in default
-/// (`config.rs`'s precedence chain). clap's own `env` fallback already
+/// The app's whole CLI surface. The manager window is what runs (see
+/// `main.rs`); naming a machine's slug starts that machine's VM as the
+/// manager opens, so a saved machine can be launched without finding its row
+/// in the list. The rest are the log level, the control listener's port, the
+/// asset bundle's URL, the toolbar and status-bar caption toggles, and the
+/// welcome-image cycle.
+/// Every settings field is `Option`: `None` means "not given here", so
+/// `config::resolve` can fall through to `config.toml` and then the built-in
+/// default (`config.rs`'s precedence chain). clap's own `env` fallback already
 /// prefers a flag over the environment variable, so a `Some` here already
 /// carries the flag-beats-env half of that chain for free.
 #[derive(Parser)]
 #[command(name = "coco", version, about = "A Tandy Color Computer emulator")]
 pub(crate) struct Cli {
+    /// Slug of the saved machine to start once the manager opens. The slug
+    /// is the `<slug>.toml` file's stem under `config_dir()/machines` (the
+    /// manager shows it under the Name field). Omitted, nothing starts.
+    #[arg(value_name = "SLUG")]
+    pub(crate) machine: Option<String>,
+
     /// Lowest log level to print. `RUST_LOG` overrides this when set — it
     /// also filters per module, which a bare level cannot express (for example,
     /// `RUST_LOG=info,eframe=warn`).

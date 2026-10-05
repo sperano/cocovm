@@ -319,9 +319,10 @@ fn strip_hex_prefix(text: &str) -> &str {
         .unwrap_or(t)
 }
 
-/// Printable-ASCII rendering for the Memory panel's ASCII column; non-
-/// printable bytes show as `.`, matching every other hex-dump tool.
-fn ascii_char(byte: u8) -> char {
+/// Printable-ASCII rendering for the Memory panel's and MCP `peek`'s ASCII
+/// columns; non-printable bytes show as `.`, matching every other hex-dump
+/// tool.
+pub(crate) fn ascii_char(byte: u8) -> char {
     if (0x20..=0x7E).contains(&byte) {
         byte as char
     } else {

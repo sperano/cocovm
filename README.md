@@ -70,6 +70,19 @@ cargo run -p coco-egui
 
 For an optimized build, add `--release` to the `cargo run` command.
 
+## Launch a saved machine
+
+Run `cocovm` with no arguments to open the manager and choose a machine from the
+list. To start a saved machine as the manager opens, pass its slug:
+
+```sh
+cocovm my-coco
+```
+
+The slug is the stem of the machine's `<slug>.toml` file under the
+configuration directory's `machines/` folder; the manager shows it under the
+machine's Name field.
+
 ## Configure CoCoVM
 
 The manager's settings dialog covers the global application settings. CoCoVM
@@ -113,16 +126,35 @@ To register the endpoint with Claude Code, run:
 claude mcp add --transport http cocovm http://127.0.0.1:6809/mcp
 ```
 
-The server provides tools to list and start virtual machines, read text or a PNG
-from the display, type text, press keys, move joysticks, manage disks, reset or
-pause a machine, wait for video fields or matching screen text, and read or
-write memory. Screen matching accepts a literal string or regular expression.
-Call `tools/list` through an MCP client for the complete schemas.
+The server provides tools to list, start, stop, and suspend virtual machines,
+read text or a PNG from the display, type text, enter a BASIC listing, press
+keys, move joysticks, manage disks, reset or pause a machine, wait for video
+fields or matching screen text, and read or write memory. The VM list includes
+each machine's model, RAM size, CPU, cartridge, and mounted media. Like the
+manager's Stop and Suspend buttons, `stop_vm` and `suspend_vm` write modified
+floppies and tapes back to their files first. Screen matching accepts a literal
+string or regular expression. Memory tools address the CPU's current memory map
+by default. With `physical` set, they address installed RAM directly, from
+offset 0 to the end of RAM. `peek` returns a hex dump with an ASCII column. Call
+`tools/list` through an MCP client for the complete schemas.
+
+The `wait` and `wait_for_text` tools run at real-time speed by default, so a
+3,600-field wait takes a minute. Set `fast_forward` to `true` to run the VM as
+fast as the host allows until the call returns. Audio is dropped during a
+fast-forward, and the emulator still responds to the other windows. A VM can
+fast-forward for one call at a time.
+
+The `enter_basic` tool types a multi-line BASIC listing one line at a time and
+stops at the first line that BASIC answers with an error, such as `?SN ERROR`.
+It checks the whole listing before it types anything: a listing can have up to
+8,192 characters, a line can have up to 249 characters, and every character
+must exist on the CoCo keyboard. Typing takes about 0.1 seconds per character,
+so a long listing can take several minutes.
 
 Clients that negotiate MCP protocol version 2025-06-18 also receive structured
-results: `list_vms`, `screen_text`, `wait_for_text`, and `peek` declare an
-output schema and return JSON alongside their text. Clients on earlier protocol
-versions receive the text only.
+results: `list_vms`, `screen_text`, `enter_basic`, `wait_for_text`, and `peek`
+declare an output schema and return JSON alongside their text. Clients on
+earlier protocol versions receive the text only.
 
 ## Develop CoCoVM
 

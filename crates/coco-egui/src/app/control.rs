@@ -4,13 +4,21 @@
 //! apply one action to the `CocoApp` it's given.
 
 use std::io::Cursor;
+use std::ops::Range;
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use coco_core::keyboard::Pos;
 
+use crate::control::MemAddr;
 use crate::typeahead::{FIELDS_PER_TAP, KeyTap};
 use crate::*;
+
+/// Why a paused VM refuses a request whose reply waits on fields to run
+/// (`type_text`, `press_keys`, `wait`). It names only `set_running`:
+/// `start_vm` is a no-op here, since a paused VM still reads Running
+/// (`manager::vm_status_label`).
+pub(crate) const PAUSED_ERROR: &str = "VM is paused; call set_running first";
 
 /// A `press_keys` hold in progress: the positions held down, released by
 /// [`CocoApp::run_fields`] (`app/frame.rs`) once `fields_left` reaches 0.
@@ -83,7 +91,7 @@ impl CocoApp {
     /// the keyboard continuously; a busy target stretches each tap.
     pub(crate) fn start_remote_typing(&mut self, text: &str) -> Result<u64, String> {
         if !self.running {
-            return Err("VM is paused; call set_running or start_vm first".to_string());
+            return Err(PAUSED_ERROR.to_string());
         }
         if self.remote_type_ahead.is_active() {
             return Err("a type_text burst is still draining".to_string());
@@ -112,7 +120,7 @@ impl CocoApp {
         hold_fields: Option<u32>,
     ) -> Result<u64, String> {
         if !self.running {
-            return Err("VM is paused; call set_running or start_vm first".to_string());
+            return Err(PAUSED_ERROR.to_string());
         }
         if self.remote_held.is_some() {
             return Err("a press_keys hold is already in progress".to_string());
@@ -209,6 +217,55 @@ impl CocoApp {
             self.machine.poke(addr.wrapping_add(i as u16), b);
         }
         Ok(())
+    }
+
+    /// `peek` at either address kind: a logical read wraps past $FFFF, a
+    /// physical one must lie inside installed RAM.
+    pub(crate) fn peek_memory(&self, addr: MemAddr, len: u16) -> Result<Vec<u8>, String> {
+        match addr {
+            MemAddr::Logical(addr) => Ok(self.peek_bytes(addr, len)),
+            MemAddr::Physical(addr) => {
+                let clamped = len.min(crate::control::MAX_PEEK_LEN);
+                let range = self.physical_range(addr, usize::from(clamped))?;
+                Ok(self.machine.bus.ram[range].to_vec())
+            }
+        }
+    }
+
+    /// `poke` at either address kind. A physical write goes straight into
+    /// RAM, like the debugger's Physical RAM view, so it has no bus side
+    /// effects and ignores the memory map.
+    pub(crate) fn poke_memory(&mut self, addr: MemAddr, bytes: &[u8]) -> Result<(), String> {
+        match addr {
+            MemAddr::Logical(addr) => self.poke_bytes(addr, bytes),
+            MemAddr::Physical(addr) => {
+                if bytes.len() > crate::control::MAX_POKE_LEN {
+                    return Err(format!(
+                        "{} bytes; at most {} per poke",
+                        bytes.len(),
+                        crate::control::MAX_POKE_LEN
+                    ));
+                }
+                let range = self.physical_range(addr, bytes.len())?;
+                self.machine.bus.ram[range].copy_from_slice(bytes);
+                Ok(())
+            }
+        }
+    }
+
+    /// The RAM indices `len` bytes from physical offset `addr` cover, or an
+    /// error naming the installed size when they run past its end.
+    fn physical_range(&self, addr: u32, len: usize) -> Result<Range<usize>, String> {
+        let ram_len = self.machine.bus.ram.len();
+        let start = addr as usize;
+        match start.checked_add(len) {
+            Some(end) if end <= ram_len => Ok(start..end),
+            _ => Err(format!(
+                "physical range ${start:06X}+{len} runs past installed RAM \
+                 ($000000-${:06X})",
+                ram_len.saturating_sub(1)
+            )),
+        }
     }
 }
 

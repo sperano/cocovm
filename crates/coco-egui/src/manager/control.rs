@@ -14,7 +14,9 @@ use eframe::egui;
 use super::{MachineEntry, ManagerApp};
 
 mod dispatch;
+mod lifecycle;
 mod pending;
+mod vm_info;
 
 /// Slack a deferred request (`type_text`, `press_keys`, `wait`) gets beyond
 /// the wall-clock time its fields should take, before it times out.
@@ -36,9 +38,20 @@ pub(super) struct PendingControl {
     deadline: Instant,
     /// Taps still queued when a `type_text` burst was last checked.
     remaining_taps: usize,
+    /// Whether this request started an unthrottled run on its target
+    /// (`CocoApp::start_fast_forward`). The run is cancelled the moment the
+    /// request leaves [`ManagerApp::pending`] for any reason, so a timed-out
+    /// or abandoned `wait` never leaves a VM racing with nobody waiting.
+    fast_forward: bool,
 }
 
 impl PendingControl {
+    /// Mark this request as the owner of its target's fast-forward.
+    fn with_fast_forward(mut self) -> Self {
+        self.fast_forward = true;
+        self
+    }
+
     /// A `type_text` burst drained to `remaining` taps. A busy target stretches
     /// taps, so keep the deadline at least [`CONTROL_DEFER_MARGIN`] past this.
     fn note_progress(&mut self, remaining: usize, now: Instant) {
@@ -72,6 +85,7 @@ impl PendingControl {
             condition,
             deadline: Instant::now() + expected + CONTROL_DEFER_MARGIN,
             remaining_taps: usize::MAX,
+            fast_forward: false,
         }
     }
 }
@@ -191,32 +205,51 @@ impl ManagerApp {
         }
     }
 
-    /// Every machine the manager knows, with its wire-protocol status.
+    /// Drop every pending request whose connection stopped waiting,
+    /// cancelling the fast-forward any of them owned. Runs before a new
+    /// request is deferred and at the start of each resolution pass.
+    fn prune_abandoned_pending(&mut self) {
+        let (abandoned, kept): (Vec<_>, Vec<_>) = std::mem::take(&mut self.pending)
+            .into_iter()
+            .partition(PendingControl::is_abandoned);
+        self.pending = kept;
+        for pending in &abandoned {
+            self.release_pending(pending);
+        }
+    }
+
+    /// Undo what a request leaving [`Self::pending`] still holds on its
+    /// target: the fast-forward it started, if any. The target is looked up
+    /// by slug and may already be gone.
+    fn release_pending(&mut self, pending: &PendingControl) {
+        if !pending.fast_forward {
+            return;
+        }
+        if let Some(idx) = self.entry_index(&pending.slug)
+            && let Some(vm) = self.entries[idx].vm.as_mut()
+        {
+            vm.stop_fast_forward();
+        }
+    }
+
+    /// Every machine the manager knows, with its wire-protocol status,
+    /// hardware, cartridge, and media.
     fn vm_infos(&self) -> Vec<crate::control::VmInfo> {
-        self.entries
-            .iter()
-            .map(|e| crate::control::VmInfo {
-                slug: e.slug.clone(),
-                name: e.def.name.clone(),
-                status: control_status(e),
-            })
-            .collect()
+        self.entries.iter().map(vm_info::vm_info).collect()
     }
 
     /// Resolve a request's `vm` slug to an entry index. `None` selects the
     /// sole Running entry (`crate::control::protocol`'s convention), erroring
     /// out by name when there are zero or several. `require_running`
     /// additionally rejects a *named* entry that isn't Running — every
-    /// mutating action but `start_vm` sets this (`start_vm` must be able to
-    /// resolve a Suspended or Powered Off target, since bringing one up is
-    /// the whole point).
+    /// mutating action but the lifecycle ones sets this (`start_vm`,
+    /// `stop_vm`, and `suspend_vm` must resolve a Suspended or Powered Off
+    /// target to bring it up, power it off, or report it as a no-op).
     fn resolve_vm(&self, vm: &Option<String>, require_running: bool) -> Result<usize, String> {
         match vm {
             Some(slug) => {
                 let idx = self
-                    .entries
-                    .iter()
-                    .position(|e| &e.slug == slug)
+                    .entry_index(slug)
                     .ok_or_else(|| format!("no VM named '{slug}'"))?;
                 if require_running && !self.entries[idx].is_running() {
                     return Err(format!("VM '{slug}' is not running; call start_vm first"));

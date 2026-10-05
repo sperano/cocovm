@@ -11,8 +11,8 @@
 //! the main thread. Each viewport's child `egui::Context` delivers keyboard
 //! and mouse input for that window, so egui handles focus routing
 //! ("DECIDED: in-process, one native window per running VM"). The app always
-//! opens this manager window. A future CLI will build on the manager's own
-//! machine definitions.
+//! opens this manager window; the CLI's optional slug starts a saved machine
+//! from the manager's own definitions as it opens.
 
 use std::fs;
 use std::path::{Path, PathBuf};

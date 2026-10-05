@@ -170,7 +170,10 @@ fn main() -> eframe::Result<()> {
     let use_color = use_color();
 
     // Parsed first: the global log subscriber can't be built before the flags it reads are known.
-    let cli = Cli::parse();
+    let mut cli = Cli::parse();
+    // The slug is a command, not a global setting: it never falls through to
+    // `config.toml`, so it leaves `Cli` before `config::resolve` consumes it.
+    let machine = cli.machine.take();
 
     // A malformed config.toml is fatal at startup, same severity as a bad machine definition
     // (`machine_def::load_all`).
@@ -185,9 +188,9 @@ fn main() -> eframe::Result<()> {
     let config = config::resolve(cli, file_config);
     let log_reload = setup_logging(use_color, config.log_level.into());
 
-    // The app always opens the CoCoVM manager window; a future CLI will build on its machine
-    // definitions.
-    manager::run(config, config_path, log_reload)
+    // The app always opens the CoCoVM manager window; a named machine is started from that
+    // window's own machine definitions (`manager::run`).
+    manager::run(config, config_path, log_reload, machine)
 }
 
 #[cfg(test)]

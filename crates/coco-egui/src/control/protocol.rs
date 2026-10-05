@@ -3,7 +3,13 @@
 //! format — everything crosses in-process on an `mpsc` channel — so only
 //! [`Stick`] keeps a `Deserialize` impl, for parsing a tool call's arguments.
 
+use std::path::PathBuf;
+
+use coco_core::{MachineVariant, MemorySize};
 use serde::Deserialize;
+
+use crate::UI_DRIVES;
+use crate::machine_def::CartridgeDTO;
 
 /// A literal or compiled regex used by `wait_for_text`.
 #[derive(Clone, Debug)]
@@ -69,6 +75,13 @@ pub enum Action {
     ListVms,
     /// Start (or resume) the named VM; a no-op if it is already running.
     StartVm,
+    /// Power the named VM off the way the manager's Stop does: write dirty
+    /// media back, then drop the VM. A no-op if it is already powered off.
+    StopVm,
+    /// Freeze the named VM to disk the way the manager's Suspend does: write
+    /// dirty media back, save its state, then pause it. A no-op if it is
+    /// already suspended.
+    SuspendVm,
     /// The text screen decoded as lines, plus the video-mode summary.
     ScreenText,
     /// The current framebuffer as a PNG.
@@ -108,25 +121,42 @@ pub enum Action {
     SetRunning {
         running: bool,
     },
-    /// Let `fields` video fields elapse before replying.
+    /// Let `fields` video fields elapse before replying. With
+    /// `fast_forward`, the VM runs them as fast as the host allows, with
+    /// its audio dropped, instead of at the wall clock's pace.
     Wait {
         fields: u32,
+        fast_forward: bool,
     },
-    /// Wait until decoded screen text matches, or until `timeout_fields` pass.
+    /// Wait until decoded screen text matches, or until `timeout_fields`
+    /// pass. `fast_forward` as for [`Action::Wait`]; the run ends on the
+    /// first field after which the screen matches.
     WaitForText {
         matcher: TextMatcher,
         timeout_fields: u32,
+        fast_forward: bool,
     },
     /// Read `len` bytes from `addr` without side effects.
     Peek {
-        addr: u16,
+        addr: MemAddr,
         len: u16,
     },
-    /// Write `bytes` starting at `addr`, with bus side effects.
+    /// Write `bytes` starting at `addr`: through the bus, with its side
+    /// effects, for a logical address; straight into RAM for a physical one.
     Poke {
-        addr: u16,
+        addr: MemAddr,
         bytes: Vec<u8>,
     },
+}
+
+/// Where an [`Action::Peek`]/[`Action::Poke`] address points.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MemAddr {
+    /// A CPU address, decoded through the current MMU (or SAM) map.
+    Logical(u16),
+    /// A byte offset into installed RAM, bypassing the memory map: the
+    /// offsets the debugger's Physical RAM view shows.
+    Physical(u32),
 }
 
 /// Which joystick port a [`Action::Joystick`] request drives.
@@ -227,6 +257,60 @@ pub struct VmInfo {
     pub slug: String,
     pub name: String,
     pub status: VmStatus,
+    /// The live machine's model, or the definition's when no VM is alive.
+    pub model: MachineVariant,
+    /// The live machine's RAM size, or the definition's when no VM is alive.
+    pub ram: MemorySize,
+    pub cpu: Cpu,
+    /// The definition's cartridge-port occupant, with embedded paths
+    /// resolved the way launching resolves them. A cartridge swapped from a
+    /// running VM's menu isn't reflected.
+    pub cartridge: CartridgeDTO,
+    /// `None` for a suspended VM whose window is closed: its media live in
+    /// the saved state, which only a resume reads back.
+    pub media: Option<VmMedia>,
+}
+
+/// [`VmInfo::model`]'s wire spelling, the same as a definition's
+/// `[hardware].variant`.
+pub fn model_id(variant: MachineVariant) -> &'static str {
+    match variant {
+        MachineVariant::Coco1 => "coco1",
+        MachineVariant::Coco2 => "coco2",
+        MachineVariant::Coco3 => "coco3",
+    }
+}
+
+/// The CPU a VM runs. The emulator implements only the MC6809
+/// (`crates/mc6809`); an HD6309 joins this enum once a core exists for it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Cpu {
+    MC6809,
+}
+
+impl Cpu {
+    /// Every CPU the emulator implements, in declaration order.
+    pub const ALL: [Cpu; 1] = [Cpu::MC6809];
+
+    /// The chip name, as listings spell it.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Cpu::MC6809 => "MC6809",
+        }
+    }
+}
+
+/// Media paths by drive index, as [`VmInfo::media`] reports them: a live
+/// VM's current mounts, or a powered-off VM's definition (what launching
+/// mounts).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct VmMedia {
+    /// FD-502 floppies, indexed like `insert_disk`'s `drive`.
+    pub disks: [Option<PathBuf>; UI_DRIVES],
+    pub vhds: [Option<PathBuf>; UI_DRIVES],
+    /// DriveWire disks; all empty when DriveWire is off.
+    pub drivewire: [Option<PathBuf>; coco_core::drivewire::DRIVE_COUNT],
+    pub tape: Option<PathBuf>,
 }
 
 /// A manager entry's lifecycle state.
