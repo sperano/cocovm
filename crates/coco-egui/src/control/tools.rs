@@ -7,10 +7,10 @@ use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 
 use super::jsonrpc::{INVALID_PARAMS, RpcError};
-use super::protocol::{
-    Action, ControlError, Reply, Request, ScreenSnapshot, Stick, TextMatcher, VmInfo,
-};
+use super::protocol::{Action, ControlError, Reply, Request, ScreenSnapshot, Stick, TextMatcher};
 use super::tool_defs;
+
+mod vms;
 
 /// Bytes shown per line of a [`peek`] hex dump.
 const HEX_DUMP_WIDTH: usize = 16;
@@ -75,8 +75,10 @@ fn dispatch(backend: &mut dyn Backend, params: Value) -> Result<Value, RpcError>
         other => other,
     };
     match call_params.name.as_str() {
-        "list_vms" => dispatch_list_vms(backend, args),
-        "start_vm" => dispatch_start_vm(backend, args),
+        "list_vms" => vms::dispatch_list_vms(backend, args),
+        "start_vm" => vms::dispatch_start_vm(backend, args),
+        "stop_vm" => vms::dispatch_stop_vm(backend, args),
+        "suspend_vm" => vms::dispatch_suspend_vm(backend, args),
         "screen_text" => dispatch_screen_text(backend, args),
         "screenshot" => dispatch_screenshot(backend, args),
         "type_text" => dispatch_type_text(backend, args),
@@ -140,21 +142,6 @@ fn done(reply: Reply, message: &str) -> Option<Value> {
     matches!(reply, Reply::Done).then(|| text_result(message.to_string()))
 }
 
-fn format_vms(vms: &[VmInfo]) -> String {
-    vms.iter()
-        .map(|v| format!("{} — {} ({})", v.slug, v.name, v.status.as_str()))
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
-fn vms_json(vms: &[VmInfo]) -> Value {
-    let vms: Vec<Value> = vms
-        .iter()
-        .map(|v| json!({"slug": v.slug, "name": v.name, "status": v.status.as_str()}))
-        .collect();
-    json!({"vms": vms})
-}
-
 fn format_screen(screen: &ScreenSnapshot) -> String {
     let cursor = match screen.cursor {
         Some(TextCursor { row, col }) => format!("cursor: row {row}, column {col} (0-based)"),
@@ -204,32 +191,6 @@ fn hex_dump(addr: u16, bytes: &[u8]) -> String {
 struct VmOnly {
     #[serde(default)]
     vm: Option<String>,
-}
-
-fn dispatch_list_vms(backend: &mut dyn Backend, args: Value) -> Result<Value, RpcError> {
-    let _: VmOnly = parse_args(args)?;
-    let req = Request {
-        vm: None,
-        action: Action::ListVms,
-    };
-    Ok(finish(backend, req, |reply| match reply {
-        Reply::Vms(vms) => Some(structured_result(format_vms(&vms), vms_json(&vms))),
-        _ => None,
-    }))
-}
-
-#[derive(Deserialize)]
-struct StartVmArgs {
-    vm: String,
-}
-
-fn dispatch_start_vm(backend: &mut dyn Backend, args: Value) -> Result<Value, RpcError> {
-    let StartVmArgs { vm } = parse_args(args)?;
-    let req = Request {
-        vm: Some(vm),
-        action: Action::StartVm,
-    };
-    Ok(finish(backend, req, |reply| done(reply, "Started.")))
 }
 
 fn dispatch_screen_text(backend: &mut dyn Backend, args: Value) -> Result<Value, RpcError> {

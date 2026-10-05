@@ -131,6 +131,31 @@ fn errors_when_the_target_vm_has_stopped() {
     assert!(manager.pending.is_empty());
 }
 
+/// A suspended VM keeps its paused `CocoApp` while its window is open, so
+/// its fields stop advancing; the request fails now rather than at its
+/// deadline.
+#[test]
+fn errors_when_the_target_vm_was_suspended() {
+    let mut manager = manager(vec![running_entry("frozen")]);
+    manager.entries[0].suspended = true;
+    let (reply, rx) = reply_pair();
+
+    manager.pending.push(PendingControl::new(
+        reply,
+        "frozen".to_string(),
+        PendingCondition::WaitUntilField(u64::MAX),
+        NO_FIELDS,
+        FIELD_RATE_HZ,
+    ));
+    manager.resolve_control_pending(&egui::Context::default());
+
+    match rx.recv().expect("reply sent") {
+        Response::Err(error) => assert!(error.message.contains("was suspended")),
+        other => panic!("expected an Err reply, got {other:?}"),
+    }
+    assert!(manager.pending.is_empty());
+}
+
 #[test]
 fn keeps_waiting_while_the_condition_is_unmet_and_the_deadline_has_not_passed() {
     let mut manager = manager(vec![running_entry("live")]);

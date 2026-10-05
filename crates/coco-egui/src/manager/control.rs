@@ -14,7 +14,9 @@ use eframe::egui;
 use super::{MachineEntry, ManagerApp};
 
 mod dispatch;
+mod lifecycle;
 mod pending;
+mod vm_info;
 
 /// Slack a deferred request (`type_text`, `press_keys`, `wait`) gets beyond
 /// the wall-clock time its fields should take, before it times out.
@@ -191,25 +193,19 @@ impl ManagerApp {
         }
     }
 
-    /// Every machine the manager knows, with its wire-protocol status.
+    /// Every machine the manager knows, with its wire-protocol status,
+    /// hardware, cartridge, and media.
     fn vm_infos(&self) -> Vec<crate::control::VmInfo> {
-        self.entries
-            .iter()
-            .map(|e| crate::control::VmInfo {
-                slug: e.slug.clone(),
-                name: e.def.name.clone(),
-                status: control_status(e),
-            })
-            .collect()
+        self.entries.iter().map(vm_info::vm_info).collect()
     }
 
     /// Resolve a request's `vm` slug to an entry index. `None` selects the
     /// sole Running entry (`crate::control::protocol`'s convention), erroring
     /// out by name when there are zero or several. `require_running`
     /// additionally rejects a *named* entry that isn't Running — every
-    /// mutating action but `start_vm` sets this (`start_vm` must be able to
-    /// resolve a Suspended or Powered Off target, since bringing one up is
-    /// the whole point).
+    /// mutating action but the lifecycle ones sets this (`start_vm`,
+    /// `stop_vm`, and `suspend_vm` must resolve a Suspended or Powered Off
+    /// target to bring it up, power it off, or report it as a no-op).
     fn resolve_vm(&self, vm: &Option<String>, require_running: bool) -> Result<usize, String> {
         match vm {
             Some(slug) => {

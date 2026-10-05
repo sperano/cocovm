@@ -1,8 +1,11 @@
 use super::*;
+use crate::control::protocol::VmStatus;
 
 const EXPECTED_NAMES: &[&str] = &[
     "list_vms",
     "start_vm",
+    "stop_vm",
+    "suspend_vm",
     "screen_text",
     "screenshot",
     "type_text",
@@ -60,10 +63,12 @@ fn names_match_expected_set_in_order() {
 }
 
 #[test]
-fn start_vm_requires_vm() {
+fn lifecycle_tools_require_vm() {
     let defs = definitions(true);
-    let start_vm = defs.iter().find(|d| d["name"] == "start_vm").unwrap();
-    assert_eq!(start_vm["inputSchema"]["required"], json!(["vm"]));
+    for name in ["start_vm", "stop_vm", "suspend_vm"] {
+        let def = defs.iter().find(|d| d["name"] == name).unwrap();
+        assert_eq!(def["inputSchema"]["required"], json!(["vm"]), "{name}");
+    }
 }
 
 #[test]
@@ -101,6 +106,8 @@ fn annotations_classify_read_only_and_mutating_tools() {
     let expected = [
         ("list_vms", true, false, true),
         ("start_vm", false, true, true),
+        ("stop_vm", false, true, true),
+        ("suspend_vm", false, true, true),
         ("screen_text", true, false, true),
         ("screenshot", true, false, true),
         ("type_text", false, true, false),

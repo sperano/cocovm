@@ -12,7 +12,8 @@ use super::{ManagerApp, PendingCondition, PendingControl};
 /// One [`PendingControl`]'s outcome this frame.
 enum Outcome {
     Done(Reply),
-    /// The target entry vanished because it stopped or its window closed.
+    /// The target entry vanished because it stopped, was suspended, or its
+    /// window closed.
     /// Rename transactions retarget pending requests before re-sorting.
     Gone(ControlError),
     TimedOut(ControlError),
@@ -67,6 +68,9 @@ impl ManagerApp {
         let Some(idx) = self.entries.iter().position(|e| e.slug == pending.slug) else {
             return Outcome::Gone(format!("VM '{}' no longer exists", pending.slug).into());
         };
+        if self.entries[idx].suspended {
+            return Outcome::Gone(format!("VM '{}' was suspended", pending.slug).into());
+        }
         let Some(vm) = self.entries[idx].vm.as_mut() else {
             return Outcome::Gone(format!("VM '{}' is no longer running", pending.slug).into());
         };

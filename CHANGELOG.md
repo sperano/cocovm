@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `stop_vm` and `suspend_vm` MCP tools, which work like the manager's Stop
+  and Suspend: both write modified floppies and tapes back to their files
+  first. If a write-back fails, `stop_vm` still powers the VM off and
+  returns an error naming the file, while `suspend_vm` leaves the VM
+  running.
 - Structured MCP tool results. For clients on protocol 2025-06-18,
   `list_vms`, `screen_text`, and `peek` declare an `outputSchema` and return
   `structuredContent` next to the existing text: the VM list; the screen
@@ -16,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rejected with HTTP 400.
 
 ### Changed
+- The MCP server's `list_vms` tool also reports each VM's model, RAM size,
+  CPU, cartridge, and mounted media.
+- A pending MCP `wait`, `wait_for_text`, `type_text`, or `press_keys` call
+  fails as soon as its VM is suspended, instead of timing out.
 - The MCP server's `screen_text` tool reports where BASIC's next character
   lands, as a 0-based row and column, on the 32-column screen and the
   `WIDTH 40`/`WIDTH 80` screens. In PMODE graphics it now says there is no
