@@ -260,7 +260,8 @@ fn set_running(include_annotations: bool) -> Value {
 fn wait(include_annotations: bool) -> Value {
     tool(
         "wait",
-        "Let video fields elapse before replying (60 fields is about 1 second).",
+        "Let video fields elapse before replying (60 fields is about 1 second). Fails if the \
+         VM is or becomes paused.",
         object_schema(
             json!({
                 "vm": vm_property(),
@@ -277,8 +278,8 @@ fn wait_for_text(include_annotations: bool) -> Value {
     tool_with_output(
         "wait_for_text",
         "Wait until decoded screen text matches a literal string or regular expression. Returns \
-         the matching screen, video mode, and cursor. On timeout, returns an error with the last \
-         screen state.",
+         the matching screen, video mode, and cursor. On timeout, or if the VM is or becomes \
+         paused before a match, returns an error with the last screen state.",
         object_schema(
             json!({
                 "vm": vm_property(),

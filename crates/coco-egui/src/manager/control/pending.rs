@@ -1,6 +1,6 @@
 //! Resolving deferred requests: checking each [`PendingControl`]'s condition
 //! against its (re-resolved, by slug) target entry every frame, replying
-//! once it's met, gone, or timed out.
+//! once it's met, gone, paused, or timed out.
 
 use std::time::Instant;
 
@@ -12,10 +12,13 @@ use super::{ManagerApp, PendingCondition, PendingControl};
 /// One [`PendingControl`]'s outcome this frame.
 enum Outcome {
     Done(Reply),
-    /// The target entry vanished because it stopped, was suspended, or its
-    /// window closed.
+    /// The target entry vanished because it stopped or its window closed.
     /// Rename transactions retarget pending requests before re-sorting.
     Gone(ControlError),
+    /// The target VM stopped advancing before the condition was met, so
+    /// its fields would never come: paused by `set_running` or the debugger,
+    /// or suspended from the manager. Carries [`paused_message`].
+    Paused(ControlError),
     TimedOut(ControlError),
     Waiting,
     /// Still waiting, but a `type_text` burst has drained to this many taps
@@ -23,9 +26,34 @@ enum Outcome {
     Progressed(usize),
 }
 
+/// The error for a request whose VM stopped advancing mid-wait, naming the
+/// tool that resumes it: a Suspended entry needs `start_vm` (`set_running`
+/// refuses it), a paused one `set_running`. Typed text or held keys stay
+/// queued and finish once the VM resumes; the message says so, since a
+/// retried `type_text` is refused until then.
+fn paused_message(pending: &PendingControl, suspended: bool) -> String {
+    let (state, resume_with) = if suspended {
+        ("suspended", "start_vm")
+    } else {
+        ("paused", "set_running")
+    };
+    let leftover = match pending.condition {
+        PendingCondition::WaitUntilField(_) | PendingCondition::WaitForText { .. } => "",
+        PendingCondition::TypeTextDrained | PendingCondition::KeysReleased => {
+            "; the input stays queued until then"
+        }
+    };
+    format!(
+        "VM '{}' was {state} while waiting for {}; call {resume_with} to resume{leftover}",
+        pending.slug,
+        pending.condition.describe()
+    )
+}
+
 impl ManagerApp {
     /// Reply to and drop every [`PendingControl`] whose condition is met,
-    /// whose target vanished, or whose deadline passed; keep the rest.
+    /// whose target vanished or paused, or whose deadline passed; keep the
+    /// rest.
     /// Called once per `update()`, after [`Self::draw_running_vms`] has run
     /// this frame's fields. Running VM viewports wake the manager as fields
     /// advance; the earliest deadline supplies a bounded wake for stalled VMs.
@@ -47,8 +75,9 @@ impl ManagerApp {
             }
             match self.check_pending(&pending, now) {
                 Outcome::Done(reply) => pending.reply.reply(Response::Ok(reply)),
-                Outcome::Gone(msg) => pending.reply.reply(Response::Err(msg)),
-                Outcome::TimedOut(error) => pending.reply.reply(Response::Err(error)),
+                Outcome::Gone(error) | Outcome::Paused(error) | Outcome::TimedOut(error) => {
+                    pending.reply.reply(Response::Err(error));
+                }
                 Outcome::Waiting => still_pending.push(pending),
                 Outcome::Progressed(remaining) => {
                     pending.note_progress(remaining, now);
@@ -68,9 +97,7 @@ impl ManagerApp {
         let Some(idx) = self.entries.iter().position(|e| e.slug == pending.slug) else {
             return Outcome::Gone(format!("VM '{}' no longer exists", pending.slug).into());
         };
-        if self.entries[idx].suspended {
-            return Outcome::Gone(format!("VM '{}' was suspended", pending.slug).into());
-        }
+        let suspended = self.entries[idx].suspended;
         let Some(vm) = self.entries[idx].vm.as_mut() else {
             return Outcome::Gone(format!("VM '{}' is no longer running", pending.slug).into());
         };
@@ -82,6 +109,10 @@ impl ManagerApp {
             let snapshot = vm.screen_snapshot();
             if matcher.is_match(&snapshot) {
                 return Outcome::Done(Reply::Screen(snapshot));
+            }
+            if !vm.running {
+                let message = paused_message(pending, suspended);
+                return Outcome::Paused(ControlError::with_screen(message, snapshot));
             }
             if vm.fields_run >= terminal_field || now >= pending.deadline {
                 return Outcome::TimedOut(text_timeout(snapshot));
@@ -96,6 +127,9 @@ impl ManagerApp {
         };
         if done {
             return Outcome::Done(Reply::Done);
+        }
+        if !vm.running {
+            return Outcome::Paused(paused_message(pending, suspended).into());
         }
         let remaining = vm.remote_type_ahead.queue.len();
         let typing = matches!(pending.condition, PendingCondition::TypeTextDrained);

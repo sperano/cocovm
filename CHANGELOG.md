@@ -24,7 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The MCP server's `list_vms` tool also reports each VM's model, RAM size,
   CPU, cartridge, and mounted media.
 - A pending MCP `wait`, `wait_for_text`, `type_text`, or `press_keys` call
-  fails as soon as its VM is suspended, instead of timing out.
+  fails as soon as its VM is paused or suspended, instead of timing out.
+  The error names the tool that resumes the VM.
 - The MCP server's `screen_text` tool reports where BASIC's next character
   lands, as a 0-based row and column, on the 32-column screen and the
   `WIDTH 40`/`WIDTH 80` screens. In PMODE graphics it now says there is no

@@ -175,10 +175,15 @@ impl ManagerApp {
     }
 
     /// `wait`: defer until `CocoApp::fields_run` reaches its current value
-    /// plus `fields` (clamped to [`crate::control::MAX_WAIT_FIELDS`]).
+    /// plus `fields` (clamped to [`crate::control::MAX_WAIT_FIELDS`]). A
+    /// paused VM is refused up front, as `type_text` and `press_keys` are:
+    /// its field count would never move.
     fn start_wait(&mut self, reply: ReplyHandle, vm: Option<String>, fields: u32) {
         let clamped = u64::from(fields.min(crate::control::MAX_WAIT_FIELDS));
         self.start_deferred(reply, vm, |app| {
+            if !app.running {
+                return Err(crate::app::PAUSED_ERROR.to_string());
+            }
             Ok((
                 PendingCondition::WaitUntilField(app.fields_run + clamped),
                 clamped,
