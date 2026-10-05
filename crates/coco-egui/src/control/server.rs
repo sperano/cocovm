@@ -13,7 +13,8 @@ use std::time::{Duration, Instant};
 use super::{Action, MCP_PATH, tool_defs};
 use super::{
     CONTROL_IO_TIMEOUT, CONTROL_REPLY_TIMEOUT, ControlError, Incoming, MAX_CONTROL_CONNECTIONS,
-    MAX_INCOMING_CONTROL_REQUESTS, Reply, ReplyHandle, Request, Response, Wake, http, mcp, tools,
+    MAX_INCOMING_CONTROL_REQUESTS, Reply, ReplyHandle, Request, Response, Wake, http, mcp, session,
+    tools,
 };
 
 /// How often a waiting connection checks for server shutdown.
@@ -117,7 +118,7 @@ fn accept_loop(
     stop: Arc<AtomicBool>,
     active: Arc<Mutex<ActiveConnections>>,
 ) {
-    let sessions = Arc::new(Mutex::new(http::SessionStore::default()));
+    let sessions = Arc::new(Mutex::new(session::SessionStore::default()));
     let mut workers = Vec::new();
     let mut next_connection_id = 0_u64;
     for stream in listener.incoming() {
@@ -156,7 +157,7 @@ fn spawn_connection(
     stream: TcpStream,
     tx: SyncSender<Incoming>,
     wake: Arc<WakeGate>,
-    sessions: Arc<Mutex<http::SessionStore>>,
+    sessions: Arc<Mutex<session::SessionStore>>,
     stop: Arc<AtomicBool>,
     guard: ConnectionGuard,
 ) -> io::Result<JoinHandle<()>> {
@@ -249,7 +250,7 @@ fn serve_connection(
     stream: TcpStream,
     tx: SyncSender<Incoming>,
     wake: Arc<WakeGate>,
-    sessions: Arc<Mutex<http::SessionStore>>,
+    sessions: Arc<Mutex<session::SessionStore>>,
     stop: Arc<AtomicBool>,
 ) {
     if stream.set_read_timeout(Some(CONTROL_IO_TIMEOUT)).is_err()

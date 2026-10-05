@@ -72,7 +72,7 @@ impl CocoApp {
 
     /// Run `n` fields through the debugger, stopping (and clearing `running`)
     /// on a breakpoint/watchpoint.
-    fn run_fields(&mut self, n: usize) {
+    pub(crate) fn run_fields(&mut self, n: usize) {
         for _ in 0..n {
             let _perf = crate::perf::span(crate::perf::Stage::FieldExecution);
             if self.type_ahead.is_active() {

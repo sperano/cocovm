@@ -95,39 +95,6 @@ fn origin_is_local_accepts_loopback_hosts_and_rejects_others() {
 }
 
 #[test]
-fn session_store_rejects_capacity_until_a_session_expires() {
-    let now = Instant::now();
-    let mut store = SessionStore::default();
-    for _ in 0..MAX_CONTROL_SESSIONS {
-        assert!(store.create(now, ProtocolVersion::June2025).is_some());
-    }
-    assert!(store.create(now, ProtocolVersion::June2025).is_none());
-
-    let expired = now + CONTROL_SESSION_IDLE_TIMEOUT;
-    assert!(store.create(expired, ProtocolVersion::June2025).is_some());
-    assert_eq!(store.sessions.len(), 1);
-}
-
-#[test]
-fn session_lookup_refreshes_its_idle_deadline() {
-    let now = Instant::now();
-    let mut store = SessionStore::default();
-    let id = store
-        .create(now, ProtocolVersion::March2025)
-        .expect("session admitted");
-    let refreshed = now + CONTROL_SESSION_IDLE_TIMEOUT / 2;
-
-    assert_eq!(
-        store.get_and_touch(&id, refreshed),
-        Some(ProtocolVersion::March2025)
-    );
-    assert_eq!(
-        store.get_and_touch(&id, now + CONTROL_SESSION_IDLE_TIMEOUT),
-        Some(ProtocolVersion::March2025)
-    );
-}
-
-#[test]
 fn protocol_version_header_overrides_the_session_version() {
     let sessions = Arc::new(Mutex::new(SessionStore::default()));
     let id = sessions
@@ -141,16 +108,17 @@ fn protocol_version_header_overrides_the_session_version() {
         ))
     };
 
+    let version = |headers: &str| {
+        request_version(&request(headers), &sessions).map(|(version, _session)| version)
+    };
+
+    assert_eq!(version(""), Ok(ProtocolVersion::March2025));
     assert_eq!(
-        request_version(&request(""), &sessions),
-        Ok(ProtocolVersion::March2025)
-    );
-    assert_eq!(
-        request_version(&request("MCP-Protocol-Version: 2025-06-18\r\n"), &sessions),
+        version("MCP-Protocol-Version: 2025-06-18\r\n"),
         Ok(ProtocolVersion::June2025)
     );
     assert_eq!(
-        request_version(&request("MCP-Protocol-Version: 1999-01-01\r\n"), &sessions),
+        version("MCP-Protocol-Version: 1999-01-01\r\n"),
         Err((400, &b"unsupported MCP-Protocol-Version"[..]))
     );
 }
@@ -160,11 +128,14 @@ fn request_version_rejects_missing_and_unknown_sessions() {
     let sessions = Arc::new(Mutex::new(SessionStore::default()));
     let no_session = parse("POST /mcp HTTP/1.1\r\nMCP-Protocol-Version: 2025-06-18\r\n\r\n");
     assert_eq!(
-        request_version(&no_session, &sessions),
-        Err((400, &b""[..]))
+        request_version(&no_session, &sessions).err(),
+        Some((400, &b""[..]))
     );
     let unknown = parse("POST /mcp HTTP/1.1\r\nMcp-Session-Id: nope\r\n\r\n");
-    assert_eq!(request_version(&unknown, &sessions), Err((404, &b""[..])));
+    assert_eq!(
+        request_version(&unknown, &sessions).err(),
+        Some((404, &b""[..]))
+    );
 }
 
 #[test]

@@ -8,15 +8,15 @@
 use std::collections::HashMap;
 use std::io::{self, BufRead, BufReader, BufWriter, Read, Write};
 use std::net::TcpStream;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::time::Instant;
 
 use serde_json::Value;
 
+use super::MCP_PATH;
 use super::jsonrpc;
 use super::mcp::{Mcp, ProtocolVersion};
-use super::{CONTROL_SESSION_IDLE_TIMEOUT, MAX_CONTROL_SESSIONS, MCP_PATH};
+use super::session::{ActiveSession, SessionStore};
 
 /// Longest request line + headers accepted, before the connection is closed
 /// with a 400.
@@ -24,10 +24,6 @@ const MAX_HEADER_BYTES: u64 = 16 * 1024;
 /// Longest request body accepted (a `poke`'s bytes are the largest
 /// legitimate `tools/call` body and sit far below this).
 const MAX_BODY_BYTES: usize = 1024 * 1024;
-/// Hex digits `generate_session_id` produces — 64 bits of a counter plus 64
-/// bits of wall-clock nanoseconds, so distinct only across connections, not
-/// cryptographically unguessable; the `Origin` check is the real defense.
-const SESSION_ID_HEX_CHARS: usize = 32;
 
 /// One parsed HTTP request. Header names are lower-cased so callers don't
 /// have to case-fold themselves.
@@ -187,52 +183,6 @@ fn reason_phrase(status: u16) -> &'static str {
     }
 }
 
-/// MCP sessions and their most recent successful lookup time.
-#[derive(Default)]
-pub(super) struct SessionStore {
-    sessions: HashMap<String, Session>,
-}
-
-struct Session {
-    last_used: Instant,
-    protocol_version: ProtocolVersion,
-}
-
-impl SessionStore {
-    fn create(&mut self, now: Instant, protocol_version: ProtocolVersion) -> Option<String> {
-        self.expire_idle(now);
-        if self.sessions.len() >= MAX_CONTROL_SESSIONS {
-            return None;
-        }
-        let id = generate_session_id();
-        self.sessions.insert(
-            id.clone(),
-            Session {
-                last_used: now,
-                protocol_version,
-            },
-        );
-        Some(id)
-    }
-
-    fn remove(&mut self, id: &str) {
-        self.sessions.remove(id);
-    }
-
-    fn get_and_touch(&mut self, id: &str, now: Instant) -> Option<ProtocolVersion> {
-        self.expire_idle(now);
-        let session = self.sessions.get_mut(id)?;
-        session.last_used = now;
-        Some(session.protocol_version)
-    }
-
-    fn expire_idle(&mut self, now: Instant) {
-        self.sessions.retain(|_, session| {
-            now.saturating_duration_since(session.last_used) < CONTROL_SESSION_IDLE_TIMEOUT
-        });
-    }
-}
-
 /// Serve one connection: parse-route-reply in a loop until EOF, a protocol
 /// error, or a `Connection: close` request. `sessions` is shared across every
 /// connection the listener accepts (MCP session IDs aren't per-connection).
@@ -334,8 +284,9 @@ fn handle_single_post(
     if method(&value) == Some("initialize") {
         return handle_initialize(handler, value, sessions, writer);
     }
-    let protocol_version = match request_version(request, sessions) {
-        Ok(version) => version,
+    // `_session` holds the session open until the response is written.
+    let (protocol_version, _session) = match request_version(request, sessions) {
+        Ok(started) => started,
         Err((status, body)) => return write_response(writer, status, "text/plain", body, &[]),
     };
     handler.set_protocol_version(protocol_version);
@@ -373,8 +324,8 @@ fn handle_batch_post(
     sessions: &Arc<Mutex<SessionStore>>,
     writer: &mut impl Write,
 ) -> io::Result<()> {
-    let protocol_version = match request_version(request, sessions) {
-        Ok(version) => version,
+    let (protocol_version, _session) = match request_version(request, sessions) {
+        Ok(started) => started,
         Err((status, body)) => return write_response(writer, status, "text/plain", body, &[]),
     };
     if !protocol_version.accepts_batches()
@@ -398,22 +349,24 @@ fn handle_batch_post(
 }
 
 /// The protocol version a request after `initialize` is answered in: its
-/// `MCP-Protocol-Version` header, else the version its session negotiated.
+/// `MCP-Protocol-Version` header, else the version its session negotiated,
+/// plus the hold on that session for the request's lifetime.
 /// `Err` holds the HTTP status and body for a missing or unknown session
 /// (see [`check_session`]) or an unsupported header (a 400 per spec
 /// 2025-06-18). `initialize` never comes here: it negotiates from its body.
-fn request_version(
+fn request_version<'a>(
     request: &HttpRequest,
-    sessions: &Arc<Mutex<SessionStore>>,
-) -> Result<ProtocolVersion, (u16, &'static [u8])> {
-    let session_version =
+    sessions: &'a Mutex<SessionStore>,
+) -> Result<(ProtocolVersion, ActiveSession<'a>), (u16, &'static [u8])> {
+    let (session_version, session) =
         check_session(request, sessions, Instant::now()).map_err(|status| (status, &b""[..]))?;
-    match request.header("mcp-protocol-version") {
-        None => Ok(session_version),
+    let version = match request.header("mcp-protocol-version") {
+        None => session_version,
         Some(header) => {
-            ProtocolVersion::parse(header).ok_or((400, &b"unsupported MCP-Protocol-Version"[..]))
+            ProtocolVersion::parse(header).ok_or((400, &b"unsupported MCP-Protocol-Version"[..]))?
         }
-    }
+    };
+    Ok((version, session))
 }
 
 fn method(value: &Value) -> Option<&str> {
@@ -458,33 +411,15 @@ fn dispatch_single(
 /// when the header is missing outright, `404` when it names a session the
 /// server doesn't know (expired, or never `initialize`d) — the spec's cue
 /// for the client to re-initialize.
-fn check_session(
+fn check_session<'a>(
     request: &HttpRequest,
-    sessions: &Arc<Mutex<SessionStore>>,
+    sessions: &'a Mutex<SessionStore>,
     now: Instant,
-) -> Result<ProtocolVersion, u16> {
+) -> Result<(ProtocolVersion, ActiveSession<'a>), u16> {
     let Some(id) = request.header("mcp-session-id") else {
         return Err(400);
     };
-    sessions
-        .lock()
-        .expect("sessions mutex poisoned")
-        .get_and_touch(id, now)
-        .ok_or(404)
-}
-
-fn generate_session_id() -> String {
-    static COUNTER: AtomicU64 = AtomicU64::new(0);
-    let counter = COUNTER.fetch_add(1, Ordering::Relaxed);
-    // Truncated to 64 bits: still ~16 significant hex digits of wall-clock
-    // nanoseconds, plenty to keep this side of the id from repeating.
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos() as u64;
-    let id = format!("{counter:016x}{nanos:016x}");
-    debug_assert_eq!(id.len(), SESSION_ID_HEX_CHARS);
-    id
+    ActiveSession::start(sessions, id, now).ok_or(404)
 }
 
 /// Whether an `Origin` header's host is this machine's loopback — the only
