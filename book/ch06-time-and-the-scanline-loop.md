@@ -2320,15 +2320,15 @@ this whole chapter has been building toward, stated as nine lines of
 test code.
 
 **Reading the screen without a framebuffer.** `screen_contains` at
-[`coco1_boot.rs:61-63`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/coco1_boot.rs#L61-L63)
+[`coco1_boot.rs:52-54`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/tests/coco1_boot.rs#L52-L54)
 calls `m.text_screen_lines()`, and that function does something worth
 looking at, from
-[`crates/coco-core/src/machine/video_mode.rs:92-112`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/video_mode.rs#L92-L112):
+[`crates/coco-core/src/machine/video_mode.rs:73-96`](https://github.com/sperano/cocovm/blob/main/crates/coco-core/src/machine/video_mode.rs#L73-L96):
 
 ```rust
 pub fn text_screen_lines(&mut self) -> Vec<String> {
     match self.video_mode() {
-        VideoMode::CocoText | VideoMode::CocoGraphics => {
+        VideoMode::CocoText => {
             let base = self.legacy_display_base();
             (0..video::ROWS as u16)
                 .map(|row| {
@@ -2349,7 +2349,10 @@ pub fn text_screen_lines(&mut self) -> Vec<String> {
 It does not read the RGBA framebuffer at all. It walks the legacy VDG text
 screen directly out of RAM, through the bus — honoring the MMU, though a
 CoCo 1 has none — and decodes each byte with `video::decode_alpha_char`,
-the very same function the real renderer uses. That last detail is what
+the very same function the real renderer uses. (The arms this excerpt
+elides cover the other modes: GIME hi-res text reads the GIME's own screen
+out of RAM, and the two graphics modes return a single placeholder line naming the mode,
+because a bitmap has no characters to decode.) That decoder detail is what
 makes the test trustworthy: because the decoder is shared, the test can
 never see something different from what a screen would actually show. A
 private test-only decoder would be a second implementation of the same

@@ -1,25 +1,48 @@
 //! Maps `tools/list` and `tools/call` onto the [`protocol`] request/reply
 //! types.
 
+use coco_core::TextCursor;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 
 use super::jsonrpc::{INVALID_PARAMS, RpcError};
-use super::protocol::{Action, Reply, Request, Stick, VmInfo};
+use super::protocol::{
+    Action, ControlError, Reply, Request, ScreenSnapshot, Stick, TextMatcher, VmInfo,
+};
 use super::tool_defs;
 
 /// Bytes shown per line of a [`peek`] hex dump.
 const HEX_DUMP_WIDTH: usize = 16;
+/// Tool-definition key for the result schema (protocol 2025-06-18 on).
+const OUTPUT_SCHEMA: &str = "outputSchema";
+/// Tool-result key for the value matching [`OUTPUT_SCHEMA`].
+const STRUCTURED_CONTENT: &str = "structuredContent";
 
 /// Sends one request and waits for its reply. Exists so `tools::call` can be
 /// tested against a mock instead of the real frame-loop queue.
 pub trait Backend {
-    fn call(&mut self, req: &Request) -> Result<Reply, String>;
+    fn call(&mut self, req: &Request) -> Result<Reply, ControlError>;
 }
 
-pub fn list() -> Value {
-    json!({"tools": tool_defs::definitions()})
+/// The `tools/list` result. `include_annotations` adds each tool's
+/// behavior hints (protocol 2025-03-26 on); without `structured_output`
+/// (clients older than protocol 2025-06-18) the tools carry no
+/// `outputSchema`.
+pub fn list(include_annotations: bool, structured_output: bool) -> Value {
+    let mut tools = tool_defs::definitions(include_annotations);
+    if !structured_output {
+        for tool in &mut tools {
+            remove_key(tool, OUTPUT_SCHEMA);
+        }
+    }
+    json!({"tools": tools})
+}
+
+fn remove_key(value: &mut Value, key: &str) {
+    if let Some(object) = value.as_object_mut() {
+        object.remove(key);
+    }
 }
 
 #[derive(Deserialize)]
@@ -31,7 +54,20 @@ struct CallParams {
 
 /// Dispatch one `tools/call`. `Err` only for malformed params (unknown tool,
 /// wrong argument shape); a tool or backend failure is `Ok` with `isError`.
-pub fn call(backend: &mut dyn Backend, params: Value) -> Result<Value, RpcError> {
+/// Without `structured_output` the result keeps only its text content.
+pub fn call(
+    backend: &mut dyn Backend,
+    params: Value,
+    structured_output: bool,
+) -> Result<Value, RpcError> {
+    let mut result = dispatch(backend, params)?;
+    if !structured_output {
+        remove_key(&mut result, STRUCTURED_CONTENT);
+    }
+    Ok(result)
+}
+
+fn dispatch(backend: &mut dyn Backend, params: Value) -> Result<Value, RpcError> {
     let call_params: CallParams = serde_json::from_value(params)
         .map_err(|e| RpcError::new(INVALID_PARAMS, format!("invalid tools/call params: {e}")))?;
     let args = match call_params.arguments {
@@ -51,6 +87,7 @@ pub fn call(backend: &mut dyn Backend, params: Value) -> Result<Value, RpcError>
         "reset" => dispatch_reset(backend, args),
         "set_running" => dispatch_set_running(backend, args),
         "wait" => dispatch_wait(backend, args),
+        "wait_for_text" => dispatch_wait_for_text(backend, args),
         "peek" => dispatch_peek(backend, args),
         "poke" => dispatch_poke(backend, args),
         other => Err(RpcError::new(
@@ -76,12 +113,23 @@ fn finish(
     match backend.call(&req) {
         Ok(reply) => on_ok(reply)
             .unwrap_or_else(|| error_result("cocovm returned an unexpected reply".into())),
-        Err(msg) => error_result(msg),
+        Err(error) => error_result(format_control_error(&error)),
     }
 }
 
 fn text_result(text: String) -> Value {
     json!({"content": [{"type": "text", "text": text}], "isError": false})
+}
+
+/// A text result plus the `structuredContent` its tool's `outputSchema`
+/// describes. The text stays human-readable rather than the serialized JSON
+/// the spec suggests: it is what pre-2025-06-18 clients show the model.
+fn structured_result(text: String, structured: Value) -> Value {
+    json!({
+        "content": [{"type": "text", "text": text}],
+        STRUCTURED_CONTENT: structured,
+        "isError": false
+    })
 }
 
 fn error_result(text: String) -> Value {
@@ -99,8 +147,40 @@ fn format_vms(vms: &[VmInfo]) -> String {
         .join("\n")
 }
 
-fn format_screen(lines: &[String], mode: &str) -> String {
-    format!("```\n{}\n```\n{mode}", lines.join("\n"))
+fn vms_json(vms: &[VmInfo]) -> Value {
+    let vms: Vec<Value> = vms
+        .iter()
+        .map(|v| json!({"slug": v.slug, "name": v.name, "status": v.status.as_str()}))
+        .collect();
+    json!({"vms": vms})
+}
+
+fn format_screen(screen: &ScreenSnapshot) -> String {
+    let cursor = match screen.cursor {
+        Some(TextCursor { row, col }) => format!("cursor: row {row}, column {col} (0-based)"),
+        None => "cursor: unknown (graphics mode, or BASIC is not driving this screen)".to_string(),
+    };
+    format!(
+        "```\n{}\n```\n{}\n{cursor}",
+        screen.lines.join("\n"),
+        screen.mode
+    )
+}
+
+/// `screen_text`'s `structuredContent`; `cursor` is left out when unknown.
+fn screen_json(snapshot: &ScreenSnapshot) -> Value {
+    let mut screen = json!({"lines": snapshot.lines, "mode": snapshot.mode});
+    if let Some(TextCursor { row, col }) = snapshot.cursor {
+        screen["cursor"] = json!({"row": row, "col": col});
+    }
+    screen
+}
+
+fn format_control_error(error: &ControlError) -> String {
+    match &error.screen {
+        Some(screen) => format!("{}\n{}", error.message, format_screen(screen)),
+        None => error.message.clone(),
+    }
 }
 
 fn hex_dump(addr: u16, bytes: &[u8]) -> String {
@@ -133,7 +213,7 @@ fn dispatch_list_vms(backend: &mut dyn Backend, args: Value) -> Result<Value, Rp
         action: Action::ListVms,
     };
     Ok(finish(backend, req, |reply| match reply {
-        Reply::Vms(vms) => Some(text_result(format_vms(&vms))),
+        Reply::Vms(vms) => Some(structured_result(format_vms(&vms), vms_json(&vms))),
         _ => None,
     }))
 }
@@ -159,7 +239,10 @@ fn dispatch_screen_text(backend: &mut dyn Backend, args: Value) -> Result<Value,
         action: Action::ScreenText,
     };
     Ok(finish(backend, req, |reply| match reply {
-        Reply::Screen { lines, mode } => Some(text_result(format_screen(&lines, &mode))),
+        Reply::Screen(screen) => Some(structured_result(
+            format_screen(&screen),
+            screen_json(&screen),
+        )),
         _ => None,
     }))
 }
@@ -351,6 +434,43 @@ fn dispatch_wait(backend: &mut dyn Backend, args: Value) -> Result<Value, RpcErr
 }
 
 #[derive(Deserialize)]
+struct WaitForTextArgs {
+    #[serde(default)]
+    vm: Option<String>,
+    pattern: String,
+    #[serde(default)]
+    regex: bool,
+    timeout_fields: u32,
+}
+
+fn dispatch_wait_for_text(backend: &mut dyn Backend, args: Value) -> Result<Value, RpcError> {
+    let WaitForTextArgs {
+        vm,
+        pattern,
+        regex,
+        timeout_fields,
+    } = parse_args(args)?;
+    let matcher = match TextMatcher::new(pattern, regex) {
+        Ok(matcher) => matcher,
+        Err(message) => return Ok(error_result(message)),
+    };
+    let req = Request {
+        vm,
+        action: Action::WaitForText {
+            matcher,
+            timeout_fields,
+        },
+    };
+    Ok(finish(backend, req, |reply| match reply {
+        Reply::Screen(screen) => Some(structured_result(
+            format_screen(&screen),
+            screen_json(&screen),
+        )),
+        _ => None,
+    }))
+}
+
+#[derive(Deserialize)]
 struct PeekArgs {
     #[serde(default)]
     vm: Option<String>,
@@ -365,7 +485,10 @@ fn dispatch_peek(backend: &mut dyn Backend, args: Value) -> Result<Value, RpcErr
         action: Action::Peek { addr, len },
     };
     Ok(finish(backend, req, move |reply| match reply {
-        Reply::Bytes(bytes) => Some(text_result(hex_dump(addr, &bytes))),
+        Reply::Bytes(bytes) => Some(structured_result(
+            hex_dump(addr, &bytes),
+            json!({"addr": addr, "bytes": bytes}),
+        )),
         _ => None,
     }))
 }
@@ -390,13 +513,13 @@ fn dispatch_poke(backend: &mut dyn Backend, args: Value) -> Result<Value, RpcErr
 
 #[cfg(test)]
 pub(crate) struct MockBackend {
-    pub(crate) responses: std::collections::VecDeque<Result<Reply, String>>,
+    pub(crate) responses: std::collections::VecDeque<Result<Reply, ControlError>>,
     pub(crate) calls: Vec<Request>,
 }
 
 #[cfg(test)]
 impl MockBackend {
-    pub(crate) fn new(responses: Vec<Result<Reply, String>>) -> Self {
+    pub(crate) fn new(responses: Vec<Result<Reply, ControlError>>) -> Self {
         Self {
             responses: responses.into(),
             calls: Vec::new(),
@@ -406,7 +529,7 @@ impl MockBackend {
 
 #[cfg(test)]
 impl Backend for MockBackend {
-    fn call(&mut self, req: &Request) -> Result<Reply, String> {
+    fn call(&mut self, req: &Request) -> Result<Reply, ControlError> {
         self.calls.push(req.clone());
         self.responses
             .pop_front()

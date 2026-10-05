@@ -85,6 +85,12 @@ enum PendingCondition {
     KeysReleased,
     /// `wait`: `CocoApp::fields_run` has reached the target count.
     WaitUntilField(u64),
+    /// `wait_for_text`: match before the terminal field, then time out with
+    /// the last snapshot.
+    WaitForText {
+        matcher: crate::control::TextMatcher,
+        terminal_field: u64,
+    },
 }
 
 impl PendingCondition {
@@ -94,6 +100,7 @@ impl PendingCondition {
             PendingCondition::TypeTextDrained => "typed text to drain",
             PendingCondition::KeysReleased => "held keys to release",
             PendingCondition::WaitUntilField(_) => "the requested fields to elapse",
+            PendingCondition::WaitForText { .. } => "screen text",
         }
     }
 }

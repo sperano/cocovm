@@ -14,8 +14,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   binding, then press the new key. They are stored as `hotkey_*` keys in
   `config.toml` and apply to open VM windows on Save. A hotkey must not type
   into the machine, clash with another hotkey, or take a built-in shortcut.
+- Structured MCP tool results. For clients on protocol 2025-06-18,
+  `list_vms`, `screen_text`, and `peek` declare an `outputSchema` and return
+  `structuredContent` next to the existing text: the VM list; the screen
+  lines, mode, and cursor; and the address and bytes. Older clients get the
+  text alone. Requests with an unsupported `MCP-Protocol-Version` header are
+  rejected with HTTP 400.
 
 ### Changed
+- The MCP server's `screen_text` tool reports where BASIC's next character
+  lands, as a 0-based row and column, on the 32-column screen and the
+  `WIDTH 40`/`WIDTH 80` screens. In PMODE graphics it now says there is no
+  text buffer instead of decoding graphics bytes as characters.
 - DriveWire settings apply to a running machine as they are edited: enabling
   or disabling DriveWire, HDB-DOS mode, and the DW0–DW3 images no longer wait
   for the next start from power off. A suspended machine still resumes its

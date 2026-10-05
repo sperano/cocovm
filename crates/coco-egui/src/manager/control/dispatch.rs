@@ -4,7 +4,9 @@
 
 use std::path::PathBuf;
 
-use crate::control::{Action, Incoming, Reply, ReplyHandle, Response};
+use crate::control::{
+    Action, ControlError, Incoming, Reply, ReplyHandle, Response, ScreenSnapshot, TextMatcher,
+};
 use crate::{CocoApp, UI_DRIVES};
 
 use super::{ManagerApp, PendingCondition, PendingControl};
@@ -35,7 +37,7 @@ fn with_cart_error(app: &mut CocoApp, action: impl FnOnce(&mut CocoApp)) -> Resu
 fn response(result: Result<Reply, String>) -> Response {
     match result {
         Ok(reply) => Response::Ok(reply),
-        Err(e) => Response::Err(e),
+        Err(e) => Response::Err(e.into()),
     }
 }
 
@@ -110,6 +112,10 @@ impl ManagerApp {
                 reply.reply(response(result));
             }
             Action::Wait { fields } => self.start_wait(reply, vm, fields),
+            Action::WaitForText {
+                matcher,
+                timeout_fields,
+            } => self.start_wait_for_text(reply, vm, matcher, timeout_fields),
             Action::Peek { addr, len } => {
                 let result = self
                     .resolve_alive(&vm)
@@ -202,6 +208,48 @@ impl ManagerApp {
         });
     }
 
+    fn start_wait_for_text(
+        &mut self,
+        reply: ReplyHandle,
+        vm: Option<String>,
+        matcher: TextMatcher,
+        timeout_fields: u32,
+    ) {
+        if reply.is_abandoned() {
+            return;
+        }
+        self.pending.retain(|pending| !pending.is_abandoned());
+        if self.pending.len() >= super::MAX_PENDING_CONTROL_REQUESTS {
+            return reply.reply(Response::Err(super::CONTROL_PENDING_OVERLOADED.into()));
+        }
+        let idx = match self.resolve_vm(&vm, true) {
+            Ok(idx) => idx,
+            Err(error) => return reply.reply(Response::Err(error.into())),
+        };
+        let slug = self.entries[idx].slug.clone();
+        let app = self.vm_mut(idx);
+        let timeout_fields = u64::from(timeout_fields.min(crate::control::MAX_WAIT_FIELDS));
+        let snapshot = app.screen_snapshot();
+        if matcher.is_match(&snapshot) {
+            return reply.reply(Response::Ok(Reply::Screen(snapshot)));
+        }
+        if timeout_fields == 0 {
+            return reply.reply(Response::Err(text_timeout(snapshot)));
+        }
+        let condition = PendingCondition::WaitForText {
+            matcher,
+            terminal_field: app.fields_run.saturating_add(timeout_fields),
+        };
+        let field_rate_hz = app.machine.config.video.field_rate_hz();
+        self.pending.push(PendingControl::new(
+            reply,
+            slug,
+            condition,
+            timeout_fields,
+            field_rate_hz,
+        ));
+    }
+
     /// Shared shape of the deferred actions: resolve a Running target, start
     /// the work on it (`start` yields the completion condition and the fields
     /// it should take), then defer the reply — or send the error back
@@ -217,11 +265,11 @@ impl ManagerApp {
         }
         self.pending.retain(|pending| !pending.is_abandoned());
         if self.pending.len() >= super::MAX_PENDING_CONTROL_REQUESTS {
-            return reply.reply(Response::Err(super::CONTROL_PENDING_OVERLOADED.to_string()));
+            return reply.reply(Response::Err(super::CONTROL_PENDING_OVERLOADED.into()));
         }
         let idx = match self.resolve_vm(&vm, true) {
             Ok(idx) => idx,
-            Err(e) => return reply.reply(Response::Err(e)),
+            Err(e) => return reply.reply(Response::Err(e.into())),
         };
         let slug = self.entries[idx].slug.clone();
         let app = self.vm_mut(idx);
@@ -234,9 +282,13 @@ impl ManagerApp {
                 expected_fields,
                 field_rate_hz,
             )),
-            Err(e) => reply.reply(Response::Err(e)),
+            Err(e) => reply.reply(Response::Err(e.into())),
         }
     }
+}
+
+fn text_timeout(screen: ScreenSnapshot) -> ControlError {
+    ControlError::with_screen("timed out waiting for screen text", screen)
 }
 
 #[cfg(test)]

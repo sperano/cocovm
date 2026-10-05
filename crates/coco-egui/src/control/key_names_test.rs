@@ -28,3 +28,20 @@ fn describe_lists_every_named_key() {
         assert!(text.contains(name), "{name} missing from {text}");
     }
 }
+
+#[test]
+fn text_taps_maps_every_character_in_order() {
+    let taps = text_taps("Hi!\n").expect("all characters have keys");
+    let expected: Vec<_> = "Hi!\n".chars().filter_map(kbd::char_key).collect();
+    assert_eq!(taps, expected);
+    assert_eq!(text_taps(""), Ok(Vec::new()));
+}
+
+#[test]
+fn text_taps_names_each_unmappable_character_once_in_order() {
+    let err = text_taps("A[B]~\t[é").expect_err("unmappable characters reject the text");
+    assert_eq!(
+        err,
+        "no CoCo key for '[', ']', '~', '\\t', 'é'; nothing was typed"
+    );
+}
