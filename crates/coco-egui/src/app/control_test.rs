@@ -299,6 +299,13 @@ fn physical_range_past_installed_ram_is_rejected() {
 }
 
 #[test]
+fn empty_physical_poke_at_the_end_of_ram_is_a_no_op() {
+    let mut app = boot();
+    let ram_len = app.machine.bus.ram.len() as u32;
+    app.poke_memory(MemAddr::Physical(ram_len), &[]).unwrap();
+}
+
+#[test]
 fn physical_poke_rejects_more_than_max_poke_len() {
     let mut app = boot();
     let too_many = vec![0; crate::control::MAX_POKE_LEN + 1];

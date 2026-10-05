@@ -253,7 +253,7 @@ impl CocoApp {
         let ram_len = self.machine.bus.ram.len();
         let start = addr as usize;
         match start.checked_add(len) {
-            Some(end) if start < ram_len && end <= ram_len => Ok(start..end),
+            Some(end) if end <= ram_len => Ok(start..end),
             _ => Err(format!(
                 "physical range ${start:06X}+{len} runs past installed RAM \
                  ($000000-${:06X})",
