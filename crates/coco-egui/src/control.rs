@@ -13,12 +13,14 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, mpsc};
 use std::time::Duration;
 
+pub mod enter_basic;
 pub mod http;
 pub mod jsonrpc;
 pub mod key_names;
 pub mod mcp;
 pub mod protocol;
 mod server;
+mod session;
 pub mod tool_defs;
 pub mod tools;
 
@@ -51,6 +53,10 @@ pub const MAX_POKE_LEN: usize = 4096;
 /// Most characters a single `type_text` may queue — about a minute of typing
 /// at the nominal tap pace, so the deferred reply stays bounded.
 pub const MAX_TYPE_TEXT_CHARS: usize = 600;
+/// Most characters a single `enter_basic` listing may hold. `enter_basic`
+/// types one line per deferred request, so this bounds the whole call (about
+/// 14 minutes at the nominal tap pace), not any one reply.
+pub const MAX_ENTER_BASIC_CHARS: usize = 8192;
 /// Most accepted client sockets served at once. Additional clients receive
 /// HTTP 503 without getting a connection thread.
 pub(crate) const MAX_CONTROL_CONNECTIONS: usize = 32;

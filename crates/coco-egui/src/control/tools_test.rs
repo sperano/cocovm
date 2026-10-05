@@ -120,42 +120,51 @@ fn peek_formats_a_hex_dump_sixteen_bytes_per_line() {
 
 #[test]
 fn every_listed_tool_round_trips_through_the_mock() {
-    let cases: Vec<(&str, Value, Reply)> = vec![
-        ("list_vms", json!({}), Reply::Vms(vec![])),
-        ("start_vm", json!({"vm": "coco3"}), Reply::Done),
-        ("screen_text", json!({}), screen_reply("HELLO")),
+    let cases: Vec<(&str, Value, Vec<Reply>)> = vec![
+        ("list_vms", json!({}), vec![Reply::Vms(vec![])]),
+        ("start_vm", json!({"vm": "coco3"}), vec![Reply::Done]),
+        ("screen_text", json!({}), vec![screen_reply("HELLO")]),
         (
             "screenshot",
             json!({}),
-            Reply::Screenshot {
+            vec![Reply::Screenshot {
                 png_base64: "YQ==".into(),
                 width: 640,
                 height: 240,
-            },
+            }],
         ),
-        ("type_text", json!({"text": "HI\n"}), Reply::Done),
-        ("press_keys", json!({"keys": ["A"]}), Reply::Done),
-        ("joystick", json!({"stick": "left"}), Reply::Done),
+        ("type_text", json!({"text": "HI\n"}), vec![Reply::Done]),
+        (
+            "enter_basic",
+            json!({"listing": "10 PRINT 1"}),
+            vec![Reply::Done, screen_reply("OK")],
+        ),
+        ("press_keys", json!({"keys": ["A"]}), vec![Reply::Done]),
+        ("joystick", json!({"stick": "left"}), vec![Reply::Done]),
         (
             "insert_disk",
             json!({"drive": 0, "path": "/tmp/x.dsk"}),
-            Reply::Done,
+            vec![Reply::Done],
         ),
-        ("eject_disk", json!({"drive": 0}), Reply::Done),
-        ("reset", json!({}), Reply::Done),
-        ("set_running", json!({"running": true}), Reply::Done),
-        ("wait", json!({"fields": 30}), Reply::Done),
+        ("eject_disk", json!({"drive": 0}), vec![Reply::Done]),
+        ("reset", json!({}), vec![Reply::Done]),
+        ("set_running", json!({"running": true}), vec![Reply::Done]),
+        ("wait", json!({"fields": 30}), vec![Reply::Done]),
         (
             "wait_for_text",
             json!({"pattern": "OK", "timeout_fields": 60}),
-            screen_reply("OK"),
+            vec![screen_reply("OK")],
         ),
         (
             "peek",
             json!({"addr": 0, "len": 4}),
-            Reply::Bytes(vec![1, 2, 3, 4]),
+            vec![Reply::Bytes(vec![1, 2, 3, 4])],
         ),
-        ("poke", json!({"addr": 0, "bytes": [1, 2, 3]}), Reply::Done),
+        (
+            "poke",
+            json!({"addr": 0, "bytes": [1, 2, 3]}),
+            vec![Reply::Done],
+        ),
     ];
     assert_eq!(
         cases.len(),
@@ -163,8 +172,8 @@ fn every_listed_tool_round_trips_through_the_mock() {
         "every tool must be covered here"
     );
 
-    for (name, args, reply) in cases {
-        let mut mock = MockBackend::new(vec![Ok(reply)]);
+    for (name, args, replies) in cases {
+        let mut mock = MockBackend::new(replies.into_iter().map(Ok).collect());
         let result = call(&mut mock, call_params(name, args), STRUCTURED)
             .unwrap_or_else(|e| panic!("{name}: {e:?}"));
         assert_eq!(
