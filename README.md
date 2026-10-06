@@ -180,10 +180,9 @@ The workspace contains these main components:
 | `crates/coco-core` | Headless machine, devices, media, audio, and video |
 | `crates/coco-egui` | Desktop frontend and virtual machine manager |
 | `crates/test-assets` | Test asset discovery and download support |
-| `book` | A 16-chapter course based on the emulator |
 
-For more detail, read the [course outline](book/README.md), the
-[performance guide](performance/README.md), and the [changelog](CHANGELOG.md).
+For more detail, read the [performance guide](performance/README.md) and the
+[changelog](CHANGELOG.md).
 
 ## License
 

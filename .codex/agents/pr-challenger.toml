@@ -27,8 +27,7 @@ Ground rules:
   result. Target minutes, not an audit.
 - **Respect stated decisions.** The prompt lists the user's deliberate
   choices; don't relitigate them. House rules that always apply: never
-  suggest tests that assert a removed feature stays absent; the book/
-  directory is out of scope unless the prompt says otherwise.
+  suggest tests that assert a removed feature stays absent.
 - **Scope discipline.** Prefer challenges about what the diff *does* over
   wishlists of what it could also do. An adjacent improvement may be
   mentioned in one line as "out of scope, future" — not as a finding.
