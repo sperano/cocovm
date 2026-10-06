@@ -1,0 +1,139 @@
+<?xml version="1.0" ?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="940" viewBox="0 0 1000 940" role="img" aria-labelledby="title desc">
+  <title id="title">Proposed toolbar states and compact layout</title>
+  <desc id="desc">Empty slots disable Load. Suspension disables Save and Load. Icons-only mode keeps a text slot selector. Narrow windows use a States menu with numbered actions.</desc>
+  <defs>
+    <g id="start" fill="currentColor">
+      <path d="M-6-10 10 0-6 10Z"/>
+    </g>
+    <g id="pause" fill="currentColor">
+      <rect x="-8" y="-10" width="5" height="20"/>
+      <rect x="3" y="-10" width="5" height="20"/>
+    </g>
+    <g id="stop" fill="currentColor">
+      <rect x="-9" y="-9" width="18" height="18" rx="1"/>
+    </g>
+    <g id="reset" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M8-5A10 10 0 1 1-6-8M-7-13v7h7"/>
+    </g>
+    <g id="save" fill="none" stroke="currentColor" stroke-width="2">
+      <rect x="-13" y="-11" width="26" height="22" rx="2"/>
+      <path d="M-8 6h16M0-7v10M-4-1 0 3 4-1"/>
+    </g>
+    <g id="load" fill="none" stroke="currentColor" stroke-width="2">
+      <rect x="-13" y="-11" width="26" height="22" rx="2"/>
+      <path d="M-8 6h16M0 3V-7M-4-3 0-7 4-3"/>
+    </g>
+    <g id="states" fill="none" stroke="currentColor" stroke-width="2">
+      <rect x="-11" y="-9" width="22" height="18" rx="2"/>
+      <path d="M-5-3H5M-5 3H5"/>
+    </g>
+  </defs>
+  <g font-family="FreeSans, sans-serif">
+    <rect x="0" y="0" width="1000" height="940" rx="0" fill="#181a1e" stroke="none"/>
+    <text x="28" y="38" font-size="24" fill="#e3e5e8" text-anchor="start">Save-state toolbar variants</text>
+    <text x="28" y="65" font-size="14" fill="#a4acb8" text-anchor="start">Proposal · the selected slot stays visible wherever there are direct actions</text>
+    <text x="28" y="108" font-size="18" fill="#e3e5e8" text-anchor="start">Empty slot selected</text>
+    <rect x="28" y="122" width="944" height="64" rx="4" fill="#24272c" stroke="none"/>
+    <rect x="36" y="128" width="64" height="52" rx="4" fill="#282b30" stroke="none"/>
+    <use href="#start" transform="translate(68.0 147)" color="#626975"/>
+    <text x="68.0" y="171" font-size="11" fill="#626975" text-anchor="middle">Start</text>
+    <rect x="102" y="128" width="64" height="52" rx="4" fill="#2f333a" stroke="none"/>
+    <use href="#pause" transform="translate(134.0 147)" color="#e3e5e8"/>
+    <text x="134.0" y="171" font-size="11" fill="#e3e5e8" text-anchor="middle">Suspend</text>
+    <rect x="168" y="128" width="64" height="52" rx="4" fill="#2f333a" stroke="none"/>
+    <use href="#stop" transform="translate(200.0 147)" color="#e3e5e8"/>
+    <text x="200.0" y="171" font-size="11" fill="#e3e5e8" text-anchor="middle">Stop</text>
+    <rect x="234" y="128" width="64" height="52" rx="4" fill="#2f333a" stroke="none"/>
+    <use href="#reset" transform="translate(266.0 147)" color="#e3e5e8"/>
+    <text x="266.0" y="171" font-size="11" fill="#e3e5e8" text-anchor="middle">Reset</text>
+    <path d="M309 134v40" stroke="#505660"/>
+    <rect x="322" y="128" width="108" height="52" rx="4" fill="#303b49" stroke="#657e9e"/>
+    <text x="334" y="150" font-size="14" fill="#e3e5e8" text-anchor="start">Slot 2 ▾</text>
+    <text x="334" y="168" font-size="11" fill="#a4acb8" text-anchor="start">Shared slots</text>
+    <rect x="436" y="128" width="64" height="52" rx="4" fill="#2f333a" stroke="none"/>
+    <use href="#save" transform="translate(468.0 147)" color="#e3e5e8"/>
+    <text x="468.0" y="171" font-size="11" fill="#e3e5e8" text-anchor="middle">Save</text>
+    <rect x="502" y="128" width="64" height="52" rx="4" fill="#282b30" stroke="none"/>
+    <use href="#load" transform="translate(534.0 147)" color="#626975"/>
+    <text x="534.0" y="171" font-size="11" fill="#626975" text-anchor="middle">Load</text>
+    <text x="28" y="211" font-size="14" fill="#a4acb8" text-anchor="start">Load is disabled. Save creates a state in slot 2.</text>
+    <text x="28" y="258" font-size="18" fill="#e3e5e8" text-anchor="start">Suspended VM</text>
+    <rect x="28" y="272" width="944" height="64" rx="4" fill="#24272c" stroke="none"/>
+    <rect x="36" y="278" width="64" height="52" rx="4" fill="#2f333a" stroke="none"/>
+    <use href="#start" transform="translate(68.0 297)" color="#e3e5e8"/>
+    <text x="68.0" y="321" font-size="11" fill="#e3e5e8" text-anchor="middle">Start</text>
+    <rect x="102" y="278" width="64" height="52" rx="4" fill="#282b30" stroke="none"/>
+    <use href="#pause" transform="translate(134.0 297)" color="#626975"/>
+    <text x="134.0" y="321" font-size="11" fill="#626975" text-anchor="middle">Suspend</text>
+    <rect x="168" y="278" width="64" height="52" rx="4" fill="#2f333a" stroke="none"/>
+    <use href="#stop" transform="translate(200.0 297)" color="#e3e5e8"/>
+    <text x="200.0" y="321" font-size="11" fill="#e3e5e8" text-anchor="middle">Stop</text>
+    <rect x="234" y="278" width="64" height="52" rx="4" fill="#282b30" stroke="none"/>
+    <use href="#reset" transform="translate(266.0 297)" color="#626975"/>
+    <text x="266.0" y="321" font-size="11" fill="#626975" text-anchor="middle">Reset</text>
+    <path d="M309 284v40" stroke="#505660"/>
+    <rect x="322" y="278" width="108" height="52" rx="4" fill="#303b49" stroke="#657e9e"/>
+    <text x="334" y="300" font-size="14" fill="#e3e5e8" text-anchor="start">Slot 1 ▾</text>
+    <text x="334" y="318" font-size="11" fill="#a4acb8" text-anchor="start">Shared slots</text>
+    <rect x="436" y="278" width="64" height="52" rx="4" fill="#282b30" stroke="none"/>
+    <use href="#save" transform="translate(468.0 297)" color="#626975"/>
+    <text x="468.0" y="321" font-size="11" fill="#626975" text-anchor="middle">Save</text>
+    <rect x="502" y="278" width="64" height="52" rx="4" fill="#282b30" stroke="none"/>
+    <use href="#load" transform="translate(534.0 297)" color="#626975"/>
+    <text x="534.0" y="321" font-size="11" fill="#626975" text-anchor="middle">Load</text>
+    <text x="28" y="361" font-size="14" fill="#a4acb8" text-anchor="start">Save and Load are disabled until the machine resumes.</text>
+    <text x="28" y="408" font-size="18" fill="#e3e5e8" text-anchor="start">Icons-only preference</text>
+    <rect x="28" y="422" width="944" height="64" rx="4" fill="#24272c" stroke="none"/>
+    <rect x="36" y="428" width="52" height="52" rx="4" fill="#282b30" stroke="none"/>
+    <use href="#start" transform="translate(62.0 454)" color="#626975"/>
+    <rect x="90" y="428" width="52" height="52" rx="4" fill="#2f333a" stroke="none"/>
+    <use href="#pause" transform="translate(116.0 454)" color="#e3e5e8"/>
+    <rect x="144" y="428" width="52" height="52" rx="4" fill="#2f333a" stroke="none"/>
+    <use href="#stop" transform="translate(170.0 454)" color="#e3e5e8"/>
+    <rect x="198" y="428" width="52" height="52" rx="4" fill="#2f333a" stroke="none"/>
+    <use href="#reset" transform="translate(224.0 454)" color="#e3e5e8"/>
+    <path d="M261 434v40" stroke="#505660"/>
+    <rect x="274" y="428" width="108" height="52" rx="4" fill="#303b49" stroke="#657e9e"/>
+    <text x="286" y="450" font-size="14" fill="#e3e5e8" text-anchor="start">Slot 1 ▾</text>
+    <text x="286" y="468" font-size="11" fill="#a4acb8" text-anchor="start">Shared slots</text>
+    <rect x="388" y="428" width="52" height="52" rx="4" fill="#2f333a" stroke="none"/>
+    <use href="#save" transform="translate(414.0 454)" color="#e3e5e8"/>
+    <rect x="442" y="428" width="52" height="52" rx="4" fill="#2f333a" stroke="none"/>
+    <use href="#load" transform="translate(468.0 454)" color="#e3e5e8"/>
+    <text x="28" y="511" font-size="14" fill="#a4acb8" text-anchor="start">Keep the slot label; hide only the action captions.</text>
+    <text x="28" y="558" font-size="18" fill="#e3e5e8" text-anchor="start">Narrow window</text>
+    <rect x="28" y="572" width="386" height="64" rx="4" fill="#24272c" stroke="none"/>
+    <rect x="36" y="578" width="64" height="52" rx="4" fill="#282b30" stroke="none"/>
+    <use href="#start" transform="translate(68.0 597)" color="#626975"/>
+    <text x="68.0" y="621" font-size="11" fill="#626975" text-anchor="middle">Start</text>
+    <rect x="102" y="578" width="64" height="52" rx="4" fill="#2f333a" stroke="none"/>
+    <use href="#pause" transform="translate(134.0 597)" color="#e3e5e8"/>
+    <text x="134.0" y="621" font-size="11" fill="#e3e5e8" text-anchor="middle">Suspend</text>
+    <rect x="168" y="578" width="64" height="52" rx="4" fill="#2f333a" stroke="none"/>
+    <use href="#stop" transform="translate(200.0 597)" color="#e3e5e8"/>
+    <text x="200.0" y="621" font-size="11" fill="#e3e5e8" text-anchor="middle">Stop</text>
+    <rect x="234" y="578" width="64" height="52" rx="4" fill="#2f333a" stroke="none"/>
+    <use href="#reset" transform="translate(266.0 597)" color="#e3e5e8"/>
+    <text x="266.0" y="621" font-size="11" fill="#e3e5e8" text-anchor="middle">Reset</text>
+    <path d="M309 584v40" stroke="#505660"/>
+    <rect x="322" y="578" width="64" height="52" rx="4" fill="#2f333a" stroke="none"/>
+    <use href="#states" transform="translate(354.0 597)" color="#e3e5e8"/>
+    <text x="354.0" y="621" font-size="11" fill="#e3e5e8" text-anchor="middle">States</text>
+    <rect x="28" y="647" width="386" height="224" rx="4" fill="#292d34" stroke="#596373"/>
+    <text x="45" y="675" font-size="14" fill="#e3e5e8" text-anchor="start">Save to slot 1</text>
+    <text x="394" y="675" font-size="12" fill="#a4acb8" text-anchor="end">Ctrl+Shift+1</text>
+    <text x="45" y="708" font-size="14" fill="#e3e5e8" text-anchor="start">Load from slot 1</text>
+    <text x="394" y="708" font-size="12" fill="#a4acb8" text-anchor="end">Ctrl+1</text>
+    <text x="45" y="743" font-size="13" fill="#e3e5e8" text-anchor="start">✓  Slot 1     2026-10-06 14:32</text>
+    <text x="45" y="773" font-size="13" fill="#e3e5e8" text-anchor="start">    Slot 2     Empty</text>
+    <text x="45" y="803" font-size="13" fill="#e3e5e8" text-anchor="start">    Slot 3     2026-10-06 14:10</text>
+    <text x="45" y="849" font-size="12" fill="#a4acb8" text-anchor="start">Shared across VM windows</text>
+    <text x="455" y="678" font-size="15" fill="#e3e5e8" text-anchor="start">States opens this menu.</text>
+    <text x="455" y="710" font-size="14" fill="#a4acb8" text-anchor="start">The toolbar keeps its existing height.</text>
+    <text x="455" y="749" font-size="14" fill="#a4acb8" text-anchor="start">If even States cannot fit, use Machine.</text>
+    <text x="455" y="789" font-size="13" fill="#a4acb8" text-anchor="start">Shortcuts shown for Windows and Linux.</text>
+    <text x="455" y="817" font-size="13" fill="#a4acb8" text-anchor="start">On macOS, display Command instead of Ctrl.</text>
+    <text x="28" y="913" font-size="12" fill="#a4acb8" text-anchor="start">Illustrative layouts · disabled controls also need explanatory tooltips and accessible names</text>
+  </g>
+</svg>
