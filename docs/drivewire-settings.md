@@ -48,5 +48,4 @@ settings section as those features become available.
 
 File-backed disk transfers run on a host worker. Hover over a DriveWire status
 entry to inspect pending work and errors. If host I/O is pending, save, suspend,
-and restore report an error so you can retry after it finishes. See
-[host-service lifecycle](drivewire-lifecycle.md) for reset and cancellation behavior.
+and restore report an error so you can retry after it finishes.
