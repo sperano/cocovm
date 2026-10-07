@@ -2,7 +2,7 @@
 //! Save and Load tiles acting on the selected state (`save_state/quick.rs`).
 //! When the row is too narrow it collapses to one States tile opening a menu
 //! with the same controls, and when even that does not fit it is left out
-//! (the Machine menu's Quick Save/Quick Load stay). The fit is measured from
+//! (the numbered chords still reach States 1 to 3). The fit is measured from
 //! the available width and the tile dimensions, never a fixed breakpoint,
 //! and the toolbar never wraps: its height is part of the window-sizing math
 //! (`crate::TOOLBAR_H`).
@@ -40,7 +40,7 @@ pub(crate) enum GroupFit {
     Full,
     /// One States tile with a menu.
     Collapsed,
-    /// Nothing: the Machine menu remains.
+    /// Nothing: only the numbered chords remain.
     Hidden,
 }
 

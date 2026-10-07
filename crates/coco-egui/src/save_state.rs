@@ -1,7 +1,7 @@
 //! Frontend save-state UX: Machine-menu Save/Load State, the quick states
-//! (`quick.rs`) with their submenus and keyboard chords, and the status-bar
-//! toast — all built on top of the engine in
-//! [`coco_core::snapshot`], which this module is the only caller of.
+//! (`quick.rs`) with their keyboard chords, and the status-bar toast — all
+//! built on top of the engine in [`coco_core::snapshot`], which this module
+//! is the only caller of.
 //!
 //! [`CocoApp::save_state_to`]/[`CocoApp::load_state_from`] are the two
 //! entry points; everything else here is either UI chrome around them or the
@@ -65,9 +65,8 @@ impl CocoApp {
         Some(msg.clone())
     }
 
-    /// The Machine menu's Save/Load State section: file-dialog Save/Load plus
-    /// the [`QUICK_SLOTS`] Quick Save/Quick Load submenus. Quick Load greys
-    /// out states with no file.
+    /// The Machine menu's Save/Load State section: file-dialog Save/Load.
+    /// The quick states live on the toolbar and the numbered chords.
     pub(crate) fn draw_save_state_menu(&mut self, ui: &mut egui::Ui) {
         if ui.button("Save State…").clicked() {
             ui.close();
@@ -91,44 +90,6 @@ impl CocoApp {
                     Err(e) => self.cart_error = Some(e),
                 }
             }
-        }
-        ui.menu_button("Quick Save", |ui| {
-            for slot in 0..QUICK_SLOTS {
-                let button = self.quick_state_button(ui, slot, save_slot_shortcut);
-                if ui.add(button).clicked() {
-                    self.quick_save(slot);
-                    ui.close();
-                }
-            }
-        });
-        ui.menu_button("Quick Load", |ui| {
-            for slot in 0..QUICK_SLOTS {
-                let occupied = !self.quick_state_file(slot).is_empty();
-                let button = self.quick_state_button(ui, slot, load_slot_shortcut);
-                if ui
-                    .add_enabled(occupied, button)
-                    .on_disabled_hover_text(empty_state_hover(slot))
-                    .clicked()
-                {
-                    self.quick_load(slot, ui.ctx());
-                    ui.close();
-                }
-            }
-        });
-    }
-
-    /// One Quick Save/Quick Load submenu row: `slot`'s label, plus its chord
-    /// when `shortcut` has one for it.
-    fn quick_state_button(
-        &self,
-        ui: &egui::Ui,
-        slot: usize,
-        shortcut: fn(usize) -> Option<egui::KeyboardShortcut>,
-    ) -> egui::Button<'static> {
-        let button = egui::Button::new(self.quick_state_label(slot));
-        match shortcut(slot) {
-            Some(s) => button.shortcut_text(ui.ctx().format_shortcut(&s)),
-            None => button,
         }
     }
 }
