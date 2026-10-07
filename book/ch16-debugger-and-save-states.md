@@ -2166,6 +2166,111 @@ scripted key-type-ahead buffer left over from before the load has no
 business being replayed into a machine whose BASIC prompt, cursor position,
 and keyboard-scan state just changed underneath it.
 
+### Quick states: ten shared files and a selector
+
+Everything so far starts from a path the user picked in a file dialog. The
+frontend also offers *quick states*: ten fixed files, **State 1** to
+**State 10**, under the data directory's `save-states/` folder
+(`slot-1.ccstate` to `slot-10.ccstate`, names kept from when the feature
+called them slots). They belong to the application, not to a machine, so
+every VM window sees the same ten. You reach them three ways: the **State**
+selector and the **Save** and **Load** tiles on each VM window's toolbar
+(Chapter 15 shows how that group fits the row), the Machine menu's Quick
+Save and Quick Load submenus, and ⌘1 to ⌘3 (load) or ⌘⇧1 to ⌘⇧3 (save) for
+the first three states. All of them go through the same two methods in
+[`crates/coco-egui/src/save_state/quick.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/save_state/quick.rs),
+and the interesting decisions are about what counts as "there is something
+to load."
+
+The toolbar disables **Load** when the selected state is empty, and it has
+to stay right when another VM window saves into that state, or when you
+delete the file by hand. Rather than cache occupancy and work out when to
+invalidate it, the toolbar asks the file system on every frame it draws:
+
+```rust
+    pub(crate) fn probe(path: &Path) -> Self {
+        match std::fs::metadata(path) {
+            Ok(meta) => Self::Saved(meta.modified().ok()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Self::Empty,
+            Err(_) => Self::Saved(None),
+        }
+    }
+```
+
+([`quick.rs:97-103`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/save_state/quick.rs#L97-L103).)
+One `stat` per frame is cheap, and it is the immediate-mode answer to cache
+invalidation: there is no cache to invalidate. The match arms matter as much
+as the frequency. Only `NotFound` makes a state `Empty`. A file that exists
+but is corrupt, unreadable, or written by a future schema stays `Saved`, so
+**Load** stays enabled and the restore path's own error, the same one the
+file dialog's Load State shows, explains what went wrong. Disabling the
+button for those cases would hide the one message that says why the state
+doesn't load.
+
+The second decision is how a quick action reports success. The toolbar's
+selection follows the last *successful* quick save or load from any of the
+three entry points, and a failed one must leave it alone. That needs a
+yes-or-no answer, and the toast text is the wrong place to look for one,
+for the same reason `RestoreNote` is an enum and not a string: wording
+changes. So
+`quick_save` and `quick_load` return `bool`:
+
+```rust
+    pub(crate) fn quick_load(&mut self, slot: usize, ctx: &egui::Context) -> bool {
+        let restored = self
+            .quick_state_path(slot)
+            .ok_or_else(|| NO_DATA_DIR.to_string())
+            .and_then(|path| self.restore_state_from(&path));
+        match restored {
+            Ok(notes) => {
+                let head = format!("Loaded {}", state_name(slot));
+                self.set_toast(super::with_notes(&head, &notes));
+                self.refresh_window_title(ctx);
+                self.selected_quick_state = slot;
+                true
+            }
+            Err(e) => {
+                self.cart_error = Some(e);
+                false
+            }
+        }
+    }
+```
+
+([`quick.rs:190-208`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/save_state/quick.rs#L190-L208).)
+`restore_state_from` is `load_state_from` without its toast. It returns the
+restore notes instead, so each caller words its own confirmation: "State
+loaded" for a file-dialog load, "Loaded State 4" for a quick one, with the
+notes appended to either. `write_state_to` plays the same role on the save
+side. The selection change sits in the `Ok` arm, next to the toast, which
+makes "a failed action leaves the selection unchanged" a property of the
+code's shape rather than something each caller has to remember.
+
+The numbered load chord adds one more rule. A menu item or a disabled tile
+can't be clicked when its state is empty, but a key chord can always be
+pressed, so `quick_load_shortcut` checks first:
+
+```rust
+    pub(crate) fn quick_load_shortcut(&mut self, slot: usize, ctx: &egui::Context) {
+        if self.quick_state_file(slot).is_empty() {
+            self.set_toast(empty_state_toast(slot));
+        } else {
+            self.quick_load(slot, ctx);
+        }
+    }
+```
+
+([`quick.rs:212-218`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/save_state/quick.rs#L212-L218).)
+Pressing ⌘2 with nothing in State 2 shows "State 2 is empty" in the status
+bar and changes nothing, instead of opening an error dialog about a missing
+file.
+
+Two limits complete the picture. While a machine is suspended, Save and
+Load are disabled: the live machine must stay identical to its frozen
+`.ccstate` until it resumes. A machine paused in the debugger is a different
+case, and both stay available, because a breakpoint is often exactly the
+moment worth saving.
+
 ---
 
 ## 16.10 `hostile_payload.rs`: a save file is untrusted input

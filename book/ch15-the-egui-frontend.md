@@ -46,7 +46,7 @@ There is one honest omission. This chapter deliberately walks past two
 directories, `debugger/` and `save_state/`, without opening them. They are
 Chapter 16's material, and you will see their call sites here — a `run_field`
 that routes through a breakpoint check, a keyboard shortcut that
-quick-saves a slot — without needing to know what is behind them yet.
+quick-saves a numbered state — without needing to know what is behind them yet.
 
 ---
 
@@ -1119,6 +1119,63 @@ layout is not persisted at all. It is recomputed from the current window
 size sixty times a second, forever. An initial guess is a *guess*, in the
 plainest sense, and the next frame overwrites it.
 
+### A toolbar that measures itself instead of wrapping
+
+`TOOLBAR_H` is a constant in that sizing formula, which makes the toolbar
+the one piece of chrome whose height must never change. That rules out the
+usual answer to a narrow window, wrapping the row onto a second line. The
+VM toolbar has to solve the problem the other way: by deciding, every frame,
+how much of itself to draw.
+
+Its row holds the Start, Suspend, Stop, and Reset tiles, then a quick-state
+group, then the optional Debug tile. The quick-state group is a **State 1**
+selector followed by **Save** and **Load** tiles (Chapter 16 covers what they
+do). It is the widest part of the row, so it is the part that gives way. The
+decision itself is a pure function:
+
+```rust
+pub(crate) fn group_fit(available: f32, full: f32, collapsed: f32, reserve: f32) -> GroupFit {
+    let room = available - reserve;
+    if room >= full {
+        GroupFit::Full
+    } else if room >= collapsed {
+        GroupFit::Collapsed
+    } else {
+        GroupFit::Hidden
+    }
+}
+```
+
+([`crates/coco-egui/src/chrome/toolbar/quick_states.rs:49-58`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/chrome/toolbar/quick_states.rs#L49-L58).)
+`Full` draws the selector and both tiles. `Collapsed` draws a single
+**States** tile whose menu holds the same Save and Load actions and the
+state list. `Hidden` draws nothing, and the Machine menu's Quick Save and
+Quick Load submenus remain the way in. `reserve` is the room the Debug tile
+needs after the group, so the group collapses before it would push that
+tile off the window.
+
+None of the inputs is a breakpoint like "below 600 pixels." The caller,
+`quick_state_group`, computes them from the same constants the tiles are
+drawn with: `toolbar_button_width` is a tile's fixed footprint plus the
+row's item spacing, `toolbar_separator_width` adds up the separator's gaps,
+and the selector's width comes from laying out its widest label, "State 10,"
+in the button font. The selector then passes that width to
+`ComboBox::width`, so the width the fit test assumed is the width egui
+draws. `ui.available_width()` supplies the other side of the comparison.
+Because egui measures in points, not physical pixels, the same comparison
+holds at any UI scale.
+
+This is the same lesson as the initial window size, from the other
+direction. A retained-mode toolbar would need a resize handler that
+rebuilds its widgets when the window crosses a threshold. Here the toolbar
+asks how much room it has on every frame and draws whichever layout fits.
+Dragging the window edge steps the group from full to collapsed to hidden
+and back with no state to update. The `narrowing_collapses_then_hides_the_group`
+test in [`crates/coco-egui/src/ui_tests/quick_states_test.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests/quick_states_test.rs)
+sweeps the window width downward and checks that the layouts appear in that
+order, and with the `debug-ui` feature it also checks that the Debug tile
+stays inside the window.
+
 ---
 
 ## 15.4 Input routing: two keyboards, one matrix
@@ -1218,7 +1275,7 @@ application rather than to the emulated machine:
 
 ```rust
     pub(crate) fn consume_app_shortcuts(&mut self, ctx: &egui::Context) {
-        // The hotkeys match exactly, so they go before the slot chords, which ignore an
+        // The hotkeys match exactly, so they go before the state chords, which ignore an
         // extra Shift/Alt and would otherwise take e.g. a Cmd+Alt+1 hotkey.
         let hotkeys = self.hotkeys;
         // Consumed here as a deliberate no-op, so it doesn't type into the machine.
@@ -1232,19 +1289,23 @@ application rather than to the emulated machine:
                 KbMode::Symbolic => KbMode::Positional,
             });
         }
-        // COMMAND+<n> quick-loads state slot n; COMMAND+SHIFT+<n> quick-saves it.
+        // COMMAND+<n> quick-loads State n; COMMAND+SHIFT+<n> quick-saves it (States 1-3 only).
+        let consume = |shortcut: Option<egui::KeyboardShortcut>| {
+            shortcut.is_some_and(|s| ctx.input_mut(|i| i.consume_shortcut(&s)))
+        };
         for slot in 0..save_state::QUICK_SLOTS {
-            if ctx.input_mut(|i| i.consume_shortcut(&save_state::save_slot_shortcut(slot))) {
+            if consume(save_state::save_slot_shortcut(slot)) {
                 self.quick_save(slot);
             }
-            if ctx.input_mut(|i| i.consume_shortcut(&save_state::load_slot_shortcut(slot))) {
-                self.quick_load(slot, ctx);
+            if consume(save_state::load_slot_shortcut(slot)) {
+                self.quick_load_shortcut(slot, ctx);
             }
         }
     }
 ```
 
-([`crates/coco-egui/src/app/input.rs:91-121`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/input.rs#L91-L121).) The word doing the work
+([`crates/coco-egui/src/app/input.rs:91-124`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/app/input.rs#L91-L124),
+the debugger hotkey's feature-gated block elided.) The word doing the work
 is `consume`, and the doc comment on the enclosing function explains why
 this stage runs first: these shortcuts are consumed before the event
 snapshot that `handle_input` takes, so the keypress never reaches the CoCo
@@ -1252,8 +1313,13 @@ matrix or the symbolic type-ahead. The New machine line is the instructive
 one: creating machines belongs to the *manager* (its toolbar's **New**
 button and its own copy of the hotkey), so a VM window consumes the chord
 and deliberately does nothing with it. Swallowing it is still better than
-letting the positional matrix type an `N` into BASIC. The quick-save and
-quick-load slots are Chapter 16's feature, wired up here.
+letting the positional matrix type an `N` into BASIC. The quick states are
+Chapter 16's feature, wired up here. There are ten of them, but only States 1
+to 3 have chords: `save_slot_shortcut` and `load_slot_shortcut` return an
+`Option`, and `None` for State 4 and up leaves ⌘4 through ⌘0 free for the
+rebindable hotkeys described next. The load chord also goes through
+`quick_load_shortcut` rather than `quick_load`, so pressing it for a state
+that has no file shows a status-bar toast instead of an error dialog.
 
 None of these keys is hard-coded. `self.hotkeys` is a small `Copy` struct
 of bindings that the manager resolves from `config.toml`, lets you edit in
