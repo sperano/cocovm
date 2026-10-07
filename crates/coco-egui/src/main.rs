@@ -100,12 +100,11 @@ pub(crate) use status_icons::{
     vhd_icon,
 };
 pub(crate) use typeahead::{KbMode, TypeAhead};
-#[cfg(feature = "debug-ui")]
-pub(crate) use widgets::toolbar_separator;
 pub(crate) use widgets::{
     BUTTON_GAP, BUTTON_SIZE, PLAY_GLYPH, RESET_GLYPH, RESET_LABEL, START_LABEL, STOP_GLYPH,
     STOP_LABEL, SUSPEND_GLYPH, SUSPEND_HOVER, SUSPEND_LABEL, UI_DRIVES, titled_group,
-    toolbar_button, window_title,
+    toolbar_button, toolbar_button_width, toolbar_separator, toolbar_separator_width, toolbar_tile,
+    window_title,
 };
 
 /// Integer scale factor for the canvas rows when sizing a VM window.
