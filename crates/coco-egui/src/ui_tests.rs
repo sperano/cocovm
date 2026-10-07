@@ -32,6 +32,7 @@ mod manager_selection;
 mod manager_settings;
 mod manager_sort;
 mod manager_window;
+mod quick_states_test;
 mod vm_window_disks;
 mod vm_window_joysticks;
 mod vm_window_menus;

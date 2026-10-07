@@ -114,6 +114,10 @@ pub(crate) const BUTTON_GAP: f32 = 2.0;
 /// around a vertical rule.
 const SEPARATOR_GAP: f32 = 6.0;
 
+/// Width a toolbar separator's vertical rule allocates — egui's
+/// `Separator` default, named so [`toolbar_separator_width`] can count it.
+const SEPARATOR_SPACING: f32 = 6.0;
+
 /// Cassette-deck transport glyphs, shared by every surface that draws a
 /// Start/Suspend/Stop/Reset control: the manager toolbar's tiles, the VM
 /// window toolbar's tiles, and the manager's row/bulk context menus.
@@ -144,8 +148,30 @@ pub(crate) const SUSPEND_HOVER: &str = "Suspend the machine — freeze it to dis
 /// into clusters.
 pub(crate) fn toolbar_separator(ui: &mut egui::Ui) {
     ui.add_space(SEPARATOR_GAP);
-    ui.separator();
+    ui.add(egui::Separator::default().spacing(SEPARATOR_SPACING));
     ui.add_space(SEPARATOR_GAP);
+}
+
+/// Horizontal room [`toolbar_separator`] takes in a row laid out with `ui`'s
+/// item spacing: the two gaps (`add_space` adds no item spacing) plus the
+/// rule and the item spacing after it.
+pub(crate) fn toolbar_separator_width(ui: &egui::Ui) -> f32 {
+    2.0 * SEPARATOR_GAP + SEPARATOR_SPACING + ui.spacing().item_spacing.x
+}
+
+/// Horizontal room one [`toolbar_button`] takes in a row laid out with `ui`'s
+/// item spacing: its fixed footprint plus the item spacing after it.
+pub(crate) fn toolbar_button_width(ui: &egui::Ui, icons_only: bool) -> f32 {
+    tile_size(icons_only).x + ui.spacing().item_spacing.x
+}
+
+/// [`BUTTON_SIZE`], or [`ICON_ONLY_BUTTON_SIZE`] when the caption is hidden.
+fn tile_size(icons_only: bool) -> egui::Vec2 {
+    if icons_only {
+        ICON_ONLY_BUTTON_SIZE
+    } else {
+        BUTTON_SIZE
+    }
 }
 
 /// One toolbar tile: `icon` large on top, `label` small underneath, with a
@@ -156,9 +182,8 @@ pub(crate) fn toolbar_separator(ui: &mut egui::Ui) {
 /// `icons_only` (the `toolbar_icons_only` global setting, `config.rs`) draws
 /// the icon alone, centered in a square [`ICON_ONLY_BUTTON_SIZE`] tile, and
 /// moves `label` into hover text instead of painting it. The accessible name
-/// is always `label` regardless — `widget_info` below doesn't branch on
-/// `icons_only` — so `kittest`'s `get_by_label` keeps resolving tiles the
-/// same way in both modes.
+/// is always `label` regardless, so `kittest`'s `get_by_label` keeps
+/// resolving tiles the same way in both modes.
 pub(crate) fn toolbar_button(
     ui: &mut egui::Ui,
     icon: &str,
@@ -166,18 +191,39 @@ pub(crate) fn toolbar_button(
     enabled: bool,
     icons_only: bool,
 ) -> egui::Response {
+    let response = toolbar_tile(ui, icon, label, label, enabled, icons_only);
+    if icons_only {
+        // Both tooltips, not just the enabled one: `on_hover_text` only fires when
+        // enabled, so a disabled tile (the manager's four transport tiles at first
+        // launch, before anything is selected) would otherwise show only the caller's
+        // disabled-reason text and never say which tile it is. Same per-widget
+        // `tooltip_count` stacking mechanism as `on_hover_text`/`on_disabled_hover_text`
+        // chained at the call site, so the label lands first in either stack.
+        response.on_hover_text(label).on_disabled_hover_text(label)
+    } else {
+        response
+    }
+}
+
+/// [`toolbar_button`]'s painting with an accessible `name` that can say
+/// more than the `caption` ("Save to State 1" under a "Save" caption), and
+/// no tooltip of its own: the caller's hover texts must name the tile, since
+/// icons-only mode paints no caption at all.
+pub(crate) fn toolbar_tile(
+    ui: &mut egui::Ui,
+    icon: &str,
+    caption: &str,
+    name: &str,
+    enabled: bool,
+    icons_only: bool,
+) -> egui::Response {
     ui.add_enabled_ui(enabled, |ui| {
         // Not necessarily the same as `enabled`: `is_enabled` also ANDs in the parent's
         // enabledness.
         let effective_enabled = ui.is_enabled();
-        let size = if icons_only {
-            ICON_ONLY_BUTTON_SIZE
-        } else {
-            BUTTON_SIZE
-        };
-        let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
+        let (rect, response) = ui.allocate_exact_size(tile_size(icons_only), egui::Sense::click());
         response.widget_info(|| {
-            egui::WidgetInfo::labeled(egui::WidgetType::Button, effective_enabled, label)
+            egui::WidgetInfo::labeled(egui::WidgetType::Button, effective_enabled, name)
         });
 
         let visuals = if effective_enabled {
@@ -208,22 +254,12 @@ pub(crate) fn toolbar_button(
             painter.text(
                 egui::pos2(rect.center().x, rect.bottom() - LABEL_BOTTOM_PAD),
                 egui::Align2::CENTER_BOTTOM,
-                label,
+                caption,
                 egui::FontId::proportional(LABEL_FONT_SIZE),
                 visuals.text_color(),
             );
         }
-        if icons_only {
-            // Both tooltips, not just the enabled one: `on_hover_text` only fires when
-            // enabled, so a disabled tile (the manager's four transport tiles at first
-            // launch, before anything is selected) would otherwise show only the caller's
-            // disabled-reason text and never say which tile it is. Same per-widget
-            // `tooltip_count` stacking mechanism as `on_hover_text`/`on_disabled_hover_text`
-            // chained at the call site, so the label lands first in either stack.
-            response.on_hover_text(label).on_disabled_hover_text(label)
-        } else {
-            response
-        }
+        response
     })
     .inner
 }

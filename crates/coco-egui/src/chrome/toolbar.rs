@@ -1,5 +1,7 @@
 use crate::*;
 
+pub(crate) mod quick_states;
+
 /// Hover text for the Start tile, only enabled while suspended.
 const RESUME_HOVER: &str = "Resume this machine";
 /// Disabled-hover text for the Start tile while the machine runs.
@@ -31,8 +33,8 @@ const DEBUG_LABEL: &str = "Debug";
 const DEBUG_HOVER: &str = "Open or close the debugger";
 
 impl CocoApp {
-    /// The VM window's toolbar: the transport tiles (Start/Suspend/Stop/Reset) plus a
-    /// VM-only Debug tile. Keyboard/aspect controls live in menus, so aren't duplicated here.
+    /// The VM window's toolbar: the transport tiles (Start/Suspend/Stop/Reset), the
+    /// quick-state group (`quick_states.rs`), and a VM-only Debug tile. Keyboard/aspect controls live in menus, so aren't duplicated here.
     /// Start is only live while suspended (it resumes); Suspend, Reset and Debug only while
     /// running; Stop always.
     pub(crate) fn toolbar_ui(&mut self, ctx: &egui::Context) {
@@ -87,6 +89,8 @@ impl CocoApp {
                         self.machine.reset();
                     }
 
+                    self.quick_state_group(ui, icons_only, debug_tile_reserve(ui, icons_only));
+
                     #[cfg(feature = "debug-ui")]
                     {
                         toolbar_separator(ui);
@@ -105,5 +109,15 @@ impl CocoApp {
                     }
                 });
             });
+    }
+}
+
+/// Room the Debug tile after the quick-state group needs, so the group
+/// collapses before it would push that tile off the row.
+fn debug_tile_reserve(ui: &egui::Ui, icons_only: bool) -> f32 {
+    if cfg!(feature = "debug-ui") {
+        toolbar_separator_width(ui) + toolbar_button_width(ui, icons_only)
+    } else {
+        0.0
     }
 }
