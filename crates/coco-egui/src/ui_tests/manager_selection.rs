@@ -13,6 +13,7 @@
 
 use egui_kittest::kittest::Queryable;
 
+use crate::manager::reveal::SHOW_CONFIG_LABEL;
 use crate::*;
 
 use super::harness::*;
@@ -80,7 +81,7 @@ fn plain_click_collapses_back_to_single_selection() {
 }
 
 /// Right-clicking a row that's part of the current multi-selection opens
-/// the bulk menu: "Delete…" but no "Show config" (no single machine to show config for).
+/// the bulk menu: "Delete…" but no "Show config in …" (no single machine whose file to show).
 #[test]
 fn right_click_inside_multi_selection_shows_the_bulk_menu() {
     let entries = vec![
@@ -95,8 +96,8 @@ fn right_click_inside_multi_selection_shows_the_bulk_menu() {
     right_click(&mut harness, "Alpha CoCo 3");
     harness.get_by_label("Delete…");
     assert!(
-        harness.query_by_label("Show config").is_none(),
-        "the bulk menu has no per-machine Show config"
+        harness.query_by_label(SHOW_CONFIG_LABEL).is_none(),
+        "the bulk menu has no per-machine Show config in …"
     );
 }
 
@@ -116,7 +117,7 @@ fn right_click_outside_selection_shows_the_single_menu_and_does_not_select() {
     assert_eq!(harness.state().selection.len(), 2);
 
     right_click(&mut harness, "Gamma CoCo 3");
-    harness.get_by_label("Show config");
+    harness.get_by_label(SHOW_CONFIG_LABEL);
     assert_eq!(
         harness.state().selection.len(),
         2,

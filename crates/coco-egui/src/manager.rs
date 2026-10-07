@@ -40,6 +40,7 @@ mod live_drivewire;
 #[cfg(feature = "perf")]
 mod perf_scenarios;
 mod rename;
+pub(crate) mod reveal;
 mod roms;
 mod run;
 mod selection;
@@ -99,7 +100,7 @@ const DETAIL_PANE_MARGIN: i8 = 10;
 
 /// Error text for Create/Save when [`ManagerApp::machines_dir`] is `None`
 /// (no home directory — `paths::config_dir` docs).
-const NO_CONFIG_DIR: &str = "no config directory available";
+pub(crate) const NO_CONFIG_DIR: &str = "no config directory available";
 
 /// [`NO_CONFIG_DIR`]'s sibling for [`ManagerApp::artifacts_root`] — a
 /// different directory (`machine_def::artifacts_root` under
@@ -129,9 +130,9 @@ pub struct MachineEntry {
     /// open) or already dropped (window closed) — both draw as Suspended.
     pub(crate) suspended: bool,
     /// The transport row's error channel: the message from the last failed
-    /// Start, Suspend, or Resume, shown in the detail pane until the next
-    /// attempt or a fresh selection — the lifecycle analog of
-    /// [`ManagerApp::save_error`].
+    /// Start, Suspend, Resume, or "Show config in …", shown in the detail
+    /// pane until the next attempt or a fresh selection — the lifecycle
+    /// analog of [`ManagerApp::save_error`].
     pub launch_error: Option<String>,
     /// Saved-preview texture for a *suspended* machine whose VM window is
     /// closed (its artifact dir's [`THUMBNAIL_FILE`], written at suspend

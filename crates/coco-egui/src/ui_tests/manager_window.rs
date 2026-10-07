@@ -7,6 +7,8 @@ use std::fs;
 use egui_kittest::kittest::{NodeT, Queryable};
 
 use crate::machine_def::tests::TempDir;
+use crate::manager::NO_CONFIG_DIR;
+use crate::manager::reveal::SHOW_CONFIG_LABEL;
 use crate::*;
 
 use super::harness::*;
@@ -294,6 +296,9 @@ fn manager_click_below_the_list_clears_the_selection() {
 
 /// Right-clicking a list row opens its context menu without moving the
 /// visual selection — menu items act on the row under the cursor, not `selected`.
+/// "Show config in …" reveals the definition file; with no config directory
+/// (this harness) it fails, and only that failure selects the row, so the
+/// detail pane can show the error.
 #[test]
 fn manager_row_right_click_opens_context_menu_without_selecting() {
     let entries = vec![
@@ -302,7 +307,7 @@ fn manager_row_right_click_opens_context_menu_without_selecting() {
     ];
     let mut harness = manager_harness(None, entries);
     assert!(
-        harness.query_by_label("Show config").is_none(),
+        harness.query_by_label(SHOW_CONFIG_LABEL).is_none(),
         "menu must start closed"
     );
 
@@ -316,16 +321,17 @@ fn manager_row_right_click_opens_context_menu_without_selecting() {
         "right-click must leave the selection cue where it was"
     );
 
-    click(&mut harness, "Show config");
+    click(&mut harness, SHOW_CONFIG_LABEL);
+    assert!(
+        harness.query_by_label(SHOW_CONFIG_LABEL).is_none(),
+        "picking an item closes the menu"
+    );
     assert_eq!(
         harness.state().selection.single(),
         Some(1),
-        "Show config selects the right-clicked row, not the old selection"
+        "a failed reveal selects the right-clicked row so its error is visible"
     );
-    assert!(
-        harness.query_by_label("Show config").is_none(),
-        "picking an item closes the menu"
-    );
+    harness.get_by_label(NO_CONFIG_DIR);
 }
 
 /// The context menu's "Delete…" asks for confirmation first: Cancel keeps
