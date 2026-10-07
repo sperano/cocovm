@@ -34,7 +34,8 @@ const DEBUG_HOVER: &str = "Open or close the debugger";
 
 impl CocoApp {
     /// The VM window's toolbar: the transport tiles (Start/Suspend/Stop/Reset), the
-    /// quick-state group (`quick_states.rs`), and a VM-only Debug tile. Keyboard/aspect controls live in menus, so aren't duplicated here.
+    /// quick-state group (`quick_states.rs`), and a VM-only Debug tile. Keyboard/aspect
+    /// controls live in menus, so aren't duplicated here.
     /// Start is only live while suspended (it resumes); Suspend, Reset and Debug only while
     /// running; Stop always.
     pub(crate) fn toolbar_ui(&mut self, ctx: &egui::Context) {

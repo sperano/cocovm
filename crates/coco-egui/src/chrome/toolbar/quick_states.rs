@@ -98,7 +98,11 @@ impl QuickAction {
         };
         let shortcut =
             shortcut.map_or_else(String::new, |s| format!(" ({})", ctx.format_shortcut(&s)));
-        format!("{name}.{detail}{shortcut}")
+        if detail.is_empty() {
+            format!("{name}{shortcut}")
+        } else {
+            format!("{name}.{detail}{shortcut}")
+        }
     }
 }
 
