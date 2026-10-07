@@ -50,6 +50,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `WIDTH 40`/`WIDTH 80` screens. In PMODE graphics it now says there is no
   text buffer instead of decoding graphics bytes as characters.
 
+### Removed
+- The `book/` course and its `tools/build-book.sh` EPUB/PDF builder. The
+  per-PR book-update gate is gone with it.
+
 ## [0.7.8] - 2026-10-03
 
 ### Added
