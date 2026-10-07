@@ -30,6 +30,7 @@ mod manager_peripherals;
 mod manager_roms;
 mod manager_selection;
 mod manager_settings;
+mod manager_settings_layout_test;
 mod manager_sort;
 mod manager_window;
 mod vm_window_disks;

@@ -33,12 +33,11 @@ impl HotkeyEditor {
         }
     }
 
-    /// The section: heading, one row per action, any capture error.
+    /// One row per action and any capture error.
     pub(super) fn draw(&mut self, ui: &mut egui::Ui) {
         // Before any widget runs, so the captured key can't also click a
         // focused button or reach the modal's Esc-to-close.
         self.take_captured_key(ui);
-        ui.label(egui::RichText::new("Hotkeys").strong());
         egui::Grid::new("settings_hotkeys")
             .num_columns(3)
             .show(ui, |ui| {

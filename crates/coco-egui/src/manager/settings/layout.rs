@@ -1,0 +1,132 @@
+//! Grouped, viewport-bounded presentation of the global settings draft.
+
+use clap::ValueEnum;
+use eframe::egui;
+
+use super::{SettingsAction, SettingsDialog};
+use crate::cli::LogLevel;
+use crate::config;
+use crate::manager::DETAIL_SECTION_GAP;
+
+const DIALOG_WIDTH: f32 = 560.0;
+const VIEWPORT_MARGIN: f32 = 24.0;
+/// Space for the heading, footer, frame margins, and section spacing.
+const DIALOG_CHROME_HEIGHT: f32 = 120.0;
+const CONTENT_MAX_HEIGHT: f32 = 440.0;
+const FIELD_WIDTH: f32 = 160.0;
+const BUTTON_WIDTH: f32 = 80.0;
+/// Zero disables the control server.
+const CONTROL_PORT_RANGE: std::ops::RangeInclusive<u16> = 0..=u16::MAX;
+/// The persisted interval is nonzero.
+const WELCOME_IMAGE_CYCLE_SECS_RANGE: std::ops::RangeInclusive<u32> = 1..=u32::MAX;
+
+impl SettingsDialog {
+    pub(super) fn draw(&mut self, ui: &mut egui::Ui) -> SettingsAction {
+        let viewport = ui.ctx().content_rect().size();
+        let width = DIALOG_WIDTH.min((viewport.x - VIEWPORT_MARGIN * 2.0).max(0.0));
+        ui.set_width(width);
+        ui.heading("Settings");
+        let error_height = self.error.as_ref().map_or(0.0, |error| {
+            ui.colored_label(ui.visuals().error_fg_color, error)
+                .rect
+                .height()
+                + ui.spacing().item_spacing.y
+        });
+        ui.add_space(DETAIL_SECTION_GAP);
+        // A fixed viewport-bounded body avoids feeding the previous modal height
+        // back into ScrollArea sizing, which moves controls across opening frames.
+        let content_height =
+            (viewport.y - DIALOG_CHROME_HEIGHT - error_height).clamp(0.0, CONTENT_MAX_HEIGHT);
+        egui::ScrollArea::vertical()
+            .id_salt("settings_content")
+            .min_scrolled_height(content_height)
+            .max_height(content_height)
+            .auto_shrink([false, false])
+            .show(ui, |ui| self.draw_sections(ui));
+        ui.add_space(DETAIL_SECTION_GAP);
+        ui.separator();
+        self.draw_actions(ui)
+    }
+
+    fn draw_sections(&mut self, ui: &mut egui::Ui) {
+        section(ui, "Appearance", |ui| {
+            ui.checkbox(&mut self.toolbar_icons_only, "Toolbar icons only");
+            ui.checkbox(&mut self.status_bar_icons_only, "Status bar icons only");
+        });
+        section(ui, "Welcome images", |ui| self.draw_welcome_images(ui));
+        section(ui, "Hotkeys", |ui| self.hotkey_editor.draw(ui));
+        section(ui, "Advanced", |ui| self.draw_advanced(ui));
+    }
+
+    fn draw_welcome_images(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal_wrapped(|ui| {
+            ui.checkbox(&mut self.welcome_image_cycle, "Change welcome image every");
+            ui.add_enabled(
+                self.welcome_image_cycle,
+                egui::DragValue::new(&mut self.welcome_image_cycle_secs)
+                    .range(WELCOME_IMAGE_CYCLE_SECS_RANGE)
+                    .suffix(" s"),
+            );
+        });
+        ui.add_enabled(
+            self.welcome_image_cycle,
+            egui::Checkbox::new(&mut self.welcome_image_shuffle, "Shuffle welcome images"),
+        );
+    }
+
+    fn draw_advanced(&mut self, ui: &mut egui::Ui) {
+        egui::Grid::new("settings_fields")
+            .num_columns(2)
+            .show(ui, |ui| {
+                let label = ui.label("Log level");
+                egui::ComboBox::from_id_salt("settings_log_level")
+                    .width(FIELD_WIDTH)
+                    .selected_text(config::log_level_name(self.log_level))
+                    .show_ui(ui, |ui| {
+                        for level in LogLevel::value_variants() {
+                            ui.selectable_value(
+                                &mut self.log_level,
+                                *level,
+                                config::log_level_name(*level),
+                            );
+                        }
+                    })
+                    .response
+                    .labelled_by(label.id);
+                ui.end_row();
+                let label = ui.label("Control port (0 = off)");
+                ui.add(egui::DragValue::new(&mut self.control_port).range(CONTROL_PORT_RANGE))
+                    .labelled_by(label.id);
+                ui.end_row();
+            });
+        ui.add_space(ui.spacing().item_spacing.y);
+        let label = ui.label("Assets URL");
+        ui.add(egui::TextEdit::singleline(&mut self.assets_url).desired_width(f32::INFINITY))
+            .labelled_by(label.id)
+            .on_hover_text("Download source for emulator assets. Leave empty to use the default.");
+    }
+
+    fn draw_actions(&self, ui: &mut egui::Ui) -> SettingsAction {
+        let mut action = SettingsAction::None;
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let size = egui::vec2(BUTTON_WIDTH, ui.spacing().interact_size.y);
+            if ui.add_sized(size, egui::Button::new("Save")).clicked() {
+                action = SettingsAction::Save;
+            }
+            if ui.add_sized(size, egui::Button::new("Cancel")).clicked() {
+                action = SettingsAction::Cancel;
+            }
+        });
+        action
+    }
+}
+
+fn section(ui: &mut egui::Ui, title: &str, contents: impl FnOnce(&mut egui::Ui)) {
+    ui.group(|ui| {
+        ui.set_width(ui.available_width());
+        ui.strong(title);
+        ui.add_space(ui.spacing().item_spacing.y);
+        contents(ui);
+    });
+    ui.add_space(DETAIL_SECTION_GAP);
+}

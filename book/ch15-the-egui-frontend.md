@@ -2432,6 +2432,25 @@ code, because each line is a bug somebody already paid for:
 >   them with `_contains`, not exactly.
 > ([`crates/coco-egui/src/ui_tests.rs:7-14`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests.rs#L7-L14))
 
+### Settings dialog layout
+
+The global **Settings** dialog groups its controls into **Appearance**,
+**Welcome images**, **Hotkeys**, and **Advanced** sections. The assets URL
+field spans the section width so that a long address has more room. The
+modal limits its width and scrolling content height to the viewport. Its
+**Save** and **Cancel** buttons stay outside the scroll area, so you can
+finish editing even when the window cannot show every section at once.
+The scroll area's minimum and maximum heights use the same viewport-based
+value. This prevents the previous frame's modal size from feeding back into
+layout and shifting controls across opening frames.
+
+`ui_tests/manager_settings_layout_test.rs` checks the section headings and
+URL field width. At a constrained viewport size, it scrolls to the last
+field and verifies that the action buttons stay visible and stationary.
+It also verifies that saving applies edits and canceling discards them.
+The existing settings and hotkey tests cover persistence, live updates,
+and Escape handling during shortcut capture.
+
 ### Booting a harness
 
 [`ui_tests/harness.rs`](https://github.com/sperano/cocovm/blob/main/crates/coco-egui/src/ui_tests/harness.rs) is the shared infrastructure every test file in

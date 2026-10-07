@@ -7,28 +7,17 @@
 use std::num::NonZeroU32;
 use std::path::Path;
 
-use clap::ValueEnum;
 use eframe::egui;
 
 use crate::cli::LogLevel;
 use crate::config::{self, FileConfig, ManagerSort};
 use crate::hotkeys::{DEFAULT_HOTKEYS, Hotkey, Hotkeys};
 
-use super::{DETAIL_SECTION_GAP, ManagerApp, NO_CONFIG_DIR};
+use super::{ManagerApp, NO_CONFIG_DIR};
 
 mod hotkeys;
+mod layout;
 use hotkeys::HotkeyEditor;
-
-/// `control_port`'s DragValue range; `0` disables the control server
-/// (`manager/control.rs`'s `bind_control`).
-const CONTROL_PORT_RANGE: std::ops::RangeInclusive<u16> = 0..=u16::MAX;
-
-/// Width of the `assets_url` text field.
-const ASSETS_URL_WIDTH: f32 = 360.0;
-
-/// `welcome_image_cycle_secs`'s DragValue range: the config key is
-/// `NonZeroU32`, so the draft can never hold a zero.
-const WELCOME_IMAGE_CYCLE_SECS_RANGE: std::ops::RangeInclusive<u32> = 1..=u32::MAX;
 
 /// The dialog's edited draft, plus the error from the last failed load or
 /// save (shown inline until the next attempt).
@@ -42,7 +31,7 @@ pub(crate) struct SettingsDialog {
     toolbar_icons_only: bool,
     status_bar_icons_only: bool,
     welcome_image_cycle: bool,
-    /// Plain `u32` so `DragValue` can edit it; [`WELCOME_IMAGE_CYCLE_SECS_RANGE`]
+    /// Plain `u32` so `DragValue` can edit it; the layout's nonzero range
     /// keeps it nonzero.
     welcome_image_cycle_secs: u32,
     welcome_image_shuffle: bool,
@@ -135,78 +124,6 @@ impl SettingsDialog {
             hotkey_debugger: changed(hotkeys.debugger, DEFAULT_HOTKEYS.debugger),
             manager_sort: self.manager_sort,
         }
-    }
-
-    /// The modal's contents: the fields, any error from the last
-    /// load/save, and the Save/Cancel row.
-    fn draw(&mut self, ui: &mut egui::Ui) -> SettingsAction {
-        ui.heading("Settings");
-        ui.add_space(DETAIL_SECTION_GAP);
-
-        egui::Grid::new("settings_fields")
-            .num_columns(2)
-            .show(ui, |ui| {
-                ui.label("Log level");
-                egui::ComboBox::from_id_salt("settings_log_level")
-                    .selected_text(config::log_level_name(self.log_level))
-                    .show_ui(ui, |ui| {
-                        for level in LogLevel::value_variants() {
-                            ui.selectable_value(
-                                &mut self.log_level,
-                                *level,
-                                config::log_level_name(*level),
-                            );
-                        }
-                    });
-                ui.end_row();
-
-                ui.label("Control port (0 = off)");
-                ui.add(egui::DragValue::new(&mut self.control_port).range(CONTROL_PORT_RANGE));
-                ui.end_row();
-
-                ui.label("Assets URL");
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.assets_url)
-                        .desired_width(ASSETS_URL_WIDTH),
-                );
-                ui.end_row();
-            });
-
-        ui.add_space(DETAIL_SECTION_GAP);
-        ui.checkbox(&mut self.toolbar_icons_only, "Toolbar icons only");
-        ui.checkbox(&mut self.status_bar_icons_only, "Status bar icons only");
-        ui.horizontal(|ui| {
-            ui.checkbox(&mut self.welcome_image_cycle, "Change welcome image every");
-            ui.add_enabled(
-                self.welcome_image_cycle,
-                egui::DragValue::new(&mut self.welcome_image_cycle_secs)
-                    .range(WELCOME_IMAGE_CYCLE_SECS_RANGE)
-                    .suffix(" s"),
-            );
-        });
-        ui.add_enabled(
-            self.welcome_image_cycle,
-            egui::Checkbox::new(&mut self.welcome_image_shuffle, "Shuffle welcome images"),
-        );
-
-        ui.add_space(DETAIL_SECTION_GAP);
-        self.hotkey_editor.draw(ui);
-
-        if let Some(err) = &self.error {
-            ui.colored_label(ui.visuals().error_fg_color, err);
-        }
-
-        ui.add_space(DETAIL_SECTION_GAP);
-        let mut action = SettingsAction::None;
-        ui.horizontal(|ui| {
-            if ui.button("Save").clicked() {
-                action = SettingsAction::Save;
-            }
-            if ui.button("Cancel").clicked() {
-                action = SettingsAction::Cancel;
-            }
-        });
-        action
     }
 }
 
