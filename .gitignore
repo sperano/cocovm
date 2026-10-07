@@ -28,8 +28,6 @@ docs/orig-scans/*
 /untitled.cas
 /printout.txt
 
-# built book editions (tools/build-book.sh)
-/build
 dist/
 .worktrees/
 *.dsk
