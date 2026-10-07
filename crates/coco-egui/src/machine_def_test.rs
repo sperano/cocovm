@@ -121,6 +121,19 @@ fn hires_interface_dto_cocomax3_serializes_lowercase() {
 }
 
 #[test]
+fn def_path_is_the_slug_toml_under_the_directory() {
+    let dir = Path::new("/cfg/machines");
+    assert_eq!(def_path(dir, "dev-coco-3"), dir.join("dev-coco-3.toml"));
+}
+
+#[test]
+fn save_writes_to_def_path() {
+    let dir = TempDir::new("def-path-save");
+    save(dir.path(), "dev", &full_def()).expect("save should succeed");
+    assert!(def_path(dir.path(), "dev").is_file());
+}
+
+#[test]
 fn round_trip_full_definition() {
     let dir = TempDir::new("roundtrip");
     let def = full_def();

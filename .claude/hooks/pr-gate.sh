@@ -37,7 +37,7 @@ diff=$(git diff "$base"...HEAD | head -c "$MAX_DIFF_BYTES")
 truncated=""
 [ "$(git diff "$base"...HEAD | wc -c)" -gt "$MAX_DIFF_BYTES" ] && truncated=" (diff truncated to ${MAX_DIFF_BYTES} bytes)"
 
-prompt="You are the final gate before PR creation in the cocovm Rust workspace. Pre-PR reviews (idiomatic-rust + pr-challenger) have already run on this branch, so this is a fast last-line check, NOT a re-review. Look ONLY for: obviously broken logic or invariants in changed code; brand-new behavior with no test at all. Do NOT flag style, book/ being out of date, or anything the compiler/clippy/tests already guarantee; never request tests that assert a removed feature stays absent. PASS is a first-class outcome — do not manufacture findings.
+prompt="You are the final gate before PR creation in the cocovm Rust workspace. Pre-PR reviews (idiomatic-rust + pr-challenger) have already run on this branch, so this is a fast last-line check, NOT a re-review. Look ONLY for: obviously broken logic or invariants in changed code; brand-new behavior with no test at all. Do NOT flag style or anything the compiler/clippy/tests already guarantee; never request tests that assert a removed feature stays absent. PASS is a first-class outcome — do not manufacture findings.
 
 Reply with exactly one of these on the FIRST line: PASS or FAIL. After FAIL, list each concrete must-fix problem as file:line plus one sentence.
 

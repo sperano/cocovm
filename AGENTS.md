@@ -1,7 +1,7 @@
 CoCoVM: a Tandy Color Computer (CoCo 1/2/3) emulator in Rust + egui, aiming
 for Virtual ][-level polish. Workspace: `crates/mc6809` (CPU),
 `crates/coco-core` (headless machine), `crates/coco-egui` (frontend + VM
-manager). `book/` is a 16-chapter course built from this codebase.
+manager).
 
 ## Local resources (copyrighted, present only on this machine)
 

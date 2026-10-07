@@ -4,7 +4,7 @@
 //! dialog (`manager/settings/hotkeys.rs`), and pushed into every VM window
 //! each frame (`manager/vm_windows.rs`), like `toolbar_icons_only`.
 //!
-//! The quick-save/quick-load slot chords (`save_state.rs`) are a numbered
+//! The quick-save/quick-load state chords (`save_state/quick.rs`) are a numbered
 //! family rather than single actions, so they stay fixed and are
 //! [`reserved`] here instead.
 
@@ -41,7 +41,7 @@ pub(crate) struct Hotkey {
 }
 
 /// Shortcuts the app binds outside this module, which no hotkey may take:
-/// the quick-load/quick-save slots (`save_state.rs`), the manager list's
+/// the quick-load/quick-save chords of States 1-3 (`save_state/quick.rs`), the manager list's
 /// select-all (`manager/list.rs`), and the clipboard chords egui turns
 /// into copy/cut/paste events.
 pub(crate) fn reserved() -> impl Iterator<Item = egui::KeyboardShortcut> {
@@ -50,6 +50,8 @@ pub(crate) fn reserved() -> impl Iterator<Item = egui::KeyboardShortcut> {
             crate::save_state::load_slot_shortcut(slot),
             crate::save_state::save_slot_shortcut(slot),
         ]
+        .into_iter()
+        .flatten()
     });
     let clipboard = [egui::Key::C, egui::Key::X, egui::Key::V]
         .map(|key| egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, key));

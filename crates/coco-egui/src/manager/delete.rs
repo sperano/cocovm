@@ -9,6 +9,8 @@ use std::fs;
 
 use eframe::egui;
 
+use crate::machine_def;
+
 use super::{DETAIL_SECTION_GAP, ManagerApp, NO_CONFIG_DIR};
 
 impl ManagerApp {
@@ -115,7 +117,7 @@ impl ManagerApp {
             return Err(NO_CONFIG_DIR.to_string());
         };
         let slug = self.entries[index].slug.clone();
-        let path = dir.join(format!("{slug}.toml"));
+        let path = machine_def::def_path(&dir, &slug);
         self.stop_vm(index);
         // A file already gone is fine — the goal state is reached either way.
         match fs::remove_file(&path) {

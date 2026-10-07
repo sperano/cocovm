@@ -11,6 +11,7 @@ use eframe::egui;
 
 use crate::cli::LogLevel;
 use crate::config::{self, FileConfig, ManagerSort};
+use crate::control::DEFAULT_PORT;
 use crate::hotkeys::{DEFAULT_HOTKEYS, Hotkey, Hotkeys};
 
 use super::{ManagerApp, NO_CONFIG_DIR};
@@ -19,12 +20,16 @@ mod hotkeys;
 mod layout;
 use hotkeys::HotkeyEditor;
 
+const DISABLED_CONTROL_PORT: u16 = 0;
+
 /// The dialog's edited draft, plus the error from the last failed load or
 /// save (shown inline until the next attempt).
 pub(crate) struct SettingsDialog {
     log_level: LogLevel,
+    mcp_enabled: bool,
+    /// Positive port draft, retained when the checkbox is cleared.
     control_port: u16,
-    /// `control_port` as opened; Save only moves the listener when the user
+    /// Effective port as opened; Save only moves the listener when the user
     /// changed it here, so an unrelated save never retries a failed bind.
     opened_control_port: u16,
     assets_url: String,
@@ -36,9 +41,18 @@ pub(crate) struct SettingsDialog {
     welcome_image_cycle_secs: u32,
     welcome_image_shuffle: bool,
     hotkey_editor: HotkeyEditor,
+    tab: SettingsTab,
     /// Preserved unchanged because the machine-list control owns this key.
     manager_sort: Option<ManagerSort>,
     error: Option<String>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum SettingsTab {
+    General,
+    Hotkeys,
+    McpServer,
+    Advanced,
 }
 
 /// What [`SettingsDialog::draw`]'s button row asked for this frame.
@@ -61,11 +75,16 @@ impl SettingsDialog {
     }
 
     fn from_file(file: FileConfig, error: Option<String>) -> Self {
-        let control_port = file.control_port.unwrap_or(crate::control::DEFAULT_PORT);
+        let control_port = file.control_port.unwrap_or(DEFAULT_PORT);
         let hotkeys = file.hotkeys();
         Self {
             log_level: file.log_level.unwrap_or(config::DEFAULT_LOG_LEVEL),
-            control_port,
+            mcp_enabled: control_port != DISABLED_CONTROL_PORT,
+            control_port: if control_port == DISABLED_CONTROL_PORT {
+                DEFAULT_PORT
+            } else {
+                control_port
+            },
             opened_control_port: control_port,
             assets_url: file
                 .assets_url
@@ -87,8 +106,17 @@ impl SettingsDialog {
                 .welcome_image_shuffle
                 .unwrap_or(config::DEFAULT_WELCOME_IMAGE_SHUFFLE),
             hotkey_editor: HotkeyEditor::new(hotkeys),
+            tab: SettingsTab::General,
             manager_sort: file.manager_sort,
             error,
+        }
+    }
+
+    fn effective_control_port(&self) -> u16 {
+        if self.mcp_enabled {
+            self.control_port
+        } else {
+            DISABLED_CONTROL_PORT
         }
     }
 
@@ -96,12 +124,12 @@ impl SettingsDialog {
     /// so a field the user never touched keeps tracking future defaults
     /// instead of pinning today's value into the file.
     fn to_file_config(&self) -> FileConfig {
+        let control_port = self.effective_control_port();
         let hotkeys = &self.hotkey_editor.hotkeys;
         let changed = |hotkey: Hotkey, default: Hotkey| (hotkey != default).then_some(hotkey);
         FileConfig {
             log_level: (self.log_level != config::DEFAULT_LOG_LEVEL).then_some(self.log_level),
-            control_port: (self.control_port != crate::control::DEFAULT_PORT)
-                .then_some(self.control_port),
+            control_port: (control_port != DEFAULT_PORT).then_some(control_port),
             // An emptied field reads as "reset to default", not "set to ''".
             assets_url: (!self.assets_url.trim().is_empty()
                 && self.assets_url != crate::startup::DEFAULT_ASSETS_URL)
@@ -173,9 +201,10 @@ impl ManagerApp {
         let file = dialog.to_file_config();
         let live = LiveSettings::from_dialog(dialog);
         let log_level = (!self.log_level_overridden).then_some(dialog.log_level);
-        let port_change = (dialog.control_port != dialog.opened_control_port
+        let control_port = dialog.effective_control_port();
+        let port_change = (control_port != dialog.opened_control_port
             && !self.control_port_overridden)
-            .then_some(dialog.control_port);
+            .then_some(control_port);
         let result = match self.config_path.as_deref() {
             Some(path) => config::save_file(path, &file),
             None => Err(NO_CONFIG_DIR.to_string()),

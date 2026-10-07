@@ -4,7 +4,7 @@
 //! overall format and error-handling policy.
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use super::{CURRENT_SCHEMA, MachineDef};
 use crate::MPI_SLOT_COUNT;
@@ -258,6 +258,13 @@ pub fn load_all(dir: &Path) -> Result<Vec<(String, MachineDef)>, String> {
     Ok(results)
 }
 
+/// The definition file for `slug` under `dir`: `<dir>/<slug>.toml`. The one
+/// place that spells out the file name, shared by [`save`] and the manager's
+/// "Show config in …" action.
+pub fn def_path(dir: &Path, slug: &str) -> PathBuf {
+    dir.join(format!("{slug}.toml"))
+}
+
 /// Serialize `def` and write it to `<dir>/<slug>.toml`, merging `def.unknown`
 /// back in so a Save never erases what this build doesn't understand. Writes
 /// to a `.tmp` sibling and renames over the final path so a crash never
@@ -276,7 +283,7 @@ pub fn save(dir: &Path, slug: &str, def: &MachineDef) -> Result<(), String> {
     merge_unknown(&mut table, &def.unknown);
     let text = toml::to_string_pretty(&table).map_err(|e| format!("serializing {slug}: {e}"))?;
     let tmp_path = dir.join(format!("{slug}.toml.tmp"));
-    let final_path = dir.join(format!("{slug}.toml"));
+    let final_path = def_path(dir, slug);
     fs::write(&tmp_path, text).map_err(|e| format!("{}: {e}", tmp_path.display()))?;
     fs::rename(&tmp_path, &final_path).map_err(|e| format!("{}: {e}", final_path.display()))?;
     Ok(())

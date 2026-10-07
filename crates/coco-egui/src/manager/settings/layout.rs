@@ -3,7 +3,7 @@
 use clap::ValueEnum;
 use eframe::egui;
 
-use super::{SettingsAction, SettingsDialog};
+use super::{SettingsAction, SettingsDialog, SettingsTab};
 use crate::cli::LogLevel;
 use crate::config;
 use crate::manager::DETAIL_SECTION_GAP;
@@ -12,20 +12,22 @@ const DIALOG_WIDTH: f32 = 560.0;
 const VIEWPORT_MARGIN: f32 = 24.0;
 /// Space for the heading, footer, frame margins, and section spacing.
 const DIALOG_CHROME_HEIGHT: f32 = 120.0;
-const CONTENT_MAX_HEIGHT: f32 = 440.0;
+const CONTENT_MAX_HEIGHT: f32 = 260.0;
 const FIELD_WIDTH: f32 = 160.0;
 const BUTTON_WIDTH: f32 = 80.0;
-/// Zero disables the control server.
-const CONTROL_PORT_RANGE: std::ops::RangeInclusive<u16> = 0..=u16::MAX;
+/// Disabling the server is handled by its checkbox.
+const CONTROL_PORT_RANGE: std::ops::RangeInclusive<u16> = 1..=u16::MAX;
 /// The persisted interval is nonzero.
 const WELCOME_IMAGE_CYCLE_SECS_RANGE: std::ops::RangeInclusive<u32> = 1..=u32::MAX;
 
 impl SettingsDialog {
     pub(super) fn draw(&mut self, ui: &mut egui::Ui) -> SettingsAction {
+        self.hotkey_editor.take_captured_key(ui);
         let viewport = ui.ctx().content_rect().size();
         let width = DIALOG_WIDTH.min((viewport.x - VIEWPORT_MARGIN * 2.0).max(0.0));
         ui.set_width(width);
         ui.heading("Settings");
+        let tabs_height = self.draw_tabs(ui);
         let error_height = self.error.as_ref().map_or(0.0, |error| {
             ui.colored_label(ui.visuals().error_fg_color, error)
                 .rect
@@ -35,27 +37,63 @@ impl SettingsDialog {
         ui.add_space(DETAIL_SECTION_GAP);
         // A fixed viewport-bounded body avoids feeding the previous modal height
         // back into ScrollArea sizing, which moves controls across opening frames.
-        let content_height =
-            (viewport.y - DIALOG_CHROME_HEIGHT - error_height).clamp(0.0, CONTENT_MAX_HEIGHT);
+        let content_height = (viewport.y - DIALOG_CHROME_HEIGHT - tabs_height - error_height)
+            .clamp(0.0, CONTENT_MAX_HEIGHT);
         egui::ScrollArea::vertical()
-            .id_salt("settings_content")
+            .id_salt(("settings_content", self.tab))
             .min_scrolled_height(content_height)
             .max_height(content_height)
             .auto_shrink([false, false])
-            .show(ui, |ui| self.draw_sections(ui));
+            .show(ui, |ui| {
+                ui.push_id(self.tab, |ui| self.draw_tab(ui));
+            });
         ui.add_space(DETAIL_SECTION_GAP);
         ui.separator();
         self.draw_actions(ui)
     }
 
-    fn draw_sections(&mut self, ui: &mut egui::Ui) {
-        section(ui, "Appearance", |ui| {
-            ui.checkbox(&mut self.toolbar_icons_only, "Toolbar icons only");
-            ui.checkbox(&mut self.status_bar_icons_only, "Status bar icons only");
+    fn draw_tabs(&mut self, ui: &mut egui::Ui) -> f32 {
+        let previous = self.tab;
+        let tabs = ui.horizontal_wrapped(|ui| {
+            for (tab, label) in [
+                (SettingsTab::General, "General"),
+                (SettingsTab::Hotkeys, "Hotkeys"),
+                (SettingsTab::McpServer, "MCP server"),
+                (SettingsTab::Advanced, "Advanced"),
+            ] {
+                ui.selectable_value(&mut self.tab, tab, label);
+            }
         });
-        section(ui, "Welcome images", |ui| self.draw_welcome_images(ui));
-        section(ui, "Hotkeys", |ui| self.hotkey_editor.draw(ui));
-        section(ui, "Advanced", |ui| self.draw_advanced(ui));
+        if self.tab != previous {
+            self.hotkey_editor.cancel_capture();
+        }
+        tabs.response.rect.height() + ui.spacing().item_spacing.y
+    }
+
+    fn draw_tab(&mut self, ui: &mut egui::Ui) {
+        match self.tab {
+            SettingsTab::General => {
+                section(ui, "Appearance", |ui| {
+                    ui.checkbox(&mut self.toolbar_icons_only, "Toolbar icons only");
+                    ui.checkbox(&mut self.status_bar_icons_only, "Status bar icons only");
+                });
+                section(ui, "Welcome images", |ui| self.draw_welcome_images(ui));
+            }
+            SettingsTab::Hotkeys => self.hotkey_editor.draw(ui),
+            SettingsTab::McpServer => self.draw_mcp_server(ui),
+            SettingsTab::Advanced => self.draw_advanced(ui),
+        }
+    }
+
+    fn draw_mcp_server(&mut self, ui: &mut egui::Ui) {
+        ui.checkbox(&mut self.mcp_enabled, "Enable MCP server");
+        ui.add_enabled_ui(self.mcp_enabled, |ui| {
+            ui.horizontal(|ui| {
+                let label = ui.label("Port");
+                ui.add(egui::DragValue::new(&mut self.control_port).range(CONTROL_PORT_RANGE))
+                    .labelled_by(label.id);
+            });
+        });
     }
 
     fn draw_welcome_images(&mut self, ui: &mut egui::Ui) {
@@ -92,10 +130,6 @@ impl SettingsDialog {
                         }
                     })
                     .response
-                    .labelled_by(label.id);
-                ui.end_row();
-                let label = ui.label("Control port (0 = off)");
-                ui.add(egui::DragValue::new(&mut self.control_port).range(CONTROL_PORT_RANGE))
                     .labelled_by(label.id);
                 ui.end_row();
             });

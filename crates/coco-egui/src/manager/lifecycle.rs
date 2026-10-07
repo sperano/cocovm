@@ -36,7 +36,7 @@ impl ManagerApp {
         // `entries` misses a file written by another instance.
         let taken = |candidate: &str| {
             self.entries.iter().any(|e| e.slug == candidate)
-                || dir.join(format!("{candidate}.toml")).exists()
+                || machine_def::def_path(&dir, candidate).exists()
         };
         let slug = machine_def::unique_slug(&machine_def::slugify(&name), &taken);
         let created = Some(

@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- The machine list's right-click menu item "Show config" is now "Show
+  config in Finder" (macOS), "Show config in File Explorer" (Windows), or
+  "Show config in File Manager" (Linux), and it does what the name says:
+  it reveals the machine's definition file on disk. Before, it only
+  selected the row, which looked like nothing happened when the row was
+  already selected. On Linux the containing folder opens, since desktops
+  have no portable way to select a file.
 - A `fast_forward` option on the MCP `wait` and `wait_for_text` tools. With
   it, the VM runs as fast as the host allows until the call returns, with
   audio dropped, instead of at real-time speed; a 3,600-field wait no longer
@@ -49,6 +56,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   lands, as a 0-based row and column, on the 32-column screen and the
   `WIDTH 40`/`WIDTH 80` screens. In PMODE graphics it now says there is no
   text buffer instead of decoding graphics bytes as characters.
+
+### Removed
+- The `book/` course and its `tools/build-book.sh` EPUB/PDF builder. The
+  per-PR book-update gate is gone with it.
 
 ## [0.7.8] - 2026-10-03
 

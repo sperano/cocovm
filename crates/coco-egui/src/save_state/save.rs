@@ -15,10 +15,18 @@ use super::media_ref::hash_media_ref;
 pub(crate) const DRIVEWIRE_HOST_BUSY: &str = "DriveWire host I/O is still pending; try again";
 
 impl CocoApp {
+    /// [`Self::write_state_to`], then the "State saved" toast.
+    pub(crate) fn save_state_to(&mut self, path: &Path) -> Result<(), String> {
+        self.write_state_to(path)?;
+        self.set_toast("State saved");
+        Ok(())
+    }
+
     /// Flush dirty media, build [`MediaRefs`], and write the encoded
     /// `.ccstate` using tmp-then-rename so a crash mid-write can't leave a
     /// truncated file. A flush failure aborts before anything is written.
-    pub(crate) fn save_state_to(&mut self, path: &Path) -> Result<(), String> {
+    /// Shows no toast: callers word their own confirmation.
+    pub(super) fn write_state_to(&mut self, path: &Path) -> Result<(), String> {
         if self
             .machine
             .bus
@@ -36,7 +44,6 @@ impl CocoApp {
             .map_err(|e| format!("could not write {}: {e}", tmp_path.display()))?;
         std::fs::rename(&tmp_path, path)
             .map_err(|e| format!("could not write {}: {e}", path.display()))?;
-        self.set_toast("State saved".to_string());
         Ok(())
     }
 

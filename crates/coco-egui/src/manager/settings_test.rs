@@ -151,7 +151,10 @@ fn manager_with_listener(dir: &TempDir, control_port: u16) -> ManagerApp {
     let mut manager = ManagerApp::new(None, None, None, Vec::new(), Some(server));
     manager.config_path = Some(dir.path().join("config.toml"));
     let mut dialog = SettingsDialog::from_file(FileConfig::default(), None);
-    dialog.control_port = control_port;
+    dialog.mcp_enabled = control_port != 0;
+    if dialog.mcp_enabled {
+        dialog.control_port = control_port;
+    }
     manager.settings = Some(dialog);
     manager
 }
@@ -180,7 +183,7 @@ fn commit_moves_the_listener_to_the_new_port() {
 }
 
 #[test]
-fn commit_with_port_zero_drops_the_listener() {
+fn commit_with_mcp_disabled_drops_the_listener() {
     let dir = TempDir::new("settings-port-zero");
     let mut manager = manager_with_listener(&dir, 0);
 
@@ -189,8 +192,10 @@ fn commit_with_port_zero_drops_the_listener() {
     assert!(manager.settings.is_none());
     assert!(
         manager.control.is_none(),
-        "port 0 must disable the listener"
+        "clearing the checkbox disables the listener"
     );
+    let saved = crate::config::load(manager.config_path.as_deref()).expect("saved config");
+    assert_eq!(saved.control_port, Some(0));
 }
 
 #[test]
@@ -198,7 +203,10 @@ fn commit_keeps_the_listener_when_the_port_is_unchanged() {
     let dir = TempDir::new("settings-port-same");
     let mut manager = manager_with_listener(&dir, 0);
     let port = manager.control_port();
-    manager.settings.as_mut().expect("dialog open").control_port = port;
+    let dialog = manager.settings.as_mut().expect("dialog open");
+    dialog.control_port = port;
+    dialog.opened_control_port = port;
+    dialog.mcp_enabled = true;
 
     manager.commit_settings(&egui::Context::default());
 
@@ -220,6 +228,12 @@ fn commit_leaves_a_cli_env_port_override_alone() {
         manager.control_port(),
         port,
         "an override must keep the listener"
+    );
+    let saved = crate::config::load(manager.config_path.as_deref()).expect("saved config");
+    assert_eq!(
+        saved.control_port,
+        Some(0),
+        "the file still records the toggle"
     );
 }
 
@@ -312,4 +326,62 @@ fn commit_leaves_a_cli_env_log_level_override_alone() {
 
     assert!(manager.settings.is_none());
     assert_eq!(current_level(&handle), Some(LevelFilter::WARN));
+}
+
+#[test]
+fn disabled_mcp_loads_a_positive_draft_and_round_trips_as_disabled() {
+    let dialog = SettingsDialog::from_file(
+        FileConfig {
+            control_port: Some(0),
+            ..FileConfig::default()
+        },
+        None,
+    );
+    assert!(!dialog.mcp_enabled);
+    assert_eq!(dialog.control_port, crate::control::DEFAULT_PORT);
+    assert_eq!(dialog.to_file_config().control_port, Some(0));
+}
+
+#[test]
+fn enabling_mcp_starts_a_listener_and_persists_the_port() {
+    let dir = TempDir::new("settings-enable-mcp");
+    let mut manager = ManagerApp::new(None, None, None, Vec::new(), None);
+    manager.config_path = Some(dir.path().join("config.toml"));
+    let mut dialog = SettingsDialog::from_file(
+        FileConfig {
+            control_port: Some(0),
+            ..FileConfig::default()
+        },
+        None,
+    );
+    let target = free_port();
+    dialog.control_port = target;
+    dialog.mcp_enabled = true;
+    manager.settings = Some(dialog);
+
+    manager.commit_settings(&egui::Context::default());
+
+    assert!(manager.settings.is_none());
+    assert_eq!(manager.control_port(), target);
+    let saved = crate::config::load(manager.config_path.as_deref()).expect("saved config");
+    assert_eq!(saved.control_port, Some(target));
+}
+
+#[test]
+fn an_unchanged_disabled_mcp_draft_preserves_an_existing_listener() {
+    let dir = TempDir::new("settings-disabled-unchanged");
+    let mut manager = manager_with_listener(&dir, 0);
+    let before = manager.control_port();
+    manager.settings = Some(SettingsDialog::from_file(
+        FileConfig {
+            control_port: Some(0),
+            ..FileConfig::default()
+        },
+        None,
+    ));
+
+    manager.commit_settings(&egui::Context::default());
+
+    assert!(manager.settings.is_none());
+    assert_eq!(manager.control_port(), before);
 }

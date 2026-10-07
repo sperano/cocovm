@@ -8,20 +8,28 @@ use crate::*;
 use super::harness::*;
 use super::manager_settings::settings_harness;
 
-const SMALL_VIEWPORT: egui::Vec2 = egui::vec2(480.0, 360.0);
+const SMALL_VIEWPORT: egui::Vec2 = egui::vec2(480.0, 280.0);
 const SCROLL_TO_END: f32 = -2000.0;
 const SETTLE_FRAMES: usize = 30;
 const MIN_URL_WIDTH: f32 = 480.0;
 
 #[test]
-fn settings_groups_and_full_width_url_are_visible() {
+fn settings_tabs_show_their_controls_and_a_full_width_url() {
     let dir = TempDir::new("settings-sections");
     let mut harness = settings_harness(dir.path().join("config.toml"));
     click(&mut harness, "Settings");
 
-    for title in ["Appearance", "Welcome images", "Hotkeys", "Advanced"] {
+    for title in [
+        "General",
+        "Appearance",
+        "Welcome images",
+        "Hotkeys",
+        "MCP server",
+        "Advanced",
+    ] {
         harness.get_by_label(title);
     }
+    click(&mut harness, "Advanced");
     let url = harness
         .get_by_role_and_label(egui::accesskit::Role::TextInput, "Assets URL")
         .rect();
@@ -47,6 +55,7 @@ fn small_window_keeps_actions_visible_while_scrolling_and_saves_edits() {
     assert_actions_visible(&harness);
 
     scroll_to_end(&mut harness);
+    click(&mut harness, "Advanced");
 
     let url = harness
         .get_by_role_and_label(egui::accesskit::Role::TextInput, "Assets URL")
@@ -81,6 +90,8 @@ fn small_window_cancel_after_scrolling_discards_edits() {
         harness.step();
     }
     scroll_to_end(&mut harness);
+    click(&mut harness, "MCP server");
+    click(&mut harness, "Enable MCP server");
     click(&mut harness, "Cancel");
     assert!(harness.state().settings.is_none());
     assert!(!harness.state().toolbar_icons_only);
@@ -104,6 +115,7 @@ fn small_window_save_error_stays_visible_with_the_actions() {
         harness.step();
     }
     assert!(harness.state().settings.is_some());
+    click(&mut harness, "Advanced");
     let error = harness
         .get_by_label_contains(parent.to_str().expect("UTF-8 temp path"))
         .rect();
@@ -132,5 +144,22 @@ fn scroll_to_end(harness: &mut ManagerHarness) {
     });
     for _ in 0..SETTLE_FRAMES {
         harness.step();
+    }
+}
+
+#[test]
+fn changing_tabs_keeps_the_footer_in_place() {
+    let dir = TempDir::new("settings-tab-geometry");
+    let mut harness = settings_harness(dir.path().join("config.toml"));
+    click(&mut harness, "Settings");
+    harness.set_size(SMALL_VIEWPORT);
+    for _ in 0..SETTLE_FRAMES {
+        harness.step();
+    }
+    let original = harness.get_by_label("Save").rect();
+    for tab in ["Hotkeys", "MCP server", "Advanced", "General"] {
+        click(&mut harness, tab);
+        assert_eq!(harness.get_by_label("Save").rect(), original, "{tab}");
+        assert_actions_visible(&harness);
     }
 }

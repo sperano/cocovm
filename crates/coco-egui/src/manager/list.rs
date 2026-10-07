@@ -6,6 +6,7 @@
 use eframe::egui;
 
 use super::bulk::BulkAction;
+use super::reveal::SHOW_CONFIG_LABEL;
 use super::selection::Step;
 use super::sort::SortKey;
 use super::{
@@ -307,9 +308,8 @@ impl ManagerApp {
                 ui.close();
             }
             ui.separator();
-            if ui.button("Show config").clicked() {
-                self.selection.set_single(i);
-                self.save_error = None;
+            if ui.button(SHOW_CONFIG_LABEL).clicked() {
+                self.reveal_config(i);
                 ui.close();
             }
             ui.separator();
@@ -373,7 +373,7 @@ impl ManagerApp {
 
     /// After a context-menu lifecycle action: if it recorded a launch
     /// error, select the row so the detail pane shows why nothing happened.
-    fn select_row_on_error(&mut self, i: usize) {
+    pub(super) fn select_row_on_error(&mut self, i: usize) {
         if self.entries[i].launch_error.is_some() {
             self.selection.set_single(i);
             self.save_error = None;

@@ -163,6 +163,16 @@ pub(crate) struct CocoApp {
     /// [`save_state::TOAST_SECS`] seconds. Save/load-state results use it now,
     /// and other fire-and-forget confirmations can use it later.
     pub(crate) toast: Option<(String, std::time::Instant)>,
+    /// Directory of the quick-state files every VM window shares
+    /// (`save_state::default_quick_state_dir`; `None` without a home
+    /// directory). A field rather than a lookup so tests can point it at a
+    /// scratch directory.
+    pub(crate) quick_state_dir: Option<std::path::PathBuf>,
+    /// The quick state (0-based) the toolbar's Save and Load act on. Per
+    /// window, starts at State 1, not persisted; a successful quick save or
+    /// load from any control selects the state it used
+    /// (`save_state/quick.rs`).
+    pub(crate) selected_quick_state: usize,
     /// Status-bar device-activity icons: per-device pulse-stretched latches
     /// over the core's monotonic activity counters, plus the cassette reel
     /// angle (`status_icons.rs`). Purely UI state — not serialized, not
@@ -339,6 +349,8 @@ impl CocoApp {
             debugger: debugger::DebuggerPanel::new(),
             rom_source,
             toast: None,
+            quick_state_dir: save_state::default_quick_state_dir(),
+            selected_quick_state: 0,
             activity: StatusActivity::default(),
             pending_suspend: false,
             pending_resume: false,
