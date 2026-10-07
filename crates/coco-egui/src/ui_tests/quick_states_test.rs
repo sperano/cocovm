@@ -1,6 +1,7 @@
 //! The VM toolbar's quick-state group (`chrome/toolbar/quick_states.rs`)
-//! and the quick actions it shares with the numbered chords (`save_state/quick.rs`): Load gated on the state file existing,
-//! the per-window selection, the collapsed and hidden layouts, and the
+//! and the quick actions it shares with the numbered chords
+//! (`save_state/quick.rs`): Load gated on the state file existing, the
+//! per-window selection, the collapsed and hidden layouts, and the
 //! empty-state chord. Every test points the window at its own scratch
 //! quick-state directory, never the user's.
 
