@@ -1,8 +1,8 @@
 //! Quick states: the [`QUICK_SLOTS`] numbered save-state files every VM
 //! window shares, their labels and keyboard chords, and the quick
 //! save/load actions behind the toolbar's state group
-//! (`chrome::toolbar::quick_states`), the Machine menu's Quick Save/Quick
-//! Load submenus, and the numbered chords (`app/input.rs`).
+//! (`chrome::toolbar::quick_states`) and the numbered chords
+//! (`app/input.rs`).
 
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
@@ -118,7 +118,7 @@ pub(crate) fn saved_time(t: SystemTime, now: chrono::DateTime<chrono::Local>) ->
     }
 }
 
-/// Menu row for `slot` (0-based): "State 1 — saved 22:40", "State 2 — Empty",
+/// Selector row for `slot` (0-based): "State 1 — saved 22:40", "State 2 — Empty",
 /// or "State 3 — timestamp unavailable" when the file's time can't be read.
 pub(crate) fn state_row_label(
     slot: usize,

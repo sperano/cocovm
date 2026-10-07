@@ -53,6 +53,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 - The `book/` course and its `tools/build-book.sh` EPUB/PDF builder. The
   per-PR book-update gate is gone with it.
+- The Machine menu's Quick Save and Quick Load submenus. Save and load
+  quick states with the toolbar's State selector and its Save and Load
+  tiles, or with the keyboard shortcuts for States 1 to 3.
 
 ## [0.7.8] - 2026-10-03
 

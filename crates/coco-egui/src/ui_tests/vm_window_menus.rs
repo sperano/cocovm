@@ -325,7 +325,8 @@ fn media_actions_are_disabled_until_media_is_present() {
 }
 
 /// The Machine menu's Save/Load State section shows both file-dialog items
-/// and both quick-slot submenus — `rfd`'s native dialog makes this visibility-only.
+/// — `rfd`'s native dialog makes this visibility-only — and no quick-state
+/// submenus: those states live on the toolbar.
 #[test]
 fn machine_menu_shows_save_and_load_state_items() {
     let mut harness = boot_harness();
@@ -333,8 +334,12 @@ fn machine_menu_shows_save_and_load_state_items() {
     click(&mut harness, "Machine");
     harness.get_by_label("Save State…");
     harness.get_by_label("Load State…");
-    harness.get_by_label_contains("Quick Save");
-    harness.get_by_label_contains("Quick Load");
+    for label in ["Quick Save", "Quick Load"] {
+        assert!(
+            harness.query_all_by_label_contains(label).next().is_none(),
+            "{label} left the Machine menu"
+        );
+    }
 }
 
 /// A save-then-load round trip driven directly through `save_state_to`/

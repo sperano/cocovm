@@ -1,6 +1,5 @@
 //! The VM toolbar's quick-state group (`chrome/toolbar/quick_states.rs`)
-//! and the quick actions it shares with the Machine menu and the numbered
-//! chords (`save_state/quick.rs`): Load gated on the state file existing,
+//! and the quick actions it shares with the numbered chords (`save_state/quick.rs`): Load gated on the state file existing,
 //! the per-window selection, the collapsed and hidden layouts, and the
 //! empty-state chord. Every test points the window at its own scratch
 //! quick-state directory, never the user's.
@@ -132,8 +131,7 @@ fn the_load_chord_on_an_empty_state_does_not_load() {
     assert_eq!(harness.state().selected_quick_state, 0);
 }
 
-/// Chords and Machine-menu quick actions select their state in this window,
-/// but only when they succeed.
+/// Chords select their state in this window, but only when they succeed.
 #[test]
 fn quick_actions_select_their_state_only_on_success() {
     let dir = TempDir::new("quick-selection");
@@ -157,37 +155,6 @@ fn quick_actions_select_their_state_only_on_success() {
         2,
         "failure keeps State 3"
     );
-    harness.state_mut().cart_error = None;
-    harness.step();
-
-    click(&mut harness, "Machine");
-    click_containing(&mut harness, "Quick Save");
-    click(&mut harness, "State 7 — Empty");
-    assert!(state_path(&dir, 7).is_file());
-    assert_eq!(harness.state().selected_quick_state, 6, "saved State 7");
-    harness.get_by_label("Load State 7");
-}
-
-/// The Machine menu's Quick Load lists all ten states and disables the
-/// ones without a file.
-#[test]
-fn machine_menu_quick_load_disables_empty_states() {
-    let dir = TempDir::new("quick-menu-load");
-    let mut harness = harness_with_states(&dir);
-    std::fs::write(state_path(&dir, 4), b"not a state").expect("write fixture");
-    harness.step();
-
-    click(&mut harness, "Machine");
-    click_containing(&mut harness, "Quick Load");
-    // Rows carry their chord in the accessible label ("State 1 — Empty Ctrl+1").
-    for n in 1..=save_state::QUICK_SLOTS {
-        let prefix = format!("State {n} — ");
-        let row = harness.get_by_label_contains(&prefix);
-        let label = row.accesskit_node().label().unwrap_or_default();
-        let empty = label.contains("Empty");
-        assert_eq!(empty, n != 4, "{label}");
-        assert_eq!(row.accesskit_node().is_disabled(), empty, "{label}");
-    }
 }
 
 /// Suspended disables both actions; a debugger pause does not.
