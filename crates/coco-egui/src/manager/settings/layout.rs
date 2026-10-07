@@ -10,8 +10,10 @@ use crate::manager::DETAIL_SECTION_GAP;
 
 const DIALOG_WIDTH: f32 = 560.0;
 const VIEWPORT_MARGIN: f32 = 24.0;
-/// Space for the heading, footer, frame margins, and section spacing.
-const DIALOG_CHROME_HEIGHT: f32 = 120.0;
+const DIALOG_INNER_MARGIN: i8 = 16;
+const GROUP_INNER_MARGIN: i8 = 12;
+const HEADING_GAP: f32 = 8.0;
+const FOOTER_SEPARATOR_SPACING: f32 = 6.0;
 const CONTENT_MAX_HEIGHT: f32 = 260.0;
 const FIELD_WIDTH: f32 = 160.0;
 const BUTTON_WIDTH: f32 = 80.0;
@@ -20,25 +22,35 @@ const CONTROL_PORT_RANGE: std::ops::RangeInclusive<u16> = 1..=u16::MAX;
 /// The persisted interval is nonzero.
 const WELCOME_IMAGE_CYCLE_SECS_RANGE: std::ops::RangeInclusive<u32> = 1..=u32::MAX;
 
+pub(super) fn dialog_frame(ctx: &egui::Context) -> egui::Frame {
+    egui::Frame::popup(&ctx.style()).inner_margin(DIALOG_INNER_MARGIN)
+}
+
 impl SettingsDialog {
     pub(super) fn draw(&mut self, ui: &mut egui::Ui) -> SettingsAction {
         self.hotkey_editor.take_captured_key(ui);
         let viewport = ui.ctx().content_rect().size();
-        let width = DIALOG_WIDTH.min((viewport.x - VIEWPORT_MARGIN * 2.0).max(0.0));
+        let frame_margin = dialog_frame(ui.ctx()).total_margin().sum();
+        let available = viewport - egui::Vec2::splat(VIEWPORT_MARGIN * 2.0) - frame_margin;
+        let width = DIALOG_WIDTH.min(available.x.max(0.0));
         ui.set_width(width);
+        let header_top = ui.cursor().min.y;
         ui.heading("Settings");
-        let tabs_height = self.draw_tabs(ui);
-        let error_height = self.error.as_ref().map_or(0.0, |error| {
-            ui.colored_label(ui.visuals().error_fg_color, error)
-                .rect
-                .height()
-                + ui.spacing().item_spacing.y
-        });
+        ui.add_space(HEADING_GAP);
+        self.draw_tabs(ui);
+        if let Some(error) = &self.error {
+            ui.colored_label(ui.visuals().error_fg_color, error);
+        }
         ui.add_space(DETAIL_SECTION_GAP);
+        let header_height = ui.cursor().min.y - header_top;
+        let footer_height = DETAIL_SECTION_GAP * 2.0
+            + FOOTER_SEPARATOR_SPACING
+            + ui.spacing().interact_size.y
+            + ui.spacing().item_spacing.y * 3.0;
         // A fixed viewport-bounded body avoids feeding the previous modal height
         // back into ScrollArea sizing, which moves controls across opening frames.
-        let content_height = (viewport.y - DIALOG_CHROME_HEIGHT - tabs_height - error_height)
-            .clamp(0.0, CONTENT_MAX_HEIGHT);
+        let content_height =
+            (available.y - header_height - footer_height).clamp(0.0, CONTENT_MAX_HEIGHT);
         egui::ScrollArea::vertical()
             .id_salt(("settings_content", self.tab))
             .min_scrolled_height(content_height)
@@ -48,13 +60,14 @@ impl SettingsDialog {
                 ui.push_id(self.tab, |ui| self.draw_tab(ui));
             });
         ui.add_space(DETAIL_SECTION_GAP);
-        ui.separator();
+        ui.add(egui::Separator::default().spacing(FOOTER_SEPARATOR_SPACING));
+        ui.add_space(DETAIL_SECTION_GAP);
         self.draw_actions(ui)
     }
 
-    fn draw_tabs(&mut self, ui: &mut egui::Ui) -> f32 {
+    fn draw_tabs(&mut self, ui: &mut egui::Ui) {
         let previous = self.tab;
-        let tabs = ui.horizontal_wrapped(|ui| {
+        ui.horizontal_wrapped(|ui| {
             for (tab, label) in [
                 (SettingsTab::General, "General"),
                 (SettingsTab::Hotkeys, "Hotkeys"),
@@ -67,7 +80,6 @@ impl SettingsDialog {
         if self.tab != previous {
             self.hotkey_editor.cancel_capture();
         }
-        tabs.response.rect.height() + ui.spacing().item_spacing.y
     }
 
     fn draw_tab(&mut self, ui: &mut egui::Ui) {
@@ -156,11 +168,13 @@ impl SettingsDialog {
 }
 
 fn section(ui: &mut egui::Ui, title: &str, contents: impl FnOnce(&mut egui::Ui)) {
-    ui.group(|ui| {
-        ui.set_width(ui.available_width());
-        ui.strong(title);
-        ui.add_space(ui.spacing().item_spacing.y);
-        contents(ui);
-    });
+    egui::Frame::group(ui.style())
+        .inner_margin(GROUP_INNER_MARGIN)
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.strong(title);
+            ui.add_space(ui.spacing().item_spacing.y);
+            contents(ui);
+        });
     ui.add_space(DETAIL_SECTION_GAP);
 }

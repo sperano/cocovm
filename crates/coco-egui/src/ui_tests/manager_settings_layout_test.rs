@@ -12,6 +12,8 @@ const SMALL_VIEWPORT: egui::Vec2 = egui::vec2(480.0, 280.0);
 const SCROLL_TO_END: f32 = -2000.0;
 const SETTLE_FRAMES: usize = 30;
 const MIN_URL_WIDTH: f32 = 480.0;
+const MIN_VIEWPORT_MARGIN: f32 = 24.0;
+const MIN_DIALOG_PADDING: f32 = 16.0;
 
 #[test]
 fn settings_tabs_show_their_controls_and_a_full_width_url() {
@@ -127,10 +129,21 @@ fn small_window_save_error_stays_visible_with_the_actions() {
 }
 
 fn assert_actions_visible(harness: &ManagerHarness) {
+    let dialog = harness
+        .ctx
+        .memory(|memory| memory.area_rect(egui::Id::new("settings_dialog")))
+        .expect("settings dialog area");
+    let viewport = egui::Rect::from_min_size(egui::Pos2::ZERO, SMALL_VIEWPORT);
+    assert!(
+        viewport.shrink(MIN_VIEWPORT_MARGIN).contains_rect(dialog),
+        "dialog leaves room around the viewport edges: {dialog:?}"
+    );
     for label in ["Save", "Cancel"] {
         let rect = harness.get_by_label(label).rect();
-        assert!(rect.min.x >= 0.0 && rect.max.x <= SMALL_VIEWPORT.x);
-        assert!(rect.min.y >= 0.0 && rect.max.y <= SMALL_VIEWPORT.y);
+        assert!(
+            dialog.shrink(MIN_DIALOG_PADDING).contains_rect(rect),
+            "{label} stays inside the dialog padding: {rect:?}"
+        );
     }
 }
 

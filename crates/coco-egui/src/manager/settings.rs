@@ -170,11 +170,13 @@ impl ManagerApp {
             return;
         }
         let mut action = SettingsAction::None;
-        let modal = egui::Modal::new(egui::Id::new("settings_dialog")).show(ctx, |ui| {
-            if let Some(dialog) = &mut self.settings {
-                action = dialog.draw(ui);
-            }
-        });
+        let modal = egui::Modal::new(egui::Id::new("settings_dialog"))
+            .frame(layout::dialog_frame(ctx))
+            .show(ctx, |ui| {
+                if let Some(dialog) = &mut self.settings {
+                    action = dialog.draw(ui);
+                }
+            });
         match action {
             SettingsAction::None => {}
             SettingsAction::Cancel => self.settings = None,
