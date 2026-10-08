@@ -1,7 +1,7 @@
 //! Tandy DMP-105 dot-matrix printer interpreter: byte stream in (as decoded
 //! by [`crate::bitbanger::BitBanger`]), abstract dot-raster paper out
 //! (`crate::printer::Paper`). Every hardware fact cited here is sourced from
-//! `docs/dmp105-protocol.md`; only entries that document marks VERIFIED are
+//! wiki `cocovm/dmp105-protocol`; only entries that document marks VERIFIED are
 //! implemented. See that document's own INFERRED/UNVERIFIABLE flags for what
 //! remains out of scope, such as exact BUSY assertion granularity and the
 //! European character set's per-code glyph mapping.
@@ -20,7 +20,7 @@
 //! Graphics line feed follows the explicit 7/72-inch command definition
 //! on manual pp.25 and 39. Appendix D p.51 gives an incompatible repeated-
 //! feed ratio; no available evidence establishes the inferred 22/216-inch
-//! alternative. See `docs/dmp105-protocol.md` for the source conflict.
+//! alternative. See wiki `cocovm/dmp105-protocol` for the source conflict.
 
 use serde::{Deserialize, Serialize};
 

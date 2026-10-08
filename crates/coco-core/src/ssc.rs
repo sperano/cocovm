@@ -9,7 +9,7 @@
 //! that load an 8×64-byte buffer area and execute it as sound data,
 //! register strings, allophone streams or English text — over the four
 //! ports the [`board`] module wires to the chips. The protocol's constants
-//! live in [`commands`] for tests and tools; see `docs/ssc-spec.md`.
+//! live in [`commands`] for tests and tools; see wiki `cocovm/ssc-spec`.
 
 use std::collections::VecDeque;
 
@@ -30,7 +30,7 @@ pub use commands::{cmd, group, ram, terminator};
 use board::{Board, BoardView};
 
 /// Register addresses (MAME `coco_ssc.cpp`; SEB Unravelled II Appendix A;
-/// `docs/cartridges.md` "Carts can decode addresses outside SCS").
+/// wiki `cocovm/cartridges` "Carts can decode addresses outside SCS").
 pub mod reg {
     /// SP0256 reset control (write) / always `0xFF` (read).
     pub const RESET: u16 = 0xFF7D;

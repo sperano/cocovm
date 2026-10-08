@@ -131,7 +131,7 @@ impl MultiPak {
 
 /// Standard SCS* window (`$FF40-$FF5F`): routed only to the SCS-selected
 /// slot, same as `CART*`/`CTS*` follow the CTS-selected slot. The `$FF60-
-/// $FF7E` extension some carts decode (`docs/cartridges.md` "Carts can
+/// $FF7E` extension some carts decode (wiki `cocovm/cartridges` "Carts can
 /// decode addresses outside SCS") is NOT switched by the MPI — the address
 /// and data buses are common to every slot, only SCS*/CTS*/CART* are
 /// per-slot — so it's handled separately in the following code.

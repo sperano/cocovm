@@ -1,7 +1,7 @@
 //! `ROMPak` cartridge coverage: the MAME-compatible mirror-fill, and end-to-end
 //! integration against the real `roms/coco3.rom` / `roms/disk11.rom` for the
 //! two ways a pak reaches the CPU — the autostart FIRQ boot path (fact 1/2)
-//! and BASIC's cold-start `DK` disk-controller probe (`docs/cartridges.md`).
+//! and BASIC's cold-start `DK` disk-controller probe (wiki `cocovm/cartridges`).
 
 use coco_core::cart::{Cartridge, ROM_PAK_MAX_LEN, ROMPak, ROMPakError};
 use coco_core::{Machine, MachineConfig};
@@ -182,7 +182,7 @@ fn non_autostart_pak_boots_to_normal_basic_and_never_runs_cart_code() {
 fn disk_basic_pak_integrates_at_cold_start() {
     // Non-autostart: Disk BASIC ROM Paks don't tie CART* to Q (fact 6). BASIC's
     // cold start finds it instead through the "DK" signature probe at $C000/$C001
-    // (`docs/cartridges.md`).
+    // (wiki `cocovm/cartridges`).
     const FIELDS: usize = 400;
     let mut m = boot_machine();
     m.insert_cartridge(ROMPak::from_bytes(&load_rom(DISK11), false).unwrap());

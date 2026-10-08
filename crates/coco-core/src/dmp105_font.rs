@@ -6,7 +6,7 @@
 //! **ARTISTIC APPROXIMATION — not hardware-verified.** The manual gives cell
 //! *geometry* (9x7 plus a descender row), but the font lives in the
 //! printer's mask-ROM microcontroller and no dump exists
-//! (`docs/dmp-font-sources.md`). Every bit pattern here is hand-authored as
+//! (wiki `cocovm/dmp-font-sources`). Every bit pattern here is hand-authored as
 //! a plausible, legible rendering at this cell size, not real ROM data.
 //!
 //! # Representation

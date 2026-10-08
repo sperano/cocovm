@@ -2,7 +2,7 @@
 //! command bytes, terminators, buffer RAM geometry, and the sound-data event
 //! layout (Tandy Speech/Sound Cartridge Owner's Manual, 26-3144, Appendix
 //! A). The firmware interprets these; this crate only names them so tests
-//! and tools can build streams. See `docs/ssc-spec.md`.
+//! and tools can build streams. See wiki `cocovm/ssc-spec`.
 
 /// Command bytes. Every "load N..=7" / "load individual N" pair encodes the
 /// target buffer as `byte - START`.

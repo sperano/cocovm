@@ -1,6 +1,6 @@
 //! Bit-banged serial printer port: PIA1 Data Register A bit 1 ($FF20, TX,
 //! DIN pin 4) out, PIA1 Data Register B bit 0 ($FF22, BUSY, DIN pin 2) back
-//! in. See `docs/bitbanger-spec.md` for the full verification trail (ROM
+//! in. See wiki `cocovm/bitbanger-spec` for the full verification trail (ROM
 //! disassembly of the Color BASIC printer driver, MAME cross-check against
 //! `src/devices/bus/rs232/printer.cpp`); every hardware fact cited here is
 //! sourced from that document.

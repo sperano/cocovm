@@ -25,7 +25,7 @@ use std::ops::ControlFlow;
 use serde::{Deserialize, Serialize};
 
 /// Exact software grid for both printers' documented vertical feed commands.
-/// See `docs/dmp130-protocol.md`; not a physical stepper resolution.
+/// See wiki `cocovm/dmp130-protocol`; not a physical stepper resolution.
 pub const Y_UNITS_PER_INCH: u32 = 432;
 
 /// Horizontal fixed-point resolution: 1/3600". Derived, not a hardware fact:
