@@ -22,6 +22,7 @@ fn hotkey(text: &str) -> Hotkey {
 /// whose button shows its default, F10.
 fn start_key_layout_capture(harness: &mut ManagerHarness) {
     click(harness, "Settings");
+    click(harness, "Hotkeys");
     click(harness, "F10");
     harness.get_by_label(CAPTURE_PROMPT);
 }
@@ -126,6 +127,7 @@ fn capturing_the_new_machine_hotkey_does_not_create_a_machine() {
         .format_shortcut(&DEFAULT_HOTKEYS.new_machine.shortcut());
 
     click(&mut harness, "Settings");
+    click(&mut harness, "Hotkeys");
     click(&mut harness, &new_machine);
     press(&mut harness, egui::Modifiers::COMMAND, egui::Key::N);
 
@@ -172,4 +174,18 @@ fn a_vm_window_follows_rebound_hotkeys() {
     // The keyboard menu names the current binding.
     click(&mut harness, "Symbolic");
     harness.get_by_label("Key layout (F9)");
+}
+
+#[test]
+fn leaving_the_hotkeys_tab_cancels_capture() {
+    let dir = TempDir::new("settings-hotkey-tab-switch");
+    let mut harness = settings_harness(dir.path().join("config.toml"));
+    start_key_layout_capture(&mut harness);
+    click(&mut harness, "General");
+    press(&mut harness, egui::Modifiers::NONE, egui::Key::F9);
+    click(&mut harness, "Hotkeys");
+    harness.get_by_label("F10");
+    assert!(harness.query_by_label(CAPTURE_PROMPT).is_none());
+    press(&mut harness, egui::Modifiers::NONE, egui::Key::Escape);
+    assert!(harness.state().settings.is_none());
 }

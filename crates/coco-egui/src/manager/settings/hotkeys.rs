@@ -33,12 +33,8 @@ impl HotkeyEditor {
         }
     }
 
-    /// The section: heading, one row per action, any capture error.
+    /// One row per action and any capture error.
     pub(super) fn draw(&mut self, ui: &mut egui::Ui) {
-        // Before any widget runs, so the captured key can't also click a
-        // focused button or reach the modal's Esc-to-close.
-        self.take_captured_key(ui);
-        ui.label(egui::RichText::new("Hotkeys").strong());
         egui::Grid::new("settings_hotkeys")
             .num_columns(3)
             .show(ui, |ui| {
@@ -99,10 +95,15 @@ impl HotkeyEditor {
         }
     }
 
+    pub(super) fn cancel_capture(&mut self) {
+        self.capturing = None;
+    }
+
+    /// Called before any dialog widget, so a capture cannot activate a tab or button.
     /// While capturing, takes the frame's first key press out of the
     /// input: Esc cancels; anything else becomes the binding, unless
     /// [`Hotkey::from_press`] refuses it or another action already has it.
-    fn take_captured_key(&mut self, ui: &egui::Ui) {
+    pub(super) fn take_captured_key(&mut self, ui: &egui::Ui) {
         let Some(action) = self.capturing else {
             return;
         };
