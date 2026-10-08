@@ -127,7 +127,7 @@ fn media_choice_text(media: &MediaChoice) -> String {
     }
 }
 
-/// The same filter the Machine-menu disk items use.
+/// The same filter the Disks menu's insert item uses.
 fn disk_file_dialog() -> rfd::FileDialog {
     rfd::FileDialog::new().add_filter("Disk image", &["dsk", "jvc", "os9"])
 }

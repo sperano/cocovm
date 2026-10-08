@@ -22,10 +22,7 @@ fn suspended_window_keeps_chrome_with_start_as_resume() {
 
     assert!(label_exists(&harness, "Suspended"));
     assert!(
-        harness
-            .get_by_label("Machine")
-            .accesskit_node()
-            .is_disabled(),
+        harness.get_by_label("View").accesskit_node().is_disabled(),
         "the menu bar must be inert while suspended"
     );
     for (label, enabled) in [
@@ -115,7 +112,7 @@ fn clicking_the_suspended_display_requests_a_resume() {
 #[test]
 fn suspending_closes_an_open_menu() {
     let mut harness = boot_harness();
-    click(&mut harness, "Machine");
+    click(&mut harness, "View");
     assert!(egui::Popup::is_any_open(&harness.ctx));
 
     harness.state_mut().suspended = true;

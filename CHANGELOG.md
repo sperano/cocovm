@@ -56,6 +56,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   lands, as a 0-based row and column, on the 32-column screen and the
   `WIDTH 40`/`WIDTH 80` screens. In PMODE graphics it now says there is no
   text buffer instead of decoding graphics bytes as characters.
+- Start Print Capture, Stop Print Capture, and Translate CR to LF are in
+  the status bar's Printer menu, next to Open Print Capture, now that the
+  Machine menu is gone.
 
 ### Removed
 - The `book/` course and its `tools/build-book.sh` EPUB/PDF builder. The
@@ -63,6 +66,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The Machine menu's Quick Save and Quick Load submenus. Save and load
   quick states with the toolbar's State selector and its Save and Load
   tiles, or with the keyboard shortcuts for States 1 to 3.
+- The Machine menu, with its Save State and Load State items. Save and
+  load states with the toolbar's State selector or the keyboard shortcuts
+  for States 1 to 3. Print capture moved to the Printer menu.
 
 ## [0.7.8] - 2026-10-03
 

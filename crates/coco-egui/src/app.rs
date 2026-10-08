@@ -102,13 +102,13 @@ pub(crate) struct CocoApp {
     /// on Enter — not live-rebound on each keystroke, like `rs232_tcp_addr`.
     pub(crate) tape_seek_text: String,
     /// Destination path of the active bit-banger "print to text file"
-    /// capture, if any — shown in the Machine
+    /// capture, if any — shown in the Printer
     /// menu and gates "Stop Print Capture", like `tape_path` does for the
     /// cassette deck. Unlike disk/tape images, there is nothing to write
     /// back on eject: `coco_core::bitbanger::FileSink` writes straight
     /// through as bytes are decoded.
     pub(crate) print_capture_path: Option<PathBuf>,
-    /// Machine-menu "Translate CR to LF" checkbox: when set, print captures
+    /// Printer-menu "Translate CR to LF" checkbox: when set, print captures
     /// rewrite the CoCo's bare-CR line endings as LF so the file reads as
     /// normal host text (faithful raw bytes otherwise). Applies when a
     /// capture starts — an in-progress capture keeps the mode it began with.

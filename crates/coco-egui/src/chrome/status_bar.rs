@@ -333,7 +333,7 @@ impl CocoApp {
 
     /// Always shown: the icon flashes on serial-port (bit-banger) output even with no
     /// sink attached. Click the icon for a menu to toggle the printer paper window or
-    /// open a captured print file. The label names the attached sink.
+    /// start, stop, and open a print capture. The label names the attached sink.
     fn printer_status(&mut self, ui: &mut egui::Ui) {
         let bytes_out = self.machine.bus.bitbanger.bytes_out();
         let active = self.activity.printer.observe(bytes_out);

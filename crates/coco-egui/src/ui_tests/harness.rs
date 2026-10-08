@@ -71,7 +71,7 @@ pub(super) fn boot_harness() -> AppHarness {
             crate::joy::SharedGamepad::without_backend(),
         )
     });
-    // egui only puts on-screen widgets in the AccessKit tree, so size for the full Machine menu.
+    // egui only puts on-screen widgets in the AccessKit tree, so size for the full Printer menu.
     harness.set_size(egui::vec2(1024.0, 768.0));
     harness.step();
     harness

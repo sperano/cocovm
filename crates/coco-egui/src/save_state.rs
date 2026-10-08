@@ -1,5 +1,5 @@
-//! Frontend save-state UX: Machine-menu Save/Load State, the quick states
-//! (`quick.rs`) with their keyboard chords, and the status-bar toast — all
+//! Frontend save-state UX: the quick states (`quick.rs`) with their toolbar
+//! controls and keyboard chords, and the status-bar toast — all
 //! built on top of the engine in [`coco_core::snapshot`], which this module
 //! is the only caller of.
 //!
@@ -8,8 +8,6 @@
 //! fiddly frontend-side re-injection [`coco_core::snapshot::restore`] can't
 //! do itself (host-only resources, path mirrors, pacing — see
 //! [`CocoApp::apply_restored_machine`]).
-
-use eframe::egui;
 
 use crate::CocoApp;
 
@@ -63,34 +61,6 @@ impl CocoApp {
             return None;
         }
         Some(msg.clone())
-    }
-
-    /// The Machine menu's Save/Load State section: file-dialog Save/Load.
-    /// The quick states live on the toolbar and the numbered chords.
-    pub(crate) fn draw_save_state_menu(&mut self, ui: &mut egui::Ui) {
-        if ui.button("Save State…").clicked() {
-            ui.close();
-            if let Some(path) = rfd::FileDialog::new()
-                .add_filter("CoCo save state", &["ccstate"])
-                .set_file_name("state.ccstate")
-                .save_file()
-                && let Err(e) = self.save_state_to(&path)
-            {
-                self.cart_error = Some(e);
-            }
-        }
-        if ui.button("Load State…").clicked() {
-            ui.close();
-            if let Some(path) = rfd::FileDialog::new()
-                .add_filter("CoCo save state", &["ccstate"])
-                .pick_file()
-            {
-                match self.load_state_from(&path) {
-                    Ok(()) => self.refresh_window_title(ui.ctx()),
-                    Err(e) => self.cart_error = Some(e),
-                }
-            }
-        }
     }
 }
 

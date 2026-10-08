@@ -1,15 +1,15 @@
-//! The menu bar: Machine, View, and Help. Each menu that is more
-//! than a handful of items lives in its own submodule; the short ones
-//! (Keyboard, View, Help, and the status bar's display, tape, and disk
-//! menus) stay here. The keyboard, display, sound, tape, disk, and joysticks
-//! menus have no menu-bar button — each pops up from its status-bar entry
-//! (`chrome::status_bar`).
+//! The menu bar: View and Help. A section of a menu that is more than a
+//! handful of items lives in its own submodule (the Printer menu's print
+//! capture); the rest (Keyboard, View, Help, and the status bar's display,
+//! tape, disk, and printer menus) stay here. The keyboard, display, sound,
+//! tape, disk, printer, and joysticks menus have no menu-bar button — each
+//! pops up from its status-bar entry (`chrome::status_bar`).
 
 use crate::*;
 
 use super::status_bar;
 
-mod machine;
+mod print_capture;
 
 impl CocoApp {
     /// The menu bar and all of its menus.
@@ -19,7 +19,6 @@ impl CocoApp {
                 ui.disable();
             }
             egui::MenuBar::new().ui(ui, |ui| {
-                ui.menu_button("Machine", |ui| self.machine_menu_ui(ui));
                 ui.menu_button("View", |ui| self.view_menu_ui(ui));
                 ui.menu_button("Help", |ui| self.help_menu_ui(ui));
             });
@@ -212,43 +211,15 @@ impl CocoApp {
         }
     }
 
-    /// Printer menu: toggle printer paper window or open a captured print file.
+    /// Printer menu: toggle the printer paper window, and start, stop, or
+    /// open a print capture.
     pub(super) fn printer_menu_ui(&mut self, ui: &mut egui::Ui) {
         if ui.button("View Papers").clicked() {
             self.toggle_paper_window();
             ui.close();
         }
-        if ui
-            .add_enabled(
-                self.print_capture_path.is_some(),
-                egui::Button::new("Open Print Capture"),
-            )
-            .clicked()
-        {
-            if let Some(path) = &self.print_capture_path {
-                let result = {
-                    #[cfg(target_os = "macos")]
-                    {
-                        std::process::Command::new("open").arg(path).spawn()
-                    }
-                    #[cfg(target_os = "linux")]
-                    {
-                        std::process::Command::new("xdg-open").arg(path).spawn()
-                    }
-                    #[cfg(target_os = "windows")]
-                    {
-                        std::process::Command::new("cmd")
-                            .args(["/C", "start", ""])
-                            .arg(path)
-                            .spawn()
-                    }
-                };
-                if let Err(e) = result {
-                    self.cart_error = Some(format!("Failed to open: {}", e));
-                }
-            }
-            ui.close();
-        }
+        ui.separator();
+        self.print_capture_items(ui);
     }
 
     /// The Help menu.
