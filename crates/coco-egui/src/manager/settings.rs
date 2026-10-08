@@ -7,49 +7,52 @@
 use std::num::NonZeroU32;
 use std::path::Path;
 
-use clap::ValueEnum;
 use eframe::egui;
 
 use crate::cli::LogLevel;
 use crate::config::{self, FileConfig, ManagerSort};
+use crate::control::DEFAULT_PORT;
 use crate::hotkeys::{DEFAULT_HOTKEYS, Hotkey, Hotkeys};
 
-use super::{DETAIL_SECTION_GAP, ManagerApp, NO_CONFIG_DIR};
+use super::{ManagerApp, NO_CONFIG_DIR};
 
 mod hotkeys;
+mod layout;
 use hotkeys::HotkeyEditor;
 
-/// `control_port`'s DragValue range; `0` disables the control server
-/// (`manager/control.rs`'s `bind_control`).
-const CONTROL_PORT_RANGE: std::ops::RangeInclusive<u16> = 0..=u16::MAX;
-
-/// Width of the `assets_url` text field.
-const ASSETS_URL_WIDTH: f32 = 360.0;
-
-/// `welcome_image_cycle_secs`'s DragValue range: the config key is
-/// `NonZeroU32`, so the draft can never hold a zero.
-const WELCOME_IMAGE_CYCLE_SECS_RANGE: std::ops::RangeInclusive<u32> = 1..=u32::MAX;
+const DISABLED_CONTROL_PORT: u16 = 0;
 
 /// The dialog's edited draft, plus the error from the last failed load or
 /// save (shown inline until the next attempt).
 pub(crate) struct SettingsDialog {
     log_level: LogLevel,
+    mcp_enabled: bool,
+    /// Positive port draft, retained when the checkbox is cleared.
     control_port: u16,
-    /// `control_port` as opened; Save only moves the listener when the user
+    /// Effective port as opened; Save only moves the listener when the user
     /// changed it here, so an unrelated save never retries a failed bind.
     opened_control_port: u16,
     assets_url: String,
     toolbar_icons_only: bool,
     status_bar_icons_only: bool,
     welcome_image_cycle: bool,
-    /// Plain `u32` so `DragValue` can edit it; [`WELCOME_IMAGE_CYCLE_SECS_RANGE`]
+    /// Plain `u32` so `DragValue` can edit it; the layout's nonzero range
     /// keeps it nonzero.
     welcome_image_cycle_secs: u32,
     welcome_image_shuffle: bool,
     hotkey_editor: HotkeyEditor,
+    tab: SettingsTab,
     /// Preserved unchanged because the machine-list control owns this key.
     manager_sort: Option<ManagerSort>,
     error: Option<String>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum SettingsTab {
+    General,
+    Hotkeys,
+    McpServer,
+    Advanced,
 }
 
 /// What [`SettingsDialog::draw`]'s button row asked for this frame.
@@ -72,11 +75,16 @@ impl SettingsDialog {
     }
 
     fn from_file(file: FileConfig, error: Option<String>) -> Self {
-        let control_port = file.control_port.unwrap_or(crate::control::DEFAULT_PORT);
+        let control_port = file.control_port.unwrap_or(DEFAULT_PORT);
         let hotkeys = file.hotkeys();
         Self {
             log_level: file.log_level.unwrap_or(config::DEFAULT_LOG_LEVEL),
-            control_port,
+            mcp_enabled: control_port != DISABLED_CONTROL_PORT,
+            control_port: if control_port == DISABLED_CONTROL_PORT {
+                DEFAULT_PORT
+            } else {
+                control_port
+            },
             opened_control_port: control_port,
             assets_url: file
                 .assets_url
@@ -98,8 +106,17 @@ impl SettingsDialog {
                 .welcome_image_shuffle
                 .unwrap_or(config::DEFAULT_WELCOME_IMAGE_SHUFFLE),
             hotkey_editor: HotkeyEditor::new(hotkeys),
+            tab: SettingsTab::General,
             manager_sort: file.manager_sort,
             error,
+        }
+    }
+
+    fn effective_control_port(&self) -> u16 {
+        if self.mcp_enabled {
+            self.control_port
+        } else {
+            DISABLED_CONTROL_PORT
         }
     }
 
@@ -107,12 +124,12 @@ impl SettingsDialog {
     /// so a field the user never touched keeps tracking future defaults
     /// instead of pinning today's value into the file.
     fn to_file_config(&self) -> FileConfig {
+        let control_port = self.effective_control_port();
         let hotkeys = &self.hotkey_editor.hotkeys;
         let changed = |hotkey: Hotkey, default: Hotkey| (hotkey != default).then_some(hotkey);
         FileConfig {
             log_level: (self.log_level != config::DEFAULT_LOG_LEVEL).then_some(self.log_level),
-            control_port: (self.control_port != crate::control::DEFAULT_PORT)
-                .then_some(self.control_port),
+            control_port: (control_port != DEFAULT_PORT).then_some(control_port),
             // An emptied field reads as "reset to default", not "set to ''".
             assets_url: (!self.assets_url.trim().is_empty()
                 && self.assets_url != crate::startup::DEFAULT_ASSETS_URL)
@@ -136,78 +153,6 @@ impl SettingsDialog {
             manager_sort: self.manager_sort,
         }
     }
-
-    /// The modal's contents: the fields, any error from the last
-    /// load/save, and the Save/Cancel row.
-    fn draw(&mut self, ui: &mut egui::Ui) -> SettingsAction {
-        ui.heading("Settings");
-        ui.add_space(DETAIL_SECTION_GAP);
-
-        egui::Grid::new("settings_fields")
-            .num_columns(2)
-            .show(ui, |ui| {
-                ui.label("Log level");
-                egui::ComboBox::from_id_salt("settings_log_level")
-                    .selected_text(config::log_level_name(self.log_level))
-                    .show_ui(ui, |ui| {
-                        for level in LogLevel::value_variants() {
-                            ui.selectable_value(
-                                &mut self.log_level,
-                                *level,
-                                config::log_level_name(*level),
-                            );
-                        }
-                    });
-                ui.end_row();
-
-                ui.label("Control port (0 = off)");
-                ui.add(egui::DragValue::new(&mut self.control_port).range(CONTROL_PORT_RANGE));
-                ui.end_row();
-
-                ui.label("Assets URL");
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.assets_url)
-                        .desired_width(ASSETS_URL_WIDTH),
-                );
-                ui.end_row();
-            });
-
-        ui.add_space(DETAIL_SECTION_GAP);
-        ui.checkbox(&mut self.toolbar_icons_only, "Toolbar icons only");
-        ui.checkbox(&mut self.status_bar_icons_only, "Status bar icons only");
-        ui.horizontal(|ui| {
-            ui.checkbox(&mut self.welcome_image_cycle, "Change welcome image every");
-            ui.add_enabled(
-                self.welcome_image_cycle,
-                egui::DragValue::new(&mut self.welcome_image_cycle_secs)
-                    .range(WELCOME_IMAGE_CYCLE_SECS_RANGE)
-                    .suffix(" s"),
-            );
-        });
-        ui.add_enabled(
-            self.welcome_image_cycle,
-            egui::Checkbox::new(&mut self.welcome_image_shuffle, "Shuffle welcome images"),
-        );
-
-        ui.add_space(DETAIL_SECTION_GAP);
-        self.hotkey_editor.draw(ui);
-
-        if let Some(err) = &self.error {
-            ui.colored_label(ui.visuals().error_fg_color, err);
-        }
-
-        ui.add_space(DETAIL_SECTION_GAP);
-        let mut action = SettingsAction::None;
-        ui.horizontal(|ui| {
-            if ui.button("Save").clicked() {
-                action = SettingsAction::Save;
-            }
-            if ui.button("Cancel").clicked() {
-                action = SettingsAction::Cancel;
-            }
-        });
-        action
-    }
 }
 
 impl ManagerApp {
@@ -225,11 +170,13 @@ impl ManagerApp {
             return;
         }
         let mut action = SettingsAction::None;
-        let modal = egui::Modal::new(egui::Id::new("settings_dialog")).show(ctx, |ui| {
-            if let Some(dialog) = &mut self.settings {
-                action = dialog.draw(ui);
-            }
-        });
+        let modal = egui::Modal::new(egui::Id::new("settings_dialog"))
+            .frame(layout::dialog_frame(ctx))
+            .show(ctx, |ui| {
+                if let Some(dialog) = &mut self.settings {
+                    action = dialog.draw(ui);
+                }
+            });
         match action {
             SettingsAction::None => {}
             SettingsAction::Cancel => self.settings = None,
@@ -256,9 +203,10 @@ impl ManagerApp {
         let file = dialog.to_file_config();
         let live = LiveSettings::from_dialog(dialog);
         let log_level = (!self.log_level_overridden).then_some(dialog.log_level);
-        let port_change = (dialog.control_port != dialog.opened_control_port
+        let control_port = dialog.effective_control_port();
+        let port_change = (control_port != dialog.opened_control_port
             && !self.control_port_overridden)
-            .then_some(dialog.control_port);
+            .then_some(control_port);
         let result = match self.config_path.as_deref() {
             Some(path) => config::save_file(path, &file),
             None => Err(NO_CONFIG_DIR.to_string()),

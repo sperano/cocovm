@@ -39,10 +39,6 @@ struct RenamePlan {
     target_def: Option<machine_def::MachineDef>,
 }
 
-fn config_path(dir: &Path, slug: &str) -> PathBuf {
-    dir.join(format!("{slug}.toml"))
-}
-
 fn remove_if_present(path: &Path) -> Result<(), String> {
     match fs::remove_file(path) {
         Ok(()) => Ok(()),
@@ -202,7 +198,7 @@ impl ManagerApp {
                 || self
                     .machines_dir
                     .as_ref()
-                    .is_some_and(|dir| config_path(dir, candidate).exists())
+                    .is_some_and(|dir| machine_def::def_path(dir, candidate).exists())
                 || self
                     .artifacts_root
                     .as_ref()
@@ -244,9 +240,9 @@ impl ManagerApp {
                 old_slug: old_slug.clone(),
                 new_slug: new_slug.clone(),
             },
-            old_config: config_path(&machines_dir, &old_slug),
-            new_config: config_path(&machines_dir, &new_slug),
-            staged_config: config_path(&machines_dir, RENAME_STAGED_SLUG),
+            old_config: machine_def::def_path(&machines_dir, &old_slug),
+            new_config: machine_def::def_path(&machines_dir, &new_slug),
+            staged_config: machine_def::def_path(&machines_dir, RENAME_STAGED_SLUG),
             backup_config: machines_dir.join(RENAME_BACKUP_FILE),
             machines_dir,
             old_artifacts,
@@ -378,11 +374,11 @@ pub(super) fn recover_pending_rename(
     artifacts_root: Option<&Path>,
 ) -> Result<(), String> {
     let Some(journal) = read_journal(machines_dir)? else {
-        return remove_if_present(&config_path(machines_dir, RENAME_STAGED_SLUG));
+        return remove_if_present(&machine_def::def_path(machines_dir, RENAME_STAGED_SLUG));
     };
-    let old_config = config_path(machines_dir, &journal.old_slug);
-    let new_config = config_path(machines_dir, &journal.new_slug);
-    let staged_config = config_path(machines_dir, RENAME_STAGED_SLUG);
+    let old_config = machine_def::def_path(machines_dir, &journal.old_slug);
+    let new_config = machine_def::def_path(machines_dir, &journal.new_slug);
+    let staged_config = machine_def::def_path(machines_dir, RENAME_STAGED_SLUG);
     let backup_config = machines_dir.join(RENAME_BACKUP_FILE);
     let old_artifacts = artifacts_root.map(|root| root.join(&journal.old_slug));
     let new_artifacts = artifacts_root.map(|root| root.join(&journal.new_slug));

@@ -23,10 +23,19 @@ use super::media_ref::{
 };
 
 impl CocoApp {
-    /// Load, resolve media, and restore a `.ccstate` file, replacing
-    /// [`CocoApp::machine`] wholesale. Does not touch the window title —
-    /// callers use [`Self::refresh_window_title`] for that.
+    /// [`Self::restore_state_from`], then the "State loaded" toast with any
+    /// restore notes appended. Does not touch the window title — callers use
+    /// [`Self::refresh_window_title`] for that.
     pub(crate) fn load_state_from(&mut self, path: &Path) -> Result<(), String> {
+        let notes = self.restore_state_from(path)?;
+        self.set_toast(super::with_notes("State loaded", &notes));
+        Ok(())
+    }
+
+    /// Load, resolve media, and restore a `.ccstate` file, replacing
+    /// [`CocoApp::machine`] wholesale. Returns the restore notes (media
+    /// mismatches, substitutions) for the caller's toast; shows none itself.
+    pub(super) fn restore_state_from(&mut self, path: &Path) -> Result<Vec<String>, String> {
         if self
             .machine
             .bus
@@ -52,14 +61,7 @@ impl CocoApp {
         let (sources, mut notes) = self.resolve_media_sources(&payload.media, &ssc_slots)?;
         let restored = snapshot::restore(payload, sources).map_err(|e| e.to_string())?;
         self.apply_restored_machine(restored, &media, &mut notes);
-
-        let mut toast = "State loaded".to_string();
-        if !notes.is_empty() {
-            toast.push_str(": ");
-            toast.push_str(&notes.join("; "));
-        }
-        self.set_toast(toast);
-        Ok(())
+        Ok(notes)
     }
 
     /// Reissue the machine window's title for the current variant. Must be
