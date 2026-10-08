@@ -8,7 +8,7 @@
 //! Unlike the cassette deck (FSK tones demodulated by zero-crossing
 //! threshold), the printer port is a plain async serial line: 1 start bit
 //! (space) + 8 data bits (LSB-first) + 1 stop bit (mark), no parity
-//! (`bitbanger-spec.md` "Framing"). [`BitBanger`] models the *receive* side
+//! (wiki `cocovm/bitbanger-spec` "Framing"). [`BitBanger`] models the *receive* side
 //! only — decoding what the ROM's bit-bang driver transmits on PA1 — since
 //! that's the only direction a virtual printer needs.
 //!
@@ -16,7 +16,7 @@
 //! as part of [`crate::Machine::step_instruction`], with a cycle delta and
 //! PA1's current level, the same shape as [`crate::cassette::Cassette::tick`]:
 //! idle at mark, a mark→space transition is a start-bit candidate, and each
-//! data/stop bit is sampled at its cell midpoint (`bitbanger-spec.md`
+//! data/stop bit is sampled at its cell midpoint (wiki `cocovm/bitbanger-spec`
 //! "Decoder spec"). Cycle-based timing (never wall time) is what makes the
 //! CoCo 3 high-speed poke and BASIC's `POKE 150,n` baud changes fall out for
 //! free: both change how many CPU cycles a bit cell spans.
@@ -24,7 +24,7 @@
 //! BUSY (PIA1 PB0) is the mirror image of the cassette's PA0 input tap: an
 //! externally-driven line the emulator feeds back into the PIA so a
 //! (not yet implemented) DMP-105 buffer model can pace BASIC's
-//! poll-before/after-every-byte driver, matching `bitbanger-spec.md`
+//! poll-before/after-every-byte driver, matching wiki `cocovm/bitbanger-spec`
 //! "Drive PB0 (BUSY) back into PIA1 as an input".
 
 use std::cell::RefCell;
@@ -39,12 +39,12 @@ use crate::dmp::{DmpHandle, DmpModel};
 
 /// PIA1 Port A bit 1 ($FF20): the TX line to the printer. 1 = mark/idle
 /// (high), 0 = space. Only meaningful as an output when PIA1 DDRA bit 1 is
-/// set (ROM init at `$A048` sets DDRA = $FE — `bitbanger-spec.md` "Register
+/// set (ROM init at `$A048` sets DDRA = $FE — wiki `cocovm/bitbanger-spec` "Register
 /// map").
 pub const TX_PIN: u8 = 0x02;
 
 /// PIA1 Port B bit 0 ($FF22): the BUSY line back from the printer. 0 =
-/// ready, 1 = busy (`bitbanger-spec.md` "Register map"; BASIC's driver at
+/// ready, 1 = busy (wiki `cocovm/bitbanger-spec` "Register map"; BASIC's driver at
 /// `$A2C3`/`$A2F3` polls this bit before and after every byte).
 pub const BUSY_PIN: u8 = 0x01;
 
@@ -52,13 +52,13 @@ pub const BUSY_PIN: u8 = 0x01;
 /// with
 /// ROM's live `LPTBTD` default N = 88 (`$0058` at ROM init table `$A10D`,
 /// file offset `0x210D`), giving 600 baud at the normal 0.894886 MHz CoCo 3
-/// clock (`bitbanger-spec.md` "Baud timing"). A settable field on
+/// clock (wiki `cocovm/bitbanger-spec` "Baud timing"). A settable field on
 /// [`BitBanger`] so `POKE 150,n` (a new N) or the `$FFD9` high-speed poke
 /// (double clock, same N) can change the effective rate — both fall out of
 /// counting CPU cycles rather than wall time.
 pub const DEFAULT_BIT_PERIOD: u32 = 78 + 16 * 88;
 
-/// Data bits per frame: 8, LSB-first, no parity (`bitbanger-spec.md`
+/// Data bits per frame: 8, LSB-first, no parity (wiki `cocovm/bitbanger-spec`
 /// "Framing").
 const DATA_BITS: u8 = 8;
 
@@ -72,12 +72,12 @@ const START_SAMPLE: u8 = 0;
 
 /// Samples per frame: the start-bit validation at 0.5 bit-times, one
 /// mid-cell sample per data bit at 1.5..8.5, and the stop-bit check at 9.5
-/// (`bitbanger-spec.md` "Decoder spec").
+/// (wiki `cocovm/bitbanger-spec` "Decoder spec").
 const TOTAL_SAMPLES: u8 = DATA_BITS + 2;
 
 /// A destination for decoded printer bytes. Deliberately minimal: this is
 /// the seam for later tasks such as text capture and a DMP-105 command
-/// interpreter (`bitbanger-spec.md`, "Byte sink is pluggable"). Keep the trait
+/// interpreter (wiki `cocovm/bitbanger-spec`, "Byte sink is pluggable"). Keep the trait
 /// focused on what the decoder needs.
 pub trait PrinterSink {
     fn write_byte(&mut self, b: u8);
@@ -153,7 +153,7 @@ impl PrinterSink for CaptureSink {
 
 /// "Print to text file" sink: appends every decoded byte to a file. By
 /// default, bytes are written unmodified —
-/// BASIC's line ending is a bare CR (`$0D`, `bitbanger-spec.md` "Framing")
+/// BASIC's line ending is a bare CR (`$0D`, wiki `cocovm/bitbanger-spec` "Framing")
 /// and a faithful capture keeps it, so a captured `LLIST` reads back
 /// exactly as the ROM sent it. Optionally (`translate_cr_to_lf`, the GUI's
 /// "Translate CR to LF" checkbox) each CR is rewritten to LF so the file
@@ -228,11 +228,11 @@ pub struct BitBanger {
     bit_period: u32,
     /// Count of stop bits that read space instead of mark: a framing
     /// error. The offending byte is discarded, never delivered to the sink
-    /// (`bitbanger-spec.md` "Decoder spec": "verify stop bit (mark) else
+    /// (wiki `cocovm/bitbanger-spec` "Decoder spec": "verify stop bit (mark) else
     /// framing error").
     framing_errors: u32,
     /// BUSY (PIA1 PB0) as asserted by the sink. Defaults to not-busy/ready
-    /// (`bitbanger-spec.md`: "0=ready normally; a sink may assert 1=busy").
+    /// (wiki `cocovm/bitbanger-spec`: "0=ready normally; a sink may assert 1=busy").
     busy: bool,
     /// PA1 level seen on the previous tick, so a mark→space transition can
     /// be told apart from a repeated level (idle mark defaults to true,

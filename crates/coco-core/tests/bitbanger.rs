@@ -28,7 +28,7 @@ fn bus() -> SystemBus {
         vec![0u8; 32 * 1024].into_boxed_slice(),
     );
     // PB0 (BUSY) stays an input pin (DDRB bit 0 = 0), matching the ROM's
-    // DDRB = $F8 (`bitbanger-spec.md` "CoCo 3 differences").
+    // DDRB = $F8 (wiki `cocovm/bitbanger-spec` "CoCo 3 differences").
     b.write(PIA1_CRB, CR_DDR);
     b.write(PIA1_DDRB, 0xF8);
     b.write(PIA1_CRB, CR_DATA);
