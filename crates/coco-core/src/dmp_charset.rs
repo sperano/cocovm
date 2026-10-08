@@ -5,7 +5,7 @@
 //! Sources: DMP-105 Operation Manual Appendix C pp. 47-49 (typeset tables);
 //! DMP-130 Operation Manual p. 57 Table 26 and p. 81 (grid plus a real
 //! printout of every code). Cells the typeset tables leave ambiguous are
-//! taken from the printout and marked INFERRED. See `docs/dmp-font-sources.md`.
+//! taken from the printout and marked INFERRED. See wiki `cocovm/dmp-font-sources`.
 
 /// First code of the European symbol set.
 pub const EUROPEAN_FIRST: u8 = 0xA0;
@@ -175,7 +175,7 @@ pub const COUNTRY_COUNT: usize = 11;
 const COUNTRY_ROW_COUNT: usize = 12;
 
 /// Table 26 by ASCII code, columns USA through Belgium; inferred cells are
-/// listed in `docs/dmp-font-sources.md`.
+/// listed in wiki `cocovm/dmp-font-sources`.
 const COUNTRY_ROWS: [(u8, [char; COUNTRY_COUNT]); COUNTRY_ROW_COUNT] = [
     (
         b'#',

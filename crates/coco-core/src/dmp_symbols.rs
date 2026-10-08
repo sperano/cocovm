@@ -2,7 +2,7 @@
 //! European set, the DMP-130 extended set, and country substitutions.
 //! Which symbol each code prints is verified from the manuals
 //! (`crate::dmp_charset`); these dot patterns are artistic approximations,
-//! since no ROM dump exists (`docs/dmp-font-sources.md`).
+//! since no ROM dump exists (wiki `cocovm/dmp-font-sources`).
 use crate::dmp105_font::{
     BLANK_DESCENDER, DESCENDER_BIT, Glyph, ascii_glyph, glyph, undefined_glyph,
 };

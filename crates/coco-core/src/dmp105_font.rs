@@ -1,19 +1,19 @@
 //! DMP-105 dot font: 9-wide x 7-tall glyph cell plus a descender row
-//! (`dmp105-protocol.md` §1 "Glyph matrix: 9 wide x 7 high dots"; §6
+//! (wiki `cocovm/dmp105-protocol` §1 "Glyph matrix: 9 wide x 7 high dots"; §6
 //! "Descenders/underline: one extra dot row below the 7-dot body (g p q y j;
 //! ç µ § ß ƒ)").
 //!
 //! **ARTISTIC APPROXIMATION — not hardware-verified.** The manual gives cell
 //! *geometry* (9x7 plus a descender row), but the font lives in the
 //! printer's mask-ROM microcontroller and no dump exists
-//! (`docs/dmp-font-sources.md`). Every bit pattern here is hand-authored as
+//! (wiki `cocovm/dmp-font-sources`). Every bit pattern here is hand-authored as
 //! a plausible, legible rendering at this cell size, not real ROM data.
 //!
 //! # Representation
 //!
 //! A [`Glyph`] is 9 columns (dot-matrix printers print column-by-column, and
 //! this mirrors the graphics-mode data-byte layout for consistency —
-//! `dmp105-protocol.md` §5): each column is one byte, bits 0-6 = that
+//! wiki `cocovm/dmp105-protocol` §5): each column is one byte, bits 0-6 = that
 //! column's 7 body dots top(bit0)-to-bottom(bit6), bit 7 = that column's
 //! descender-row dot (only ever set for the specific characters the spec
 //! lists as having one).
@@ -1103,7 +1103,7 @@ pub const ASCII_FONT: [Glyph; 95] = [
     ]),
 ];
 
-/// First code point covered by [`ASCII_FONT`] (`dmp105-protocol.md` §6:
+/// First code point covered by [`ASCII_FONT`] (wiki `cocovm/dmp105-protocol` §6:
 /// "$20-$7E: standard 94-char ASCII, 1:1").
 const ASCII_FIRST: u8 = 0x20;
 const ASCII_LAST: u8 = 0x7E;
@@ -1117,7 +1117,7 @@ pub fn ascii_glyph(code: u8) -> Option<Glyph> {
     }
 }
 
-/// The literal `X` glyph printed for every undefined/unimplemented code (`dmp105-protocol.md` §3).
+/// The literal `X` glyph printed for every undefined/unimplemented code (wiki `cocovm/dmp105-protocol` §3).
 pub fn undefined_glyph() -> Glyph {
     ascii_glyph(b'X').expect("'X' is always present in ASCII_FONT")
 }

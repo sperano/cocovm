@@ -281,7 +281,7 @@ fn ff7f_to_ffbf_is_open_bus_on_coco1_2() {
 fn ff60_to_ff7e_reaches_the_cart_slot_on_coco1_2() {
     // Motherboard-unmapped, but some carts decode registers here (the
     // Sound/Speech Cartridge's $FF7D/$FF7E, the RS-232 Pak's $FF68-$FF6B —
-    // `docs/cartridges.md`). With nothing inserted this still reads open bus
+    // wiki `cocovm/cartridges`). With nothing inserted this still reads open bus
     // ($FF from `EmptySlot`/`IO_OPEN_BUS`), same value as before this range
     // was cart-routed, so the only way to tell the difference is a cart that
     // actually answers.

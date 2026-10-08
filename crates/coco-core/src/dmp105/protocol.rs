@@ -2,7 +2,7 @@
 //! every decoded byte flows through, dispatching per-mode
 //! ([`Mode::CharacterPrint`](super::Mode)/[`Mode::Graphics`](super::Mode))
 //! and assembling multi-byte escape/repeat sequences
-//! (`dmp105-protocol.md` §3/§4). Glyph and dot rendering lives in the parent
+//! (wiki `cocovm/dmp105-protocol` §3/§4). Glyph and dot rendering lives in the parent
 //! `dmp105` module.
 
 use crate::dmp105_font::{self, Glyph};
@@ -13,7 +13,7 @@ use super::{
     Mode, NlMode, Pending, Pitch, control, esc,
 };
 
-/// Glyph for a CP-mode byte that is not a block graphic (`dmp105-protocol.md`
+/// Glyph for a CP-mode byte that is not a block graphic (wiki `cocovm/dmp105-protocol`
 /// §6): ASCII, then the European table, else the undefined-code `X`.
 fn text_glyph(byte: u8) -> Glyph {
     dmp105_font::ascii_glyph(byte)
@@ -61,7 +61,7 @@ impl DMP105 {
         }
     }
 
-    /// Character-Print mode dispatch (`dmp105-protocol.md` §3 and §6).
+    /// Character-Print mode dispatch (wiki `cocovm/dmp105-protocol` §3 and §6).
     fn dispatch_cp(&mut self, b: u8) {
         match b {
             control::NUL_IGNORED_0 | control::NUL_IGNORED_1 => {}
@@ -81,7 +81,7 @@ impl DMP105 {
         }
     }
 
-    /// Graphics mode dispatch (`dmp105-protocol.md` §5): bit 7 set is always
+    /// Graphics mode dispatch (wiki `cocovm/dmp105-protocol` §5): bit 7 set is always
     /// data; bit 7 clear is a recognized control code or else ignored (never
     /// printed — no `X`-glyph fallback in Graphics mode).
     fn dispatch_graphics(&mut self, b: u8) {

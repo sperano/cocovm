@@ -31,7 +31,7 @@ pub(super) const SCS_LAST: u16 = 0xFF5F;
 /// $FF60-$FF7E is unmapped on the motherboard, so some carts (the RS-232
 /// Pak, Orchestra-90, the Sound/Speech Cartridge) decode registers of their
 /// own there too — the full address bus reaches the expansion connector
-/// regardless (`docs/cartridges.md` "Carts can decode addresses outside
+/// regardless (wiki `cocovm/cartridges` "Carts can decode addresses outside
 /// SCS"). Outside the SCS* decode, so INIT0 MC2 never gates it. Routes to
 /// `cart.read`/`write` same as [`SCS_BASE`]..=[`SCS_LAST`]; carts that don't
 /// claim an address here fall through to their own open-bus default.
