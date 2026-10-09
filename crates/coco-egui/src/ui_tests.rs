@@ -35,6 +35,7 @@ mod manager_settings_mcp_test;
 mod manager_sort;
 mod manager_window;
 mod quick_states_test;
+mod state_files_test;
 mod vm_window_disks;
 mod vm_window_joysticks;
 mod vm_window_menus;

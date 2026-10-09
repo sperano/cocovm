@@ -1,6 +1,7 @@
 //! The VM toolbar's quick-state group, after Reset: a State selector, then
 //! Save and Load tiles acting on the selected state (`save_state/quick.rs`).
-//! When the row is too narrow it collapses to one States tile opening a menu
+//! The selector's list ends with Save to File… and Load from File…
+//! (`save_state/file.rs`). When the row is too narrow it collapses to one States tile opening a menu
 //! with the same controls, and when even that does not fit it is left out
 //! (the numbered chords still reach States 1 to 3). The fit is measured from
 //! the available width and the tile dimensions, never a fixed breakpoint,
@@ -29,6 +30,13 @@ const STATES_HOVER: &str = "Save or load a quick state";
 /// Footnote under the state list: the states belong to the app, not to this
 /// machine.
 pub(crate) const SHARED_NOTE: &str = "Shared across VM windows";
+/// Selector item that saves the machine state to a file the user picks.
+pub(crate) const SAVE_TO_FILE: &str = "Save to File…";
+/// Selector item that loads a state file the user picks.
+pub(crate) const LOAD_FROM_FILE: &str = "Load from File…";
+const SAVE_TO_FILE_HOVER: &str = "Save the machine state to a file of your choice.";
+const LOAD_FROM_FILE_HOVER: &str =
+    "Load a state from a file of your choice. Replaces the current machine state.";
 /// Disabled-hover text of Save and Load while suspended: writing or
 /// replacing the live machine would diverge it from its frozen `.ccstate`.
 pub(crate) const SUSPENDED_HOVER: &str = "Resume the machine to save or load a state.";
@@ -134,14 +142,14 @@ impl CocoApp {
         egui::ComboBox::from_id_salt("quick_state_selector")
             .selected_text(state_name(self.selected_quick_state))
             .width(width)
-            // Tall enough for all ten rows and the note without a scroll bar.
+            // Tall enough for all ten rows, the note, and the file items without a scroll bar.
             .height(ui.ctx().content_rect().height())
             .wrap_mode(egui::TextWrapMode::Extend)
             .show_ui(ui, |ui| self.quick_state_rows(ui));
     }
 
     /// Every state's row (selectable even when empty, so Save can target
-    /// it), then [`SHARED_NOTE`].
+    /// it), then [`SHARED_NOTE`], then the state-file items.
     fn quick_state_rows(&mut self, ui: &mut egui::Ui) {
         for slot in 0..QUICK_SLOTS {
             let label = self.quick_state_label(slot);
@@ -149,6 +157,30 @@ impl CocoApp {
         }
         ui.separator();
         ui.label(egui::RichText::new(SHARED_NOTE).weak());
+        ui.separator();
+        self.state_file_items(ui);
+    }
+
+    /// [`SAVE_TO_FILE`] and [`LOAD_FROM_FILE`], gated like the tiles. Each
+    /// closes the popup before its file dialog opens.
+    fn state_file_items(&mut self, ui: &mut egui::Ui) {
+        let enabled = !self.suspended;
+        let save = ui
+            .add_enabled(enabled, egui::Button::new(SAVE_TO_FILE))
+            .on_hover_text(SAVE_TO_FILE_HOVER)
+            .on_disabled_hover_text(SUSPENDED_HOVER);
+        if save.clicked() {
+            ui.close();
+            self.save_state_file_dialog();
+        }
+        let load = ui
+            .add_enabled(enabled, egui::Button::new(LOAD_FROM_FILE))
+            .on_hover_text(LOAD_FROM_FILE_HOVER)
+            .on_disabled_hover_text(SUSPENDED_HOVER);
+        if load.clicked() {
+            ui.close();
+            self.load_state_file_dialog(ui.ctx());
+        }
     }
 
     /// The Save and Load tiles for the selected state.
@@ -198,9 +230,11 @@ impl CocoApp {
             .clicked();
         if clicked {
             match action {
-                QuickAction::Save => self.quick_save(slot),
+                QuickAction::Save => {
+                    self.quick_save(slot);
+                }
                 QuickAction::Load => self.quick_load(slot, ctx),
-            };
+            }
         }
     }
 

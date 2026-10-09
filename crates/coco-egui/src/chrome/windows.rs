@@ -26,6 +26,7 @@ impl CocoApp {
         if let Some(err) = self.paper_window.ui(ctx) {
             self.cart_error = Some(err);
         }
+        self.pending_load_ui(ctx);
         self.cart_error_ui(ctx);
     }
 
