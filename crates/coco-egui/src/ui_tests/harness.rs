@@ -7,7 +7,7 @@
 
 use std::path::PathBuf;
 
-use egui_kittest::kittest::Queryable;
+use egui_kittest::kittest::{By, Queryable};
 
 use coco_core::{MachineVariant, MemorySize, VDGVariant, VideoStandard};
 
@@ -125,15 +125,18 @@ pub(super) fn click_modifiers<S: 'static>(
     harness.step();
 }
 
-/// [`click`] matching by substring — for widgets whose accessible label adds
-/// decoration beyond the visible caption (submenu buttons' trailing "⏵").
+/// [`click`] for buttons matching by substring. The role excludes guidance
+/// text that mentions a button's caption.
 pub(super) fn click_containing<S: 'static>(
     harness: &mut egui_kittest::Harness<'static, S>,
     label: &str,
 ) {
-    harness.get_by_label_contains(label).hover();
+    let button = By::new()
+        .role(egui::accesskit::Role::Button)
+        .label_contains(label);
+    harness.get(button.clone()).hover();
     harness.step();
-    harness.get_by_label_contains(label).click();
+    harness.get(button).click();
     harness.step();
     harness.step();
 }

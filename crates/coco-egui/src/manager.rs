@@ -2,7 +2,7 @@
 //! `coco` always opens. Toolbar across the top, machine list down the left
 //! (one row per `config_dir()/machines/<slug>.toml`, `machine_def.rs`), and
 //! a detail/edit pane on the right for the selected machine — or, with no machine
-//! selected, a random photo asset filling the pane (`manager/welcome_image.rs`).
+//! selected, welcome instructions above a random photo (`manager/welcome.rs`).
 //!
 //! The detail pane's Start button calls `crate::launch_machine_with_gamepad`. Once a
 //! `MachineEntry` holds a running `CocoApp`, `ManagerApp::update` opens it in
@@ -50,6 +50,7 @@ mod sort;
 mod thumbnails;
 mod toolbar;
 mod vm_windows;
+mod welcome;
 mod welcome_image;
 
 pub use run::run;
@@ -522,10 +523,10 @@ impl eframe::App for ManagerApp {
             });
 
         // Detail form for a single selection, bulk pane for many, or the
-        // welcome image when nothing's selected.
+        // welcome instructions and image when nothing's selected.
         egui::CentralPanel::default().show(ctx, |ui| {
             if self.selection.is_empty() {
-                self.welcome_image.draw(ui);
+                welcome::draw(ui, &mut self.welcome_image, !self.entries.is_empty());
             } else {
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     egui::Frame::NONE
