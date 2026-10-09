@@ -74,6 +74,10 @@ toml_edit = "0.25"
 # (`download_and_unpack_assets` in main.rs).
 ureq = "3.3.0"
 pluralizer = "0.5.0"
+# MIT OR Apache-2.0. Terminal column widths for wrapping the startup banner
+# (`banner` in startup.rs). Small, no dependencies, and already in Cargo.lock
+# through the `wgpu` feature (naga -> codespan-reporting).
+unicode-width = "0.2"
 
 [features]
 perf = []
