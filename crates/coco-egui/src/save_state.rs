@@ -7,10 +7,10 @@
 //!
 //! [`CocoApp::save_state_to`]/[`CocoApp::load_state_from`] are the
 //! unprompted entry points (suspend and resume); [`CocoApp::request_load`]
-//! is the prompted one. Everything else here is either UI chrome around them or the
-//! fiddly frontend-side re-injection [`coco_core::snapshot::restore`] can't
-//! do itself (host-only resources, path mirrors, pacing — see
-//! [`CocoApp::apply_restored_machine`]).
+//! is the prompted one. Everything else here is either UI chrome around
+//! them or the fiddly frontend-side re-injection
+//! [`coco_core::snapshot::restore`] can't do itself (host-only resources,
+//! path mirrors, pacing — see [`CocoApp::apply_restored_machine`]).
 
 use crate::CocoApp;
 

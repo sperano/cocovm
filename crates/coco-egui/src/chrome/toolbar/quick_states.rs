@@ -1,8 +1,9 @@
 //! The VM toolbar's quick-state group, after Reset: a State selector, then
 //! Save and Load tiles acting on the selected state (`save_state/quick.rs`).
 //! The selector's list ends with Save to File… and Load from File…
-//! (`save_state/file.rs`). When the row is too narrow it collapses to one States tile opening a menu
-//! with the same controls, and when even that does not fit it is left out
+//! (`save_state/file.rs`). When the row is too narrow it collapses to one
+//! States tile opening a menu with the same controls, and when even that
+//! does not fit it is left out
 //! (the numbered chords still reach States 1 to 3). The fit is measured from
 //! the available width and the tile dimensions, never a fixed breakpoint,
 //! and the toolbar never wraps: its height is part of the window-sizing math
