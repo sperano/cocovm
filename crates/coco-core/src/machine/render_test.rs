@@ -256,8 +256,10 @@ fn coco3_rgb_and_pal_rg6_remain_unartifacted() {
         let top = seed_pattern(&mut machine);
         let line = render_pattern_line(&mut machine, top);
         assert!(
-            line.chunks_exact(BYTES_PER_PIXEL)
-                .all(|pixel| is_grey(pixel.try_into().expect("RGBA pixel"))),
+            line.as_chunks::<BYTES_PER_PIXEL>()
+                .0
+                .iter()
+                .all(|pixel| is_grey(*pixel)),
             "{video_standard:?} {monitor:?} must retain the base RG6 colors"
         );
     }
@@ -270,8 +272,10 @@ fn coco3_non_rg6_legacy_graphics_remain_unartifacted() {
     let line = render_pattern_line(&mut machine, top);
 
     assert!(
-        line.chunks_exact(BYTES_PER_PIXEL)
-            .all(|pixel| is_grey(pixel.try_into().expect("RGBA pixel")))
+        line.as_chunks::<BYTES_PER_PIXEL>()
+            .0
+            .iter()
+            .all(|pixel| is_grey(*pixel))
     );
 }
 
@@ -305,8 +309,10 @@ fn coco3_gime_native_modes_remain_unartifacted() {
         let line = &machine.framebuffer[start..start + active_w * BYTES_PER_PIXEL];
 
         assert!(
-            line.chunks_exact(BYTES_PER_PIXEL)
-                .all(|pixel| is_grey(pixel.try_into().expect("RGBA pixel")))
+            line.as_chunks::<BYTES_PER_PIXEL>()
+                .0
+                .iter()
+                .all(|pixel| is_grey(*pixel))
         );
     }
 }

@@ -33,6 +33,7 @@ mod control;
 mod delete;
 mod detail;
 mod detail_map;
+mod exit;
 mod gamepad_service;
 mod lifecycle;
 pub(crate) mod list;
@@ -235,7 +236,9 @@ fn suspend_state_path(artifacts_root: &Path, slug: &str) -> PathBuf {
 fn write_thumbnail_png(dir: &Path, rgba: &[u8], w: u32, h: u32) -> Result<(), String> {
     let final_path = dir.join(THUMBNAIL_FILE);
     let all_black = rgba
-        .chunks_exact(4)
+        .as_chunks::<{ coco_core::video::BYTES_PER_PIXEL }>()
+        .0
+        .iter()
         .all(|px| px[0] == 0 && px[1] == 0 && px[2] == 0);
     if all_black && final_path.exists() {
         return Ok(());
@@ -308,6 +311,8 @@ pub struct ManagerApp {
     /// Message from the last failed delete, shown inside the confirmation
     /// modal (which stays open for another try or a Cancel).
     delete_error: Option<String>,
+    /// Per-machine choices and retryable failures while confirming app exit.
+    exit: exit::ExitState,
     /// The app's built-in MCP server (`crate::control`), servicing an AI
     /// driving a VM over HTTP. `None` when disabled (`--control-port 0`) or
     /// its bind failed at startup.
@@ -424,6 +429,7 @@ impl ManagerApp {
             save_error: None,
             pending_delete: Vec::new(),
             delete_error: None,
+            exit: exit::ExitState::default(),
             control,
             pending: Vec::new(),
             pending_rename: None,
@@ -469,6 +475,9 @@ impl eframe::App for ManagerApp {
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        if self.handle_exit_request(ctx) {
+            return;
+        }
         #[cfg(feature = "perf")]
         self.drive_perf_scenario(ctx);
         crate::perf::initialize();
@@ -479,6 +488,7 @@ impl eframe::App for ManagerApp {
         // download (Cancel quits the app, `manager/assets.rs`).
         if self.asset_dialog.is_some() {
             self.draw_asset_dialog(ctx);
+            self.draw_exit_confirmation(ctx);
             return;
         }
 
@@ -491,7 +501,7 @@ impl eframe::App for ManagerApp {
 
         // The New machine hotkey triggers New…; only fires with the manager window focused.
         // Settings' hotkey capture needs the raw press, so nothing here takes keys meanwhile.
-        if self.settings.is_none() {
+        if self.settings.is_none() && !self.exit.is_pending() {
             let new_machine = self.hotkeys.new_machine;
             if ctx.input_mut(|i| new_machine.consume(i)) {
                 self.create_machine_now();
@@ -528,14 +538,17 @@ impl eframe::App for ManagerApp {
             }
         });
 
-        self.draw_delete_confirmation(ctx);
-        self.draw_settings_dialog(ctx);
-        if self.show_about {
-            crate::about::window(ctx, &mut self.show_about);
+        if !self.exit.is_pending() {
+            self.draw_delete_confirmation(ctx);
+            self.draw_settings_dialog(ctx);
+            if self.show_about {
+                crate::about::window(ctx, &mut self.show_about);
+            }
         }
         self.drain_control();
         self.draw_running_vms(ctx);
         self.resolve_control_pending(ctx);
+        self.draw_exit_confirmation(ctx);
     }
 }
 

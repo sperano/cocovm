@@ -172,7 +172,10 @@ fn paint_scaled_pixel(
 ) {
     let first_byte = logical_x * xscale * BYTES_PER_PIXEL;
     let last_byte = first_byte + xscale * BYTES_PER_PIXEL;
-    for pixel in out[first_byte..last_byte].chunks_exact_mut(BYTES_PER_PIXEL) {
+    for pixel in out[first_byte..last_byte]
+        .as_chunks_mut::<BYTES_PER_PIXEL>()
+        .0
+    {
         pixel.copy_from_slice(&color);
     }
 }

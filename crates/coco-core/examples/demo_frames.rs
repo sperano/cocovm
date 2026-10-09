@@ -75,7 +75,7 @@ fn main() {
         if field % DUMP_EVERY == 0 {
             let (w, h) = (m.fb_width as usize, m.fb_height as usize);
             let mut ppm = format!("P6\n{w} {h}\n255\n").into_bytes();
-            for px in m.framebuffer.chunks_exact(4) {
+            for px in m.framebuffer.as_chunks::<4>().0 {
                 ppm.extend_from_slice(&px[..3]);
             }
             let path = out.join(format!("frame_{field:03}.ppm"));

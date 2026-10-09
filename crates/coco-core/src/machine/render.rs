@@ -112,21 +112,23 @@ impl Machine {
         // Vertical placement from the live LPF bits — GIME applies LPF even in legacy modes.
         let (top, body) = gime_video::active_rows(&self.bus.gime);
         if row < top || row >= top + body {
-            for px in row_px.chunks_exact_mut(BYTES_PER_PIXEL) {
+            for px in row_px.as_chunks_mut::<BYTES_PER_PIXEL>().0 {
                 px.copy_from_slice(&border);
             }
             return;
         }
 
         // Side borders around the 512 px active span (legacy is always non-wide).
-        for px in
-            row_px[..raster::NON_WIDE_BORDER_X * BYTES_PER_PIXEL].chunks_exact_mut(BYTES_PER_PIXEL)
+        for px in row_px[..raster::NON_WIDE_BORDER_X * BYTES_PER_PIXEL]
+            .as_chunks_mut::<BYTES_PER_PIXEL>()
+            .0
         {
             px.copy_from_slice(&border);
         }
         for px in row_px
             [(raster::NON_WIDE_BORDER_X + raster::NON_WIDE_ACTIVE_W) * BYTES_PER_PIXEL..]
-            .chunks_exact_mut(BYTES_PER_PIXEL)
+            .as_chunks_mut::<BYTES_PER_PIXEL>()
+            .0
         {
             px.copy_from_slice(&border);
         }

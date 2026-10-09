@@ -65,7 +65,7 @@ pub fn active_row_range(y: usize) -> std::ops::Range<usize> {
 /// then `paint_row(y, row)` over each active scanline's 512 px span.
 fn paint_field(border: [u8; 4], fb: &mut [u8], mut paint_row: impl FnMut(usize, &mut [u8])) {
     debug_assert!(fb.len() >= raster::CANVAS_W * raster::CANVAS_H * BYTES_PER_PIXEL);
-    for px in fb.chunks_exact_mut(BYTES_PER_PIXEL) {
+    for px in fb.as_chunks_mut::<BYTES_PER_PIXEL>().0 {
         px.copy_from_slice(&border);
     }
     for y in 0..ACTIVE_H {
@@ -175,8 +175,9 @@ impl ColorSource<'_> {
 /// Writes one native pixel as `xscale` canvas pixels at `*x`, advancing it
 /// (shared by the legacy text/graphics line painters).
 fn paint_px(out: &mut [u8], x: &mut usize, xscale: usize, color: [u8; 4]) {
-    for px in
-        out[*x * BYTES_PER_PIXEL..][..xscale * BYTES_PER_PIXEL].chunks_exact_mut(BYTES_PER_PIXEL)
+    for px in out[*x * BYTES_PER_PIXEL..][..xscale * BYTES_PER_PIXEL]
+        .as_chunks_mut::<BYTES_PER_PIXEL>()
+        .0
     {
         px.copy_from_slice(&color);
     }

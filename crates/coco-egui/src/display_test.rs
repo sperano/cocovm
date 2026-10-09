@@ -116,9 +116,9 @@ fn expand_scanlines_interleaves_bright_and_dimmed_rows() {
         dark(rgba[2], pct),
         255,
     ];
-    for (i, row) in out.chunks_exact(4 * 4).enumerate() {
+    for (i, row) in out.as_chunks::<{ 4 * 4 }>().0.iter().enumerate() {
         let expected = if i % 2 == 0 { &rgba } else { &dim };
-        for px in row.chunks_exact(4) {
+        for px in row.as_chunks::<4>().0 {
             assert_eq!(px, expected, "row {i}");
         }
     }
@@ -132,8 +132,8 @@ fn scanline_strength_endpoints() {
     let src = uniform(4, 1, [200, 120, 40, 255]);
     let mut out = Vec::new();
     expand_scanlines(100, 4, &src, &mut out);
-    for px in out[4 * 4..].chunks_exact(4) {
-        assert_eq!(px, [0, 0, 0, 255]);
+    for px in out[4 * 4..].as_chunks::<4>().0 {
+        assert_eq!(*px, [0, 0, 0, 255]);
     }
 }
 
@@ -145,7 +145,7 @@ fn noise_is_bounded_luminance_jitter() {
     let mut bytes = uniform(8, 8, [v, v, v, 255]);
     noise_rows(noise_pct, 7, &mut bytes);
     let mut saw_change = false;
-    for px in bytes.chunks_exact(4) {
+    for px in bytes.as_chunks::<4>().0 {
         assert!(px[0] == px[1] && px[1] == px[2], "luminance-only jitter");
         assert_eq!(px[3], 255, "alpha untouched");
         let d = (i32::from(px[0]) - i32::from(v)).abs();
@@ -217,7 +217,7 @@ fn process_bw_output_is_grey_everywhere() {
     let src = uniform(8, 4, [255, 0, 0, 255]);
     let mut processor = Processor::default();
     let frame = processor.process(Display::TV(TV::BW), quiet(), 0, 8, &src);
-    for px in frame.pixels.chunks_exact(4) {
+    for px in frame.pixels.as_chunks::<4>().0 {
         assert!(px[0] == px[1] && px[1] == px[2], "must stay grey");
         assert_eq!(px[3], 255);
     }
@@ -262,12 +262,16 @@ fn tv_processing_keeps_artifact_chroma_only_on_color_sets() {
 
     assert!(
         color
-            .chunks_exact(PX)
+            .as_chunks::<PX>()
+            .0
+            .iter()
             .any(|pixel| pixel[0] != pixel[1] || pixel[1] != pixel[2]),
         "color TV must retain artifact chroma"
     );
     assert!(
-        bw.chunks_exact(PX)
+        bw.as_chunks::<PX>()
+            .0
+            .iter()
             .all(|pixel| pixel[0] == pixel[1] && pixel[1] == pixel[2]),
         "B&W TV must collapse artifact colors to luma"
     );

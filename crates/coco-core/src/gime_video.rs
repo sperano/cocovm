@@ -176,7 +176,7 @@ fn underline_line(lines_per_row: usize) -> Option<usize> {
 
 /// Fill a pixel span with one colour.
 fn fill(px: &mut [u8], color: [u8; 4]) {
-    for p in px.chunks_exact_mut(BYTES_PER_PIXEL) {
+    for p in px.as_chunks_mut::<BYTES_PER_PIXEL>().0 {
         p.copy_from_slice(&color);
     }
 }

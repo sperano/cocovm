@@ -371,7 +371,7 @@ fn write_deflated_rgb(
         check_cancelled_io(is_cancelled)?;
         row.clear();
         let columns = &source[x0 * RGBA_BYTES_PER_PIXEL..(x0 + width) * RGBA_BYTES_PER_PIXEL];
-        for pixel in columns.chunks_exact(RGBA_BYTES_PER_PIXEL) {
+        for pixel in columns.as_chunks::<RGBA_BYTES_PER_PIXEL>().0 {
             row.extend_from_slice(&pixel[..RGB_BYTES_PER_PIXEL]);
         }
         encoder.write_all(&row)?;
