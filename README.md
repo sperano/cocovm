@@ -4,8 +4,6 @@ CoCoVM is a desktop emulator for the Tandy Color Computer 1, 2, and 3. It
 combines a Rust emulation core with an [egui](https://github.com/emilk/egui)
 virtual machine manager for running and organizing multiple CoCo systems.
 
-![A Color Computer 3 running HDB-DOS in CoCoVM](crates/coco-egui/assets/coco3on.png)
-
 CoCoVM is under active development and hasn't reached version 1.0. Save-state
 compatibility can change between releases. See the [changelog](CHANGELOG.md) for
 release details and known limitations.
@@ -196,6 +194,34 @@ The workspace contains these main components:
 
 For more detail, read the [performance guide](performance/README.md) and the
 [changelog](CHANGELOG.md).
+
+## About this project
+
+The Color Computer 3 was the computer I grew up with, and CoCoVM is my love
+letter to it. It isn't the first CoCo emulator, and it doesn't try to replace
+the established ones:
+
+- [VCC](https://github.com/VCCE/VCC) — the long-running Windows CoCo 3
+  emulator, with [OVCC](https://github.com/WallyZambotti/OVCC) bringing it to
+  Linux and macOS
+- [XRoar](https://www.6809.org.uk/xroar/) — CoCo 1/2/3 and Dragon, on desktop
+  and [in the browser](https://www.6809.org.uk/xroar/online/)
+- [MAME](https://www.mamedev.org/) — CoCo 1/2/3 alongside thousands of other
+  systems, with a powerful debugger
+- [Clock Signal](https://github.com/TomHarte/CLK) — a multi-system emulator
+  with CoCo 1/2 support
+- [JS Mocha](https://www.haplessgenius.com/mocha/) — a CoCo 2 in the browser
+
+Earlier emulators include Jeff Vavasour's DOS emulators, MESS (now part of
+MAME), Virtual CoCo on the classic Mac OS, and CoCoNut on Palm OS.
+
+CoCoVM exists for the fun of building one: a chance to write a cycle-counted
+6809 machine in Rust, to see how far AI coding agents (Claude, Codex, and
+DeepSeek) can go on a project like this, and to make the result as friendly
+as possible. Machines are created and managed from a GUI, missing ROMs are
+downloaded on first launch, and everyday use never needs a config file.
+Hardware behavior is checked against the original technical manuals, real ROM
+images, and trace comparisons with MAME and XRoar rather than taken on faith.
 
 ## License
 
