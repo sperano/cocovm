@@ -3,16 +3,14 @@
 //! The selector's list ends with Save to File… and Load from File…
 //! (`save_state/file.rs`). When the row is too narrow it collapses to one
 //! States tile opening a menu with the same controls, and when even that
-//! does not fit it is left out
-//! (the numbered chords still reach States 1 to 3). The fit is measured from
+//! does not fit it is left out (the state chords, `hotkeys.rs`, still
+//! reach every state). The fit is measured from
 //! the available width and the tile dimensions, never a fixed breakpoint,
 //! and the toolbar never wraps: its height is part of the window-sizing math
 //! (`crate::TOOLBAR_H`).
 
-use crate::save_state::{
-    QUICK_SLOTS, StateFile, empty_state_hover, load_slot_shortcut, save_slot_shortcut, saved_time,
-    state_name,
-};
+use crate::hotkeys::{Hotkey, HotkeyAction};
+use crate::save_state::{QUICK_SLOTS, StateFile, empty_state_hover, saved_time, state_name};
 use crate::*;
 
 /// Save tile glyph — U+1F4E5 inbox tray (into the store); Load's is its
@@ -49,7 +47,7 @@ pub(crate) enum GroupFit {
     Full,
     /// One States tile with a menu.
     Collapsed,
-    /// Nothing: only the numbered chords remain.
+    /// Nothing: only the state chords remain.
     Hidden,
 }
 
@@ -83,34 +81,33 @@ impl QuickAction {
         }
     }
 
+    /// The rebindable action behind this control for `slot` (`hotkeys.rs`).
+    pub(crate) fn hotkey_action(self, slot: usize) -> HotkeyAction {
+        match self {
+            Self::Save => HotkeyAction::SaveState(slot),
+            Self::Load => HotkeyAction::LoadState(slot),
+        }
+    }
+
     /// Enabled-hover text of this action's control for `slot`, whose file is
-    /// `file`: the name, what it replaces, and the chord when it has one.
-    fn hover(self, ctx: &egui::Context, slot: usize, file: StateFile) -> String {
+    /// `file` and whose chord is `hotkey`: the name, what it replaces, and
+    /// the chord.
+    fn hover(self, ctx: &egui::Context, slot: usize, file: StateFile, hotkey: Hotkey) -> String {
         let name = self.name(slot);
-        let (detail, shortcut) = match (self, file) {
-            (Self::Save, StateFile::Empty) => (String::new(), save_slot_shortcut(slot)),
-            (Self::Save, StateFile::Saved(_)) => (
-                " Replaces the saved state.".to_string(),
-                save_slot_shortcut(slot),
+        let detail = match (self, file) {
+            (Self::Save, StateFile::Empty) => String::new(),
+            (Self::Save, StateFile::Saved(_)) => " Replaces the saved state.".to_string(),
+            (Self::Load, StateFile::Saved(Some(t))) => format!(
+                " Saved {}. Replaces the current machine state.",
+                saved_time(t, chrono::Local::now())
             ),
-            (Self::Load, StateFile::Saved(Some(t))) => (
-                format!(
-                    " Saved {}. Replaces the current machine state.",
-                    saved_time(t, chrono::Local::now())
-                ),
-                load_slot_shortcut(slot),
-            ),
-            (Self::Load, _) => (
-                " Replaces the current machine state.".to_string(),
-                load_slot_shortcut(slot),
-            ),
+            (Self::Load, _) => " Replaces the current machine state.".to_string(),
         };
-        let shortcut =
-            shortcut.map_or_else(String::new, |s| format!(" ({})", ctx.format_shortcut(&s)));
+        let shortcut = ctx.format_shortcut(&hotkey.shortcut());
         if detail.is_empty() {
-            format!("{name}{shortcut}")
+            format!("{name} ({shortcut})")
         } else {
-            format!("{name}.{detail}{shortcut}")
+            format!("{name}.{detail} ({shortcut})")
         }
     }
 }
@@ -143,7 +140,7 @@ impl CocoApp {
         egui::ComboBox::from_id_salt("quick_state_selector")
             .selected_text(state_name(self.selected_quick_state))
             .width(width)
-            // Tall enough for all ten rows, the note, and the file items without a scroll bar.
+            // Tall enough for all five rows, the note, and the file items without a scroll bar.
             .height(ui.ctx().content_rect().height())
             .wrap_mode(egui::TextWrapMode::Extend)
             .show_ui(ui, |ui| self.quick_state_rows(ui));
@@ -225,8 +222,9 @@ impl CocoApp {
         } else {
             empty_state_hover(slot)
         };
+        let hotkey = self.hotkeys.get(action.hotkey_action(slot));
         let clicked = response
-            .on_hover_text(action.hover(ctx, slot, file))
+            .on_hover_text(action.hover(ctx, slot, file, hotkey))
             .on_disabled_hover_text(disabled)
             .clicked();
         if clicked {
@@ -260,7 +258,7 @@ impl CocoApp {
     }
 }
 
-/// Outer width that fits the selector's widest selected text ("State 10")
+/// Outer width that fits the selector's widest selected text ("State 5")
 /// next to its dropdown icon. Passed to `ComboBox::width`, which then sizes
 /// the button to exactly this, so the fit test and the drawn width agree.
 fn selector_width(ui: &egui::Ui) -> f32 {

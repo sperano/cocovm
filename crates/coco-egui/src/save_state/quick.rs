@@ -1,64 +1,46 @@
 //! Quick states: the [`QUICK_SLOTS`] numbered save-state files every VM
-//! window shares, their labels and keyboard chords, and the quick
-//! save/load actions behind the toolbar's state group
-//! (`chrome::toolbar::quick_states`) and the numbered chords
-//! (`app/input.rs`).
+//! window shares, their labels, and the quick save/load actions behind the
+//! toolbar's state group (`chrome::toolbar::quick_states`) and the
+//! rebindable chords (`hotkeys.rs`, dispatched in `app/input.rs`).
 
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use eframe::egui;
 
+use crate::hotkeys::{Hotkey, Hotkeys};
 use crate::{CocoApp, paths};
 
 use super::load_request::LoadSource;
 
-/// Number of quick states (State 1 to State 10). Ten gives room for several
-/// experiments without a long selector; named state files cover the rest.
-pub(crate) const QUICK_SLOTS: usize = 10;
+/// Number of quick states (State 1 to State 5). Five keep the selector
+/// short and give every state a load and a save chord on the digit row;
+/// named state files cover the rest.
+pub(crate) const QUICK_SLOTS: usize = 5;
 
 /// Subdirectory of [`paths::data_dir`] holding the quick-state files
 /// (`<dir>/slot-<n>.ccstate`, 1-based). The file names predate the "State"
 /// wording and stay as they are so existing saves keep loading.
 const SAVE_STATES_SUBDIR: &str = "save-states";
 
-/// Physical keys of the numbered chords. Only States 1 to 3 have one: users
-/// may already bind COMMAND+4 and up to their own hotkeys.
-const QUICK_SLOT_KEYS: [egui::Key; 3] = [egui::Key::Num1, egui::Key::Num2, egui::Key::Num3];
-
 /// Error when [`paths::data_dir`] can't locate a home directory.
 const NO_DATA_DIR: &str = "no data directory found for quick states";
 
-/// COMMAND+SHIFT+`<n>` quick-saves `slot` (0-based) — the SHIFTed sibling of
-/// [`load_slot_shortcut`]'s COMMAND+`<n>`. `None` past the chorded states.
-pub(crate) fn save_slot_shortcut(slot: usize) -> Option<egui::KeyboardShortcut> {
-    let modifiers = egui::Modifiers::COMMAND.plus(egui::Modifiers::SHIFT);
-    QUICK_SLOT_KEYS
-        .get(slot)
-        .map(|&key| egui::KeyboardShortcut::new(modifiers, key))
-}
-
-/// COMMAND+`<n>` quick-loads `slot` (0-based). `None` past the chorded states.
-pub(crate) fn load_slot_shortcut(slot: usize) -> Option<egui::KeyboardShortcut> {
-    QUICK_SLOT_KEYS
-        .get(slot)
-        .map(|&key| egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, key))
-}
-
-/// One line for the keyboard-help window naming every quick-state chord,
-/// formatted per-platform using [`egui::Context::format_shortcut`].
-pub(crate) fn slot_shortcuts_hint(ctx: &egui::Context) -> String {
-    let format = |shortcut: fn(usize) -> Option<egui::KeyboardShortcut>| {
-        (0..QUICK_SLOTS)
-            .filter_map(shortcut)
-            .map(|s| ctx.format_shortcut(&s))
+/// One line for the keyboard-help window naming every quick-state chord in
+/// `hotkeys`, state by state, formatted per-platform using
+/// [`egui::Context::format_shortcut`].
+pub(crate) fn slot_shortcuts_hint(ctx: &egui::Context, hotkeys: &Hotkeys) -> String {
+    let format = |chords: &[Hotkey]| {
+        chords
+            .iter()
+            .map(|hotkey| ctx.format_shortcut(&hotkey.shortcut()))
             .collect::<Vec<_>>()
             .join(" / ")
     };
     format!(
-        "{}: quick-load State 1/2/3   ·   {}: quick-save",
-        format(load_slot_shortcut),
-        format(save_slot_shortcut)
+        "{}: quick-load State 1 to {QUICK_SLOTS}   ·   {}: quick-save",
+        format(&hotkeys.load_state),
+        format(&hotkeys.save_state)
     )
 }
 
@@ -73,7 +55,7 @@ fn state_file(dir: &Path, slot: usize) -> PathBuf {
     dir.join(format!("slot-{}.ccstate", slot + 1))
 }
 
-/// User-visible name of `slot` (0-based): "State 1" to "State 10".
+/// User-visible name of `slot` (0-based): "State 1" to "State 5".
 pub(crate) fn state_name(slot: usize) -> String {
     format!("State {}", slot + 1)
 }

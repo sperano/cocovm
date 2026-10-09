@@ -96,8 +96,6 @@ impl CocoApp {
     /// `handle_input`'s event snapshot, so the keypress never reaches the CoCo matrix,
     /// and before its text-widget gate, so they stay live while a text field has focus.
     pub(crate) fn consume_app_shortcuts(&mut self, ctx: &egui::Context) {
-        // The hotkeys match exactly, so they go before the state chords, which ignore an
-        // extra Shift/Alt and would otherwise take e.g. a Cmd+Alt+1 hotkey.
         let hotkeys = self.hotkeys;
         // Consumed here as a deliberate no-op, so it doesn't type into the machine.
         let _ = ctx.input_mut(|i| hotkeys.new_machine.consume(i));
@@ -110,15 +108,13 @@ impl CocoApp {
                 KbMode::Symbolic => KbMode::Positional,
             });
         }
-        // COMMAND+<n> quick-loads State n; COMMAND+SHIFT+<n> quick-saves it (States 1-3 only).
-        let consume = |shortcut: Option<egui::KeyboardShortcut>| {
-            shortcut.is_some_and(|s| ctx.input_mut(|i| i.consume_shortcut(&s)))
-        };
+        // The quick-state chords: COMMAND+SHIFT+<n> saves State n and COMMAND+<n>
+        // loads it by default, both rebindable.
         for slot in 0..save_state::QUICK_SLOTS {
-            if consume(save_state::save_slot_shortcut(slot)) {
+            if ctx.input_mut(|i| hotkeys.save_state[slot].consume(i)) {
                 self.quick_save(slot);
             }
-            if consume(save_state::load_slot_shortcut(slot)) {
+            if ctx.input_mut(|i| hotkeys.load_state[slot].consume(i)) {
                 self.quick_load_shortcut(slot, ctx);
             }
         }

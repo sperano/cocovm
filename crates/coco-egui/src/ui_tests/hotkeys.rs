@@ -1,6 +1,7 @@
 //! Rebindable hotkeys (`hotkeys.rs`): capturing a new binding in the
-//! Settings dialog (`manager/settings/hotkeys.rs`), and a VM window acting
-//! on the binding it was given instead of the built-in F10/F12.
+//! Settings dialog (`manager/settings/hotkeys.rs`), including a quick-state
+//! chord, and a VM window acting on the binding it was given instead of the
+//! built-in F10/F12.
 
 use egui_kittest::kittest::Queryable;
 
@@ -134,6 +135,50 @@ fn capturing_the_new_machine_hotkey_does_not_create_a_machine() {
     assert!(harness.state().entries.is_empty(), "no machine was created");
     // Rebinding to the same chord is allowed and leaves it unchanged.
     harness.get_by_label(&new_machine);
+}
+
+/// The quick-state chords are hotkeys like the others: the Hotkeys tab has
+/// a row per state and action, a captured chord is saved under the state's
+/// `config.toml` key, and open VM windows act on it.
+#[test]
+fn a_captured_state_chord_is_saved_and_reaches_vm_windows() {
+    let dir = TempDir::new("settings-hotkey-state-chord");
+    let config_path = dir.path().join("config.toml");
+    let mut harness = settings_harness_with(config_path.clone(), |app| {
+        app.entries.push(open_vm_entry());
+    });
+    let load_state_4 = harness
+        .ctx
+        .format_shortcut(&DEFAULT_HOTKEYS.load_state[3].shortcut());
+    let rebound = hotkey("Cmd+Alt+F5");
+    let rebound_label = harness.ctx.format_shortcut(&rebound.shortcut());
+
+    click(&mut harness, "Settings");
+    click(&mut harness, "Hotkeys");
+    for slot in 1..=save_state::QUICK_SLOTS {
+        harness.get_by_label(&format!("Load State {slot}"));
+        harness.get_by_label(&format!("Save State {slot}"));
+    }
+    click(&mut harness, &load_state_4);
+    harness.get_by_label(CAPTURE_PROMPT);
+    let cmd_alt = egui::Modifiers::COMMAND.plus(egui::Modifiers::ALT);
+    press(&mut harness, cmd_alt, egui::Key::F5);
+    harness.get_by_label(&rebound_label);
+    click(&mut harness, "Save");
+
+    assert!(harness.state().settings.is_none(), "Save closes the dialog");
+    assert_eq!(harness.state().hotkeys.load_state[3], rebound);
+    let vm = harness.state().entries[0]
+        .vm
+        .as_ref()
+        .expect("VM stays open");
+    assert_eq!(vm.hotkeys.load_state[3], rebound);
+    let saved = std::fs::read_to_string(&config_path).expect("save_file creates the file");
+    let expected = format!("hotkey_load_state_4 = \"{rebound}\"");
+    assert!(
+        saved.lines().any(|l| l.trim() == expected),
+        "config.toml must contain {expected}: {saved}"
+    );
 }
 
 /// A VM window acts on the bindings the manager hands it: F10/F12 are inert

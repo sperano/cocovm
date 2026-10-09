@@ -121,7 +121,10 @@ fn file_value_beats_built_in_default() {
         hotkey_keyboard_mode: hotkey("Shift+F9"),
         hotkey_new_machine: hotkey("Cmd+Alt+N"),
         hotkey_debugger: hotkey("Alt+F12"),
+        hotkey_load_state_4: hotkey("Cmd+Alt+4"),
+        hotkey_save_state_5: hotkey("Cmd+Alt+Shift+5"),
         manager_sort: Some(ManagerSort::NameAsc),
+        ..FileConfig::default()
     };
     let config = resolve(bare_cli(), file);
     assert_eq!(config.log_level, LogLevel::Debug);
@@ -143,6 +146,12 @@ fn file_value_beats_built_in_default() {
     assert_eq!(Some(config.hotkeys.keyboard_mode), hotkey("Shift+F9"));
     assert_eq!(Some(config.hotkeys.new_machine), hotkey("Cmd+Alt+N"));
     assert_eq!(Some(config.hotkeys.debugger), hotkey("Alt+F12"));
+    assert_eq!(Some(config.hotkeys.load_state[3]), hotkey("Cmd+Alt+4"));
+    assert_eq!(
+        Some(config.hotkeys.save_state[4]),
+        hotkey("Cmd+Alt+Shift+5")
+    );
+    assert_eq!(config.hotkeys.load_state[0], DEFAULT_HOTKEYS.load_state[0]);
     assert_eq!(config.manager_sort, ManagerSort::NameAsc);
 }
 
@@ -212,10 +221,10 @@ fn log_level_strings_match_the_cli_flags_spelling() {
 /// Uncommented copy of [`default_config_template`]'s parameter lines, so it
 /// can be parsed back as a [`FileConfig`]. Only lines that are unambiguously
 /// a commented parameter assignment (`# name = ...` with a lowercase/
-/// underscore `name` up to the first `" = "`) get uncommented; prose header
-/// lines and description lines like `# error | warn | ...` are left alone —
-/// as long as no such prose line happens to contain `" = "` after a
-/// lowercase/underscore run, which would make it spuriously uncommented.
+/// digit/underscore `name` up to the first `" = "`) get uncommented; prose
+/// header lines and description lines like `# error | warn | ...` are left
+/// alone — as long as no such prose line happens to contain `" = "` after a
+/// lowercase/digit/underscore run, which would make it spuriously uncommented.
 /// That failure mode isn't silent: `FileConfig`'s `deny_unknown_fields`
 /// rejects any resulting key that isn't one of the five real parameters.
 fn uncomment_template_parameters(template: &str) -> String {
@@ -233,7 +242,7 @@ fn uncomment_template_parameters(template: &str) -> String {
             let is_identifier = !candidate.is_empty()
                 && candidate
                     .chars()
-                    .all(|c| c.is_ascii_lowercase() || c == '_');
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_');
             if is_identifier {
                 rest.to_string()
             } else {
@@ -266,10 +275,20 @@ fn default_template_uncommented_resolves_to_true_defaults() {
         welcome_image_cycle,
         welcome_image_cycle_secs,
         welcome_image_shuffle,
-        hotkey_key_layout,
-        hotkey_keyboard_mode,
-        hotkey_new_machine,
-        hotkey_debugger,
+        hotkey_key_layout: _,
+        hotkey_keyboard_mode: _,
+        hotkey_new_machine: _,
+        hotkey_debugger: _,
+        hotkey_load_state_1: _,
+        hotkey_load_state_2: _,
+        hotkey_load_state_3: _,
+        hotkey_load_state_4: _,
+        hotkey_load_state_5: _,
+        hotkey_save_state_1: _,
+        hotkey_save_state_2: _,
+        hotkey_save_state_3: _,
+        hotkey_save_state_4: _,
+        hotkey_save_state_5: _,
         manager_sort,
     } = &file;
     assert!(
@@ -304,15 +323,12 @@ fn default_template_uncommented_resolves_to_true_defaults() {
         welcome_image_shuffle.is_some(),
         "every FileConfig parameter needs a commented line in the template"
     );
-    for hotkey in [
-        hotkey_key_layout,
-        hotkey_keyboard_mode,
-        hotkey_new_machine,
-        hotkey_debugger,
-    ] {
+    // The `hotkey_*` fields are covered through their actions: `hotkey`
+    // matches every `HotkeyAction` to its field, so this loop reaches each.
+    for action in HotkeyAction::all() {
         assert!(
-            hotkey.is_some(),
-            "every FileConfig parameter needs a commented line in the template"
+            file.hotkey(action).is_some(),
+            "every FileConfig parameter needs a commented line in the template: {action:?}"
         );
     }
     assert!(
@@ -381,6 +397,8 @@ fn a_valid_full_config_file_loads() {
         hotkey_keyboard_mode = "Shift+F11"
         hotkey_new_machine = "Cmd+Shift+N"
         hotkey_debugger = "Alt+F5"
+        hotkey_load_state_5 = "Cmd+Alt+5"
+        hotkey_save_state_1 = "Cmd+Alt+Shift+1"
         manager_sort = "name-desc"
         "#,
     )
@@ -401,9 +419,40 @@ fn a_valid_full_config_file_loads() {
             hotkey_keyboard_mode: hotkey("Shift+F11"),
             hotkey_new_machine: hotkey("Cmd+Shift+N"),
             hotkey_debugger: hotkey("Alt+F5"),
+            hotkey_load_state_5: hotkey("Cmd+Alt+5"),
+            hotkey_save_state_1: hotkey("Cmd+Alt+Shift+1"),
             manager_sort: Some(ManagerSort::NameDesc),
+            ..FileConfig::default()
         }
     );
+}
+
+/// `set_hotkey` and `hotkey` reach the same field for every action.
+#[test]
+fn set_hotkey_is_read_back_by_hotkey_for_every_action() {
+    let mut file = FileConfig::default();
+    let bound = hotkey("Cmd+Alt+F5");
+    for action in HotkeyAction::all() {
+        file.set_hotkey(action, bound);
+        assert_eq!(file.hotkey(action), bound, "{action:?}");
+        for other in HotkeyAction::all().filter(|other| *other != action) {
+            assert_eq!(file.hotkey(other), None, "{action:?} wrote {other:?}");
+        }
+        file.set_hotkey(action, None);
+    }
+    assert_eq!(file, FileConfig::default());
+}
+
+/// A state chord is a hotkey like any other: a file giving its default to
+/// another action is refused at load, naming both.
+#[test]
+fn a_hotkey_clashing_with_a_state_chord_is_a_load_error() {
+    let dir = TempDir::new("config-state-chord-clash");
+    let path = dir.path().join("config.toml");
+    std::fs::write(&path, "hotkey_new_machine = \"Cmd+4\"\n").unwrap();
+    let error = load(Some(&path)).expect_err("Cmd+4 is already Load State 4");
+    assert!(error.contains("New machine"), "{error}");
+    assert!(error.contains("Load State 4"), "{error}");
 }
 
 #[test]
@@ -471,7 +520,10 @@ fn save_file_round_trips_through_load() {
         hotkey_keyboard_mode: hotkey("Alt+F12"),
         hotkey_new_machine: hotkey("Cmd+Shift+N"),
         hotkey_debugger: hotkey("F11"),
+        hotkey_load_state_3: hotkey("Cmd+Alt+3"),
+        hotkey_save_state_3: hotkey("Cmd+Alt+Shift+3"),
         manager_sort: Some(ManagerSort::CreatedAsc),
+        ..FileConfig::default()
     };
     save_file(&path, &file).expect("save must succeed");
     assert_eq!(load(Some(&path)).expect("saved file must load"), file);

@@ -144,7 +144,7 @@ fn footer(ui: &mut egui::Ui, ctx: &egui::Context, variant: MachineVariant, hotke
         hotkey_hints.push(format!("{}: debugger", name(hotkeys.debugger)));
     }
     ui.small(hotkey_hints.join(HINT_SEPARATOR));
-    ui.small(crate::save_state::slot_shortcuts_hint(ctx));
+    ui.small(crate::save_state::slot_shortcuts_hint(ctx, hotkeys));
 }
 
 fn draw_row(

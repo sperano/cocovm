@@ -32,7 +32,7 @@ fn group_fit_prefers_the_widest_layout_that_fits() {
 #[test]
 fn action_names_identify_the_action_and_the_state() {
     assert_eq!(QuickAction::Save.name(0), "Save to State 1");
-    assert_eq!(QuickAction::Load.name(9), "Load State 10");
+    assert_eq!(QuickAction::Load.name(4), "Load State 5");
 }
 
 /// The group's glyphs are in egui's bundled fonts, so no tile draws a
