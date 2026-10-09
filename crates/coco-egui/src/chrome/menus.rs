@@ -1,8 +1,8 @@
 //! The VM window's menus. The window has no menu bar: each menu pops up from
 //! its status-bar entry (`chrome::status_bar`). A section of a menu that is
 //! more than a handful of items lives in its own submodule (the Printer
-//! menu's print capture); the rest (keyboard, display, tape, disks, and
-//! printer) stay here.
+//! menu's print capture); the rest (keyboard, sound, display, tape, disks,
+//! and printer) stay here.
 
 use crate::*;
 
