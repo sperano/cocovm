@@ -133,7 +133,7 @@ fn variant_prompt(ui: &mut egui::Ui, name: &str, from: &str, here: &str) -> Opti
     ui.heading(format!("Load a {from} state?"));
     ui.label(format!(
         "{name} was saved on a {from}, and this window runs a {here}. Loading it \
-         turns this window into a {from}. The machine's settings stay {here}."
+         turns this window into a {from}. The machine's settings don't change."
     ));
     ui.add_space(PROMPT_GAP);
     let mut choice = None;
