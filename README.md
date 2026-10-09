@@ -51,6 +51,11 @@ Release builds target these platforms:
 - Linux on 64-bit Arm and x86-64
 - Windows on x86-64
 
+The macOS download is a signed `cocovm.app`. The Linux archive includes an
+`install.sh` that installs the binary, a desktop entry and the icon under
+`~/.local` (pass another prefix, such as `/usr/local`, as its argument). The
+Windows executable runs from any folder.
+
 The source repository doesn't contain copyrighted ROM images. On first launch,
 CoCoVM lists any missing runtime assets and asks before downloading the separate
 asset bundle. On Linux and macOS, CoCoVM installs these files under

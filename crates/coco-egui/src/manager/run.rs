@@ -1,7 +1,5 @@
 //! Native manager startup and rename recovery.
 
-use eframe::egui;
-
 use crate::machine_def;
 
 use super::{MachineEntry, ManagerApp, WINDOW_SIZE, assets, control, rename};
@@ -42,14 +40,13 @@ pub fn run(
     let icon = eframe::icon_data::from_png_bytes(ICON_BYTES).expect("embedded icon PNG is valid");
     let assets_dir = crate::require_data_dir().join(crate::paths::ASSETS_DIR_NAME);
     let missing = crate::missing_assets();
-    let mut viewport = egui::ViewportBuilder::default()
+    let mut viewport = crate::window_builder("CoCoVM")
         .with_inner_size(if missing.is_empty() {
             WINDOW_SIZE
         } else {
             assets::DIALOG_WINDOW_SIZE
         })
-        .with_icon(icon)
-        .with_title("CoCoVM");
+        .with_icon(icon);
     if !missing.is_empty() {
         viewport = viewport.with_resizable(false);
     }
@@ -76,7 +73,7 @@ pub fn run(
         std::process::exit(1);
     }
     eframe::run_native(
-        "cocovm",
+        crate::APP_ID,
         options,
         Box::new(move |creation| {
             crate::banner(&crate::StartupInfo {
@@ -147,3 +144,7 @@ fn load_entries(dir: Option<&std::path::Path>) -> Vec<MachineEntry> {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "run_test.rs"]
+mod tests;

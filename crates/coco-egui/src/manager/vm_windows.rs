@@ -42,9 +42,7 @@ impl ManagerApp {
             let window_session = self.entries[i].window_session;
             let viewport_id = egui::ViewportId::from_hash_of(("vm-window", window_session));
             let inner_size = vm_window_inner_size();
-            let builder = egui::ViewportBuilder::default()
-                .with_title(name.clone())
-                .with_inner_size(inner_size);
+            let builder = crate::window_builder(name.clone()).with_inner_size(inner_size);
 
             // Taken out of the entry so the closure can mutate it without conflicting with `self`.
             let mut vm = self.entries[i].vm.take().expect("checked Some above");

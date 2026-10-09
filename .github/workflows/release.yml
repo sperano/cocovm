@@ -104,53 +104,12 @@ jobs:
           VERSION=${RELEASE_TAG#v}
           STAGE=cocovm-${RELEASE_TAG}-${{ matrix.target }}
 
-          # cocovm.app bundle around the release binary. The plist lives
-          # here (not as a repo file) so workflow_dispatch runs against
-          # tags that predate this workflow still work — the checkout is
-          # the tag, but the workflow file always comes from main.
+          # cocovm.app bundle (Info.plist + Finder icon) around the release
+          # binary; the same script builds a local bundle from a cargo build.
+          # The script comes from the tag's checkout, so workflow_dispatch
+          # works for tags that carry packaging/.
           APP="$RUNNER_TEMP/cocovm.app"
-          mkdir -p "$APP/Contents/MacOS"
-          cat > "$APP/Contents/Info.plist" <<PLIST
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-            <key>CFBundleName</key><string>cocovm</string>
-            <key>CFBundleDisplayName</key><string>CoCoVM</string>
-            <key>CFBundleIdentifier</key><string>com.sperano.cocovm</string>
-            <key>CFBundleExecutable</key><string>cocovm</string>
-            <key>CFBundlePackageType</key><string>APPL</string>
-            <key>CFBundleShortVersionString</key><string>$VERSION</string>
-            <key>CFBundleVersion</key><string>$VERSION</string>
-            <key>LSMinimumSystemVersion</key><string>11.0</string>
-            <key>NSHighResolutionCapable</key><true/>
-            <key>LSApplicationCategoryType</key><string>public.app-category.games</string>
-            <key>NSHumanReadableCopyright</key><string>GPL-3.0-or-later</string>
-            <key>CFBundleIconFile</key><string>cocovm</string>
-          </dict>
-          </plist>
-          PLIST
-          plutil -lint "$APP/Contents/Info.plist"
-          cp "$BIN" "$APP/Contents/MacOS/cocovm"
-
-          # Finder icon from the same art the app embeds for its Dock icon.
-          # Older tags retain their original artwork; pre-icon tags skip it.
-          ICON_SRC=crates/coco-egui/assets/cocovm-icon.png
-          if [ ! -f "$ICON_SRC" ]; then
-            ICON_SRC=crates/coco-egui/assets/coco3-console-8bit.png
-          fi
-          if [ -f "$ICON_SRC" ]; then
-            ICONSET="$RUNNER_TEMP/cocovm.iconset"
-            mkdir "$ICONSET"
-            for s in 16 32 128 256 512; do
-              sips -z "$s" "$s" "$ICON_SRC" \
-                --out "$ICONSET/icon_${s}x${s}.png" > /dev/null
-              sips -z "$((s * 2))" "$((s * 2))" "$ICON_SRC" \
-                --out "$ICONSET/icon_${s}x${s}@2x.png" > /dev/null
-            done
-            mkdir -p "$APP/Contents/Resources"
-            iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/cocovm.icns"
-          fi
+          packaging/macos/bundle.sh "$BIN" "$VERSION" "$APP"
 
           # Hardened runtime + secure timestamp are notarization requirements.
           codesign --force --options runtime --timestamp \
@@ -201,8 +160,9 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           STAGE=cocovm-${RELEASE_TAG}-${{ matrix.target }}
-          mkdir "$STAGE"
-          cp "target/${{ matrix.target }}/release/cocovm" LICENSE NOTICE.md "$STAGE/"
+          # Binary plus desktop entry, icons and install.sh.
+          packaging/linux/stage.sh "target/${{ matrix.target }}/release/cocovm" "$STAGE"
+          cp LICENSE NOTICE.md "$STAGE/"
           tar -czf "$STAGE.tar.gz" "$STAGE"
           echo "ARCHIVE=$STAGE.tar.gz" >> "$GITHUB_ENV"
 

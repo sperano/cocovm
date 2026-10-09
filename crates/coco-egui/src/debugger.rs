@@ -241,8 +241,7 @@ impl DebuggerPanel {
         }
         // Stable ID so egui reuses the same native OS window instead of spawning a new one.
         let viewport_id = egui::ViewportId::from_hash_of("debugger");
-        let builder = egui::ViewportBuilder::default()
-            .with_title("Debugger")
+        let builder = crate::window_builder("Debugger")
             .with_inner_size([1140.0, 780.0])
             .with_min_inner_size([480.0, 320.0]);
         ctx.show_viewport_immediate(viewport_id, builder, |ctx, class| {
