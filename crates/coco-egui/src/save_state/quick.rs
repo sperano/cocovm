@@ -11,6 +11,8 @@ use eframe::egui;
 
 use crate::{CocoApp, paths};
 
+use super::load_request::LoadSource;
+
 /// Number of quick states (State 1 to State 10). Ten gives room for several
 /// experiments without a long selector; named state files cover the rest.
 pub(crate) const QUICK_SLOTS: usize = 10;
@@ -154,7 +156,7 @@ impl CocoApp {
         state_row_label(slot, self.quick_state_file(slot), chrono::Local::now())
     }
 
-    /// Quick Save `slot`: like "Save State…" but to the state's fixed file,
+    /// Quick Save `slot`: like Save to File… but to the state's fixed file,
     /// replacing any earlier save. On success, toasts "Saved State N" and
     /// makes `slot` this window's selected state; on failure, reports the
     /// error dialog and leaves the selection alone. Returns whether it saved.
@@ -184,26 +186,14 @@ impl CocoApp {
         self.write_state_to(&path)
     }
 
-    /// Quick Load `slot` — the load-side sibling of [`Self::quick_save`]:
-    /// "Loaded State N" plus any restore notes on success, the error dialog
-    /// on failure. Returns whether it loaded.
-    pub(crate) fn quick_load(&mut self, slot: usize, ctx: &egui::Context) -> bool {
-        let restored = self
-            .quick_state_path(slot)
-            .ok_or_else(|| NO_DATA_DIR.to_string())
-            .and_then(|path| self.restore_state_from(&path));
-        match restored {
-            Ok(notes) => {
-                let head = format!("Loaded {}", state_name(slot));
-                self.set_toast(super::with_notes(&head, &notes));
-                self.refresh_window_title(ctx);
-                self.selected_quick_state = slot;
-                true
-            }
-            Err(e) => {
-                self.cart_error = Some(e);
-                false
-            }
+    /// Quick Load `slot` — the load-side sibling of [`Self::quick_save`],
+    /// through [`Self::request_load`]: "Loaded State N" plus any restore
+    /// notes on success, the machine-type prompt first when the state was
+    /// saved on another type, the error dialog on failure.
+    pub(crate) fn quick_load(&mut self, slot: usize, ctx: &egui::Context) {
+        match self.quick_state_path(slot) {
+            Some(path) => self.request_load(LoadSource::Quick(slot), &path, ctx),
+            None => self.cart_error = Some(NO_DATA_DIR.to_string()),
         }
     }
 

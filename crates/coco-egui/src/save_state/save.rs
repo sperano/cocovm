@@ -15,6 +15,21 @@ use super::media_ref::hash_media_ref;
 pub(crate) const DRIVEWIRE_HOST_BUSY: &str = "DriveWire host I/O is still pending; try again";
 
 impl CocoApp {
+    /// [`DRIVEWIRE_HOST_BUSY`] while DriveWire host I/O is pending: a save
+    /// can't capture it and a restore would drop it.
+    pub(super) fn ensure_drivewire_host_idle(&self) -> Result<(), String> {
+        if self
+            .machine
+            .bus
+            .drivewire
+            .as_ref()
+            .is_some_and(|dw| !dw.host_is_idle())
+        {
+            return Err(DRIVEWIRE_HOST_BUSY.to_string());
+        }
+        Ok(())
+    }
+
     /// [`Self::write_state_to`], then the "State saved" toast.
     pub(crate) fn save_state_to(&mut self, path: &Path) -> Result<(), String> {
         self.write_state_to(path)?;
@@ -27,15 +42,7 @@ impl CocoApp {
     /// truncated file. A flush failure aborts before anything is written.
     /// Shows no toast: callers word their own confirmation.
     pub(super) fn write_state_to(&mut self, path: &Path) -> Result<(), String> {
-        if self
-            .machine
-            .bus
-            .drivewire
-            .as_ref()
-            .is_some_and(|dw| !dw.host_is_idle())
-        {
-            return Err(DRIVEWIRE_HOST_BUSY.to_string());
-        }
+        self.ensure_drivewire_host_idle()?;
         self.flush_media()?;
         let media = self.build_media_refs()?;
         let bytes = snapshot::save(&self.machine, &media).map_err(|e| e.to_string())?;

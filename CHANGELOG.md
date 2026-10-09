@@ -40,6 +40,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   8,192 characters, a line is longer than BASIC's 249-character input line,
   or a character has no CoCo key. It stops at the first line that BASIC
   answers with an error and reports that line, the error, and the screen.
+- Save to File… and Load from File… at the end of the toolbar's State
+  selector, and of the States menu when the toolbar is narrow. They save
+  the machine state to, or load it from, a `.ccstate` file anywhere on
+  disk, and leave the selected state unchanged.
 
 ### Fixed
 - An MCP session no longer expires while one of its requests is still
@@ -56,6 +60,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   lands, as a 0-based row and column, on the 32-column screen and the
   `WIDTH 40`/`WIDTH 80` screens. In PMODE graphics it now says there is no
   text buffer instead of decoding graphics bytes as characters.
+- Start Print Capture, Stop Print Capture, and Translate CR to LF are in
+  the status bar's Printer menu, next to Open Print Capture, now that the
+  Machine menu is gone.
+- Loading a state saved on another machine type, such as a CoCo 2 state
+  in a CoCo 3 window, asks first. Before, the window silently turned into
+  the other type. Loading never changes the machine's settings.
 
 ### Removed
 - The `book/` course and its `tools/build-book.sh` EPUB/PDF builder. The
@@ -63,6 +73,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The Machine menu's Quick Save and Quick Load submenus. Save and load
   quick states with the toolbar's State selector and its Save and Load
   tiles, or with the keyboard shortcuts for States 1 to 3.
+- The Machine menu. Its Save State and Load State items are now Save to
+  File… and Load from File… in the toolbar's State selector, and print
+  capture moved to the Printer menu.
 
 ## [0.7.8] - 2026-10-03
 
