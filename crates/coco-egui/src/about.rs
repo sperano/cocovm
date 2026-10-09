@@ -11,7 +11,7 @@ pub fn window(ctx: &egui::Context, open: &mut bool) {
         .show(ctx, |ui| {
             ui.vertical_centered(|ui| {
                 ui.heading("cocovm");
-                ui.label("A Tandy Color Computer 3 emulator");
+                ui.label("A Tandy Color Computer emulator");
                 ui.add_space(4.0);
                 ui.label(format!("version {}", env!("CARGO_PKG_VERSION")));
                 ui.add_space(6.0);
