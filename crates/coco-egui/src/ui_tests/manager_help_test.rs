@@ -8,7 +8,7 @@ use crate::*;
 use super::harness::*;
 
 /// A line of the About window's text, to tell whether it is drawn.
-const ABOUT_TEXT: &str = "A Tandy Color Computer 3 emulator";
+const ABOUT_TEXT: &str = "A Tandy Color Computer emulator";
 
 /// Help > About cocovm opens the About window; its close box closes it.
 #[test]

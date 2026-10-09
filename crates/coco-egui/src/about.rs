@@ -11,6 +11,7 @@ const TEXT_GAP: f32 = 6.0;
 const SECTION_GAP: f32 = 16.0;
 const ICON_BYTES: &[u8] = include_bytes!("../assets/coco3-console-8bit.png");
 const ICON_CACHE_ID: &str = "about_console_icon";
+const GITHUB_URL: &str = "https://github.com/sperano/cocovm";
 
 /// Draw the About window. `open` is toggled by the window's close box.
 pub fn window(ctx: &egui::Context, open: &mut bool) {
@@ -34,12 +35,16 @@ fn contents(ui: &mut egui::Ui) {
         ui.label(egui::RichText::new("CoCoVM").size(TITLE_SIZE).strong());
         ui.label(concat!("Version ", env!("CARGO_PKG_VERSION")));
         ui.add_space(SECTION_GAP);
-        ui.label("A Tandy Color Computer 3 emulator");
-        ui.label(egui::RichText::new("MC6809 CPU · GIME video · Rust + egui").size(DETAIL_SIZE));
+        ui.label("A Tandy Color Computer emulator");
+        ui.label(egui::RichText::new("Built with Rust + egui").size(DETAIL_SIZE));
         ui.add_space(SECTION_GAP);
         ui.separator();
         ui.add_space(TEXT_GAP);
         ui.label(egui::RichText::new("© 2026 Éric Spérano").size(DETAIL_SIZE));
+        ui.label(
+            egui::RichText::new(concat!("License: ", env!("CARGO_PKG_LICENSE"))).size(DETAIL_SIZE),
+        );
+        ui.hyperlink_to("GitHub", GITHUB_URL);
     });
 }
 
