@@ -13,8 +13,12 @@ pub(super) fn draw(ui: &mut egui::Ui, image: &mut WelcomeImage, has_machines: bo
         ui.add_space(TOP_GAP);
         ui.add(
             egui::Label::new(
-                egui::RichText::new(concat!("Welcome to CoCoVM! ", env!("CARGO_PKG_VERSION")))
-                    .heading(),
+                egui::RichText::new(concat!(
+                    "Welcome to CoCoVM ",
+                    env!("CARGO_PKG_VERSION"),
+                    " !"
+                ))
+                .heading(),
             )
             .wrap(),
         );
