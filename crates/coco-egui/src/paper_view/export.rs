@@ -171,7 +171,7 @@ struct ExportPermit;
 impl ExportPermit {
     fn acquire() -> Result<Self, String> {
         ACTIVE_EXPORTS
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |active| {
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |active| {
                 (active < MAX_CONCURRENT_PRINTER_EXPORTS).then_some(active + 1)
             })
             .map(|_| Self)

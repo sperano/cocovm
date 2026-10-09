@@ -10,7 +10,7 @@ use test_assets::rom;
 fn write_ppm(m: &Machine, path: &str) {
     let (w, h) = (m.fb_width as usize, m.fb_height as usize);
     let mut out = format!("P6\n{w} {h}\n255\n").into_bytes();
-    for px in m.framebuffer.chunks_exact(4) {
+    for px in m.framebuffer.as_chunks::<4>().0 {
         out.extend_from_slice(&px[..3]);
     }
     std::fs::write(path, out).unwrap();

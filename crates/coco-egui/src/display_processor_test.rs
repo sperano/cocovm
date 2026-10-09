@@ -34,7 +34,7 @@ pub(super) fn previous_process(
         TV::Color => Cow::Borrowed(src),
         TV::BW => {
             let mut out = src.to_vec();
-            for px in out.chunks_exact_mut(PX) {
+            for px in out.as_chunks_mut::<PX>().0 {
                 let y = luma(px[0], px[1], px[2]);
                 px[..3].fill(y);
             }
@@ -60,7 +60,7 @@ fn previous_expand_scanlines(scanline_pct: u8, width: usize, src: &[u8]) -> Vec<
     let mut out = Vec::with_capacity(src.len() * 2);
     for row in src.chunks_exact(row_len) {
         out.extend_from_slice(row);
-        for px in row.chunks_exact(PX) {
+        for px in row.as_chunks::<PX>().0 {
             out.extend_from_slice(&[dark(px[0]), dark(px[1]), dark(px[2]), px[3]]);
         }
     }

@@ -101,12 +101,16 @@ fn solid_scanlines_preserve_base_colors() {
     );
 
     assert!(
-        zero.chunks_exact(BYTES_PER_PIXEL)
-            .all(|color| color == BLACK)
+        zero.as_chunks::<BYTES_PER_PIXEL>()
+            .0
+            .iter()
+            .all(|color| *color == BLACK)
     );
     assert!(
-        one.chunks_exact(BYTES_PER_PIXEL)
-            .all(|color| color == WHITE)
+        one.as_chunks::<BYTES_PER_PIXEL>()
+            .0
+            .iter()
+            .all(|color| *color == WHITE)
     );
 }
 

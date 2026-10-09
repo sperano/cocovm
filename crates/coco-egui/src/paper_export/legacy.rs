@@ -90,7 +90,7 @@ fn push_page_objects(
 
 fn image_object(image: &RasterImage) -> Vec<u8> {
     let mut rgb = Vec::with_capacity(image.width as usize * image.height as usize * 3);
-    for pixel in image.pixels.chunks_exact(RGBA_BYTES_PER_PIXEL) {
+    for pixel in image.pixels.as_chunks::<RGBA_BYTES_PER_PIXEL>().0 {
         rgb.extend_from_slice(&pixel[..3]);
     }
     let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());

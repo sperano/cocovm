@@ -368,7 +368,7 @@ const SCANLINE_ROWS: usize = 2;
 fn collapse_to_luma(src: &[u8], out: &mut Vec<u8>) {
     out.clear();
     out.extend_from_slice(src);
-    for px in out.chunks_exact_mut(PX) {
+    for px in out.as_chunks_mut::<PX>().0 {
         let y = luma(px[0], px[1], px[2]);
         px[..3].fill(y);
     }
@@ -385,7 +385,7 @@ fn noise_rows(noise_pct: u8, seed: u32, bytes: &mut [u8]) {
     let amp = i32::from(noise_pct.min(MAX_PCT)) * NOISE_FULL / i32::from(MAX_PCT);
     // `| 1` keeps xorshift out of its zero fixed point.
     let mut s = seed.wrapping_mul(0x9E37_79B9) | 1;
-    for px in bytes.chunks_exact_mut(PX) {
+    for px in bytes.as_chunks_mut::<PX>().0 {
         s ^= s << 13;
         s ^= s >> 17;
         s ^= s << 5;
@@ -410,7 +410,7 @@ fn expand_scanlines(scanline_pct: u8, width: usize, src: &[u8], out: &mut Vec<u8
     out.reserve(src.len() * SCANLINE_ROWS);
     for row in src.chunks_exact(row_len) {
         out.extend_from_slice(row);
-        for px in row.chunks_exact(PX) {
+        for px in row.as_chunks::<PX>().0 {
             out.extend_from_slice(&[dark(px[0]), dark(px[1]), dark(px[2]), px[3]]);
         }
     }
