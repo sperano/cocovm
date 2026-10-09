@@ -206,6 +206,21 @@ fn letters_match_by_their_logical_key() {
     );
 }
 
+/// Punctuation on a letter position stays punctuation: Dvorak's `.` sits at
+/// QWERTY's E, and ⌘. must not capture or fire as ⌘E. Only a digit-row
+/// position substitutes.
+#[test]
+fn punctuation_on_a_letter_key_stays_logical() {
+    let cmd_period = Hotkey::new(egui::Modifiers::COMMAND, egui::Key::Period);
+    assert_eq!(
+        Hotkey::from_press(egui::Key::Period, Some(egui::Key::E), primary()),
+        Ok(cmd_period)
+    );
+    assert!(cmd_period.matches(egui::Key::Period, Some(egui::Key::E), primary()));
+    let cmd_e = Hotkey::new(egui::Modifiers::COMMAND, egui::Key::E);
+    assert!(!cmd_e.matches(egui::Key::Period, Some(egui::Key::E), primary()));
+}
+
 /// A build without the debugger still keeps its binding out of other
 /// hands, so the file it saves loads in a `debug-ui` build.
 #[test]

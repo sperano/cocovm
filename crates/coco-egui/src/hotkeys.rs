@@ -83,14 +83,23 @@ fn is_alphanumeric(key: egui::Key) -> bool {
     name.len() == 1 && name[0].is_ascii_alphanumeric()
 }
 
+/// A digit key (`0` to `9`).
+fn is_digit(key: egui::Key) -> bool {
+    let name = key.name().as_bytes();
+    name.len() == 1 && name[0].is_ascii_digit()
+}
+
 /// The key a press names, for matching and for the Settings capture. The
-/// logical key, except when the layout turned a letter or digit key into
+/// logical key, except when the layout turned a digit-row key into
 /// punctuation: egui-winit reports Shift+1 on a US layout as `!` with `1`
-/// as the physical key, and that press is still ⇧⌘1. Letters stay logical
-/// on purpose, so a Dvorak N is the N key wherever it sits.
+/// as the physical key, and that press is still ⇧⌘1 (as is ⌘& on an AZERTY
+/// layout, whose digit row is unshifted punctuation). Only digits are
+/// substituted: a letter key's logical key is its own letter on every
+/// layout, and on Dvorak or AZERTY a punctuation key sits where QWERTY has
+/// a letter, so ⌘. must stay ⌘. rather than become ⌘E.
 fn pressed_key(key: egui::Key, physical_key: Option<egui::Key>) -> egui::Key {
     match physical_key {
-        Some(physical) if !is_alphanumeric(key) && is_alphanumeric(physical) => physical,
+        Some(physical) if !is_alphanumeric(key) && is_digit(physical) => physical,
         _ => key,
     }
 }
