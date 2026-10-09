@@ -56,22 +56,24 @@ fn state_row_labels_describe_each_state() {
 /// save chord, as the current bindings spell them.
 #[test]
 fn the_shortcuts_hint_names_every_state_chord() {
-    let ctx = egui::Context::default();
     let mut hotkeys = crate::hotkeys::DEFAULT_HOTKEYS;
     hotkeys.load_state[4] = "Cmd+Alt+F5".parse().expect("valid hotkey");
-    let hint = slot_shortcuts_hint(&ctx, &hotkeys);
-    let name = |hotkey: crate::hotkeys::Hotkey| ctx.format_shortcut(&hotkey.shortcut());
-    let loads: Vec<String> = hotkeys.load_state.iter().copied().map(name).collect();
-    let saves: Vec<String> = hotkeys.save_state.iter().copied().map(name).collect();
-    assert_eq!(
-        hint,
-        format!(
-            "{}: quick-load State 1 to 5   ·   {}: quick-save",
-            loads.join(" / "),
-            saves.join(" / ")
-        )
-    );
-    assert!(hint.contains(&name(hotkeys.load_state[4])), "{hint}");
+    // format_shortcut needs fonts, which egui only loads once a pass runs.
+    let _ = egui::Context::default().run(egui::RawInput::default(), |ctx| {
+        let hint = slot_shortcuts_hint(ctx, &hotkeys);
+        let name = |hotkey: crate::hotkeys::Hotkey| ctx.format_shortcut(&hotkey.shortcut());
+        let loads: Vec<String> = hotkeys.load_state.iter().copied().map(name).collect();
+        let saves: Vec<String> = hotkeys.save_state.iter().copied().map(name).collect();
+        assert_eq!(
+            hint,
+            format!(
+                "{}: quick-load State 1 to 5   ·   {}: quick-save",
+                loads.join(" / "),
+                saves.join(" / ")
+            )
+        );
+        assert!(hint.contains(&name(hotkeys.load_state[4])), "{hint}");
+    });
 }
 
 /// Only a missing file is empty: any file there, even an unloadable one,
