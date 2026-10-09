@@ -143,7 +143,7 @@ fn press_began_on_display_gates_on_position() {
         DISPLAY,
         bg
     ));
-    // Presses on the chrome (for example, the menu bar) never fire, wherever dragged afterward.
+    // Presses on the chrome (for example, the toolbar) never fire, wherever dragged afterward.
     assert!(!press_began_on_display(
         egui::pos2(60.0, 5.0),
         None,

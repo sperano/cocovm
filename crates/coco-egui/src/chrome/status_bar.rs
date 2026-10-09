@@ -58,7 +58,7 @@ impl CocoApp {
     }
 
     /// The keyboard entry: icon + mode label are one click target that opens the
-    /// keyboard menu — the only way in, since the menu bar has no Keyboard entry.
+    /// keyboard menu — the only way in, since the window has no menu bar.
     fn keyboard_status(&mut self, ui: &mut egui::Ui) {
         let icon = keyboard_icon(ui).interact(egui::Sense::click());
         name_menu_icon(ui, &icon, "Keyboard menu");
@@ -113,7 +113,7 @@ impl CocoApp {
         egui::Popup::menu(&entry)
             .id(ui.id().with("sound_menu"))
             .align(egui::RectAlign::TOP_START)
-            .show(|ui| self.audio.menu_ui(ui));
+            .show(|ui| self.sound_menu_ui(ui));
     }
 
     fn cart_status(&self, ui: &mut egui::Ui) {

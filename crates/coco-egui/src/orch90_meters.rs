@@ -1,6 +1,6 @@
 //! Orchestra-90/CC level-meter overlay: shows the two DAC latch values
 //! (`coco_core::orch90::Orch90::left`/`right`) as horizontal bars. Toggled
-//! from the View menu; the caller only draws this window while an Orch90 is
+//! from the status bar's Sound menu; the caller only draws this window while an Orch90 is
 //! actually inserted (see the call site in `main.rs`'s `update`).
 
 use eframe::egui;

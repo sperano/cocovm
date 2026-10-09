@@ -359,6 +359,9 @@ pub struct ManagerApp {
     sort_error: Option<String>,
     /// The Settings dialog (`manager/settings.rs`), open while `Some`.
     pub(crate) settings: Option<settings::SettingsDialog>,
+    /// The About window ([`crate::about::window`]), toggled from the
+    /// toolbar's Help menu. `pub(crate)` for `ui_tests`, like `settings`.
+    pub(crate) show_about: bool,
     /// Monotonic clock for saved-preview LRU stamps.
     thumbnail_use_clock: u64,
     /// Synchronous preview decodes still available in this manager update.
@@ -437,6 +440,7 @@ impl ManagerApp {
             manager_sort,
             sort_error: None,
             settings: None,
+            show_about: false,
             thumbnail_use_clock: 0,
             thumbnail_loads_remaining: thumbnails::THUMBNAIL_LOADS_PER_UPDATE,
             scroll_to_row: None,
@@ -526,6 +530,9 @@ impl eframe::App for ManagerApp {
 
         self.draw_delete_confirmation(ctx);
         self.draw_settings_dialog(ctx);
+        if self.show_about {
+            crate::about::window(ctx, &mut self.show_about);
+        }
         self.drain_control();
         self.draw_running_vms(ctx);
         self.resolve_control_pending(ctx);

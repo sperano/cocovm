@@ -3,7 +3,7 @@
 //! VM window's own toolbar, `chrome::toolbar`). Layout is New – Start –
 //! Suspend – Stop – Reset – separator – Settings – separator – Help.
 //! Settings opens the global `config.toml` editor (`manager/settings.rs`);
-//! Help is still inert scaffolding.
+//! Help pops up a menu holding "About cocovm".
 //! The four transport tiles act on the current selection through the same
 //! [`super::bulk::BulkAction`]/[`ManagerApp::apply_bulk`] dispatch used by the
 //! bulk context menu — one code path, three surfaces.
@@ -41,10 +41,11 @@ const START_DISABLED_HOVER: &str = "The selected machines are already running";
 const STOP_HOVER: &str = "Shut down the selected machines that are running or suspended";
 const STOP_DISABLED_HOVER: &str = "None of the selected machines are running or suspended";
 const RESET_HOVER: &str = "Press the reset button on the selected running machines";
+/// The Help menu's one item, opening the About window ([`ManagerApp::show_about`]).
+const ABOUT_LABEL: &str = "About cocovm";
 
 impl ManagerApp {
-    /// The manager actions row. "Help" is still inert scaffolding; the four
-    /// transport tiles dispatch through
+    /// The manager actions row. The four transport tiles dispatch through
     /// [`ManagerApp::apply_bulk`] against every currently selected row.
     pub(super) fn draw_toolbar(&mut self, ui: &mut egui::Ui) {
         let indices: Vec<usize> = self.selection.iter().collect();
@@ -112,7 +113,18 @@ impl ManagerApp {
                 self.open_settings_dialog();
             }
             toolbar_separator(ui);
-            let _ = toolbar_button(ui, HELP_ICON, "Help", true, icons_only);
+            let help = toolbar_button(ui, HELP_ICON, "Help", true, icons_only);
+            egui::Popup::menu(&help)
+                .id(ui.id().with("help_menu"))
+                .show(|ui| self.help_menu_ui(ui));
         });
+    }
+
+    /// The Help tile's menu.
+    fn help_menu_ui(&mut self, ui: &mut egui::Ui) {
+        if ui.button(ABOUT_LABEL).clicked() {
+            self.show_about = true;
+            ui.close();
+        }
     }
 }

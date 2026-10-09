@@ -124,8 +124,6 @@ pub(crate) const MAX_FRAME_DT: f64 = 0.25;
 /// Cushion plus bounded catch-up remains below the 0.25 s audio ring at NTSC/PAL.
 pub(crate) const BACKGROUND_REPAINT_INTERVAL: std::time::Duration =
     std::time::Duration::from_millis(100);
-/// Height reserved for the top menu bar row when sizing the window.
-pub(crate) const MENU_BAR_H: f32 = 22.0;
 /// Horizontal inner margin `chrome::toolbar`'s `TopBottomPanel::top
 /// ("toolbar")` gives its content, using an explicit `.frame(...)` rather than
 /// egui's `TopBottomPanel` default — matches `egui::Frame::side_top_panel`'s
