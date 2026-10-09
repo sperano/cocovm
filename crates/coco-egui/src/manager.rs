@@ -359,7 +359,7 @@ pub struct ManagerApp {
     sort_error: Option<String>,
     /// The Settings dialog (`manager/settings.rs`), open while `Some`.
     pub(crate) settings: Option<settings::SettingsDialog>,
-    /// The About window ([`crate::about::window`]), toggled from the
+    /// The About window ([`crate::about::window`]), opened from the
     /// toolbar's Help menu. `pub(crate)` for `ui_tests`, like `settings`.
     pub(crate) show_about: bool,
     /// Monotonic clock for saved-preview LRU stamps.

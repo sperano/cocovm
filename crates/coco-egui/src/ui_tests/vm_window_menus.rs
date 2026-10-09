@@ -26,6 +26,8 @@ use super::harness::*;
 const HEADLESS_SAMPLE_RATE_HZ: f64 = 48_000.0;
 /// The Sound menu's Orchestra-90 level meters toggle.
 const ORCH90_LEVELS: &str = "Orchestra-90 Levels";
+/// Size of the Orchestra-90/CC's ROM (8K).
+const ORCH90_ROM_SIZE: usize = 8 * 1024;
 
 /// The VM window's own toolbar: Start/Suspend/Stop/Reset plus the feature-gated
 /// Debug tile. While Running, Start is the one disabled tile (it only resumes a
@@ -266,9 +268,9 @@ fn sound_menu_toggles_the_orchestra_90_levels_window() {
     harness.key_press(egui::Key::Escape);
     harness.step();
 
-    let rom = std::fs::read(test_assets::roms_dir().join(crate::rom_load::ORCH90_ROM))
-        .expect("orch90.rom is required in the cocovm XDG data directory");
-    let orch90 = coco_core::orch90::Orch90::from_rom_bytes(&rom).expect("valid Orchestra-90 ROM");
+    // The menu only checks that one is inserted; it never runs the pak's code.
+    let orch90 = coco_core::orch90::Orch90::from_rom_bytes(&[0; ORCH90_ROM_SIZE])
+        .expect("an 8K image is a valid Orchestra-90 ROM");
     harness.state_mut().machine.insert_cartridge(orch90);
     harness.step();
 
