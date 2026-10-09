@@ -150,10 +150,10 @@ pub(crate) fn cartridge_count() -> usize {
     asset_count(paths::cartridges_dir(), is_cartridge_file)
 }
 
-/// Display width of `s` in terminal columns. ANSI control sequences
-/// (`ESC [ … final`, all that owo-colors emits) take no columns.
-fn visible_width(s: &str) -> usize {
-    let mut width = 0;
+/// `s` without its ANSI control sequences (`ESC [ … final`, all that
+/// owo-colors emits).
+fn strip_ansi(s: &str) -> String {
+    let mut plain = String::with_capacity(s.len());
     let mut chars = s.chars();
     while let Some(c) = chars.next() {
         if c == ESC {
@@ -161,10 +161,15 @@ fn visible_width(s: &str) -> usize {
             chars.next();
             chars.by_ref().find(|c| ('@'..='~').contains(c));
         } else {
-            width += c.width().unwrap_or(0);
+            plain.push(c);
         }
     }
-    width
+    plain
+}
+
+/// Display width of `s` in terminal columns; ANSI color takes none.
+fn visible_width(s: &str) -> usize {
+    strip_ansi(s).width()
 }
 
 /// `word` cut into pieces at most `width` columns wide (at least one

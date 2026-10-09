@@ -159,9 +159,15 @@ fn banner_wraps_long_rows_inside_the_walls() {
     // Frame, title, rule, at least two renderer lines, inventory, frame.
     const MIN_LINES: usize = 7;
     assert!(lines.len() >= MIN_LINES, "{lines:#?}");
-    let body: Vec<&str> = lines[3..lines.len() - 1]
+    // Top frame, title and rule above the rows; bottom frame below.
+    const HEADER_LINES: usize = 3;
+    let rows: Vec<String> = lines[HEADER_LINES..lines.len() - 1]
         .iter()
-        .flat_map(|line| line.trim_matches(|c| c == '│' || c == ' ').split(' '))
+        .map(|line| strip_ansi(line))
+        .collect();
+    let body: Vec<&str> = rows
+        .iter()
+        .flat_map(|row| row.trim_matches(|c| c == '│' || c == ' ').split(' '))
         .filter(|word| !word.is_empty())
         .collect();
     let expected: Vec<&str> = LONG_RENDERER
