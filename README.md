@@ -8,6 +8,10 @@ CoCoVM is under active development and hasn't reached version 1.0. Save-state
 compatibility can change between releases. See the [changelog](CHANGELOG.md) for
 release details and known limitations.
 
+Only the Motorola 6809 CPU is emulated for now. Support for the Hitachi 6309 is
+coming soon, as is a debugger in release builds (an early version exists behind
+the `debug-ui` build feature).
+
 ## Screenshots
 
 <table>
