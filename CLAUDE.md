@@ -8,9 +8,12 @@ manager).
 - `./docs/` — authoritative reference PDFs (6809/6309 instruction sets, MC6809
   programming manual, CoCo 3 Service Manual, Super Extended BASIC Unravelled II,
   memory maps). Verify hardware claims against these with
-  `pdftotext -layout <pdf>` instead of guessing or web search. The PDFs are
-  git-ignored; don't commit them. Pre-extracted text lives in `docs/txt/`
-  (also git-ignored); regenerate with `scripts/extract-docs.sh`.
+  `pdftotext -layout <pdf>` instead of guessing or web search. The whole
+  directory is git-ignored; don't commit anything under it. Pre-extracted
+  text lives in `docs/txt/`; regenerate with `scripts/extract-docs.sh`.
+  Verification findings and other research notes derived from this material
+  (bit-banger, cartridge, DMP printer, and SSC specs) live on the wiki under
+  `cocovm/`, not as files here.
 - `~/.local/share/cocovm/assets/roms/` — real ROM images: `coco3.rom` (32K Super
   Extended Color BASIC, maps to `$8000–$FFFF`), `disk11.rom` (8K Disk BASIC),
   `hdbdw3bc3.rom` (HDB-DOS 1.4 Becker), the CoCo 1/2 BASIC sets, `sp0256-al2.rom` (the Sound/Speech Cartridge's

@@ -22,7 +22,7 @@ pub const STROBE_LAST: u16 = 0xFFDF;
 
 /// $FF00–$FF7E: PIA0, PIA1, cart SCS* ($FF40–$FF5F), and the cart SCS*
 /// extension some cartridges decode ($FF60–$FF7E, such as the Sound/Speech
-/// Cartridge's $FF7D/$FF7E — `docs/cartridges.md` "Carts can decode
+/// Cartridge's $FF7D/$FF7E — wiki `cocovm/cartridges` "Carts can decode
 /// addresses outside SCS") — decoded by the bus, not `SAM` itself (`SAM::map`
 /// only reports that this range is I/O).
 const IO_BASE: u16 = 0xFF00;

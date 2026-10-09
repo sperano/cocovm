@@ -8,8 +8,10 @@ manager).
 - `./docs/` — authoritative reference PDFs (6809/6309 instruction sets, MC6809
   programming manual, CoCo 3 Service Manual, Super Extended BASIC Unravelled II,
   memory maps). Verify hardware claims against these with
-  `pdftotext -layout <pdf>` instead of guessing or web search. The PDFs are
-  git-ignored; don't commit them.
+  `pdftotext -layout <pdf>` instead of guessing or web search. The whole
+  directory is git-ignored; don't commit anything under it. Verification
+  findings and other research notes derived from this material live on the
+  wiki under `cocovm/`, not as files here.
 - `~/.local/share/cocovm/assets/roms/` — real ROM images: `coco3.rom` (32K Super
   Extended Color BASIC, maps to `$8000–$FFFF`), `disk11.rom` (8K Disk BASIC),
   and the CoCo 1/2 BASIC sets. Used to boot real code and trace-diff against

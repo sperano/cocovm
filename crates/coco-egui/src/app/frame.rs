@@ -309,10 +309,12 @@ impl CocoApp {
     /// chrome, drawn read-only (`self.suspended`), with no input handling or
     /// emulation step. On the first suspended frame any popup left open from
     /// the running window is closed — only then, since immediate viewports
-    /// share popup memory with the manager window.
+    /// share popup memory with the manager window — and so is the
+    /// machine-type prompt, dropping its state unloaded.
     fn suspended_window_ui(&mut self, ctx: &egui::Context) {
         if !self.drew_suspended {
             egui::Popup::close_all(ctx);
+            self.pending_load = None;
             self.drew_suspended = true;
         }
         self.upload_framebuffer_texture(ctx);

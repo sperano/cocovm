@@ -1,33 +1,23 @@
-//! The menu bar: Machine, View, and Help. Each menu that is more
-//! than a handful of items lives in its own submodule; the short ones
-//! (Keyboard, View, Help, and the status bar's display, tape, and disk
-//! menus) stay here. The keyboard, display, sound, tape, disk, and joysticks
-//! menus have no menu-bar button — each pops up from its status-bar entry
-//! (`chrome::status_bar`).
+//! The VM window's menus. The window has no menu bar: each menu pops up from
+//! its status-bar entry (`chrome::status_bar`). A section of a menu that is
+//! more than a handful of items lives in its own submodule (the Printer
+//! menu's print capture); the rest (keyboard, sound, display, tape, disks,
+//! and printer) stay here.
 
 use crate::*;
 
 use super::status_bar;
 
-mod machine;
+mod print_capture;
+
+/// The Sound menu's toggle for the Orchestra-90 level meters window
+/// ([`orch90_meters::window`]).
+const ORCH90_LEVELS_LABEL: &str = "Orchestra-90 Levels";
+/// Hover text of [`ORCH90_LEVELS_LABEL`].
+const ORCH90_LEVELS_HOVER: &str = "Show the Orchestra-90's left and right DAC levels";
 
 impl CocoApp {
-    /// The menu bar and all of its menus.
-    pub(crate) fn menu_bar_ui(&mut self, ctx: &egui::Context) {
-        egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
-            if self.suspended {
-                ui.disable();
-            }
-            egui::MenuBar::new().ui(ui, |ui| {
-                ui.menu_button("Machine", |ui| self.machine_menu_ui(ui));
-                ui.menu_button("View", |ui| self.view_menu_ui(ui));
-                ui.menu_button("Help", |ui| self.help_menu_ui(ui));
-            });
-        });
-    }
-
-    /// The Keyboard menu. Has no menu-bar button; the status bar's keyboard
-    /// entry pops it up.
+    /// The Keyboard menu, popped up from the status bar's keyboard entry.
     pub(super) fn keyboard_menu_ui(&mut self, ui: &mut egui::Ui) {
         for mode in [KbMode::Positional, KbMode::Symbolic] {
             if ui
@@ -47,16 +37,18 @@ impl CocoApp {
         }
     }
 
-    /// The View menu: optional windows. Display choice lives in
-    /// [`Self::display_menu_ui`] and the printer paper window in
-    /// [`Self::printer_menu_ui`], not here.
-    fn view_menu_ui(&mut self, ui: &mut egui::Ui) {
-        // Only meaningful with an Orchestra-90 cartridge inserted; `as_orch90` searches both slots.
-        let orch90_present = self.machine.bus.cart.as_orch90().is_some();
-        ui.add_enabled(
-            orch90_present,
-            egui::Checkbox::new(&mut self.show_orch90, "Orchestra-90 Levels"),
-        );
+    /// The Sound menu, popped up from the status bar's sound entry: the host
+    /// audio controls, plus the Orchestra-90 level meters toggle while one is
+    /// inserted. Shown even with no audio device: the meters read the
+    /// cartridge's DAC latches, not the host output.
+    pub(super) fn sound_menu_ui(&mut self, ui: &mut egui::Ui) {
+        self.audio.menu_ui(ui);
+        // `as_orch90` searches both MPI slots as well as the port.
+        if self.machine.bus.cart.as_orch90().is_some() {
+            ui.separator();
+            ui.checkbox(&mut self.show_orch90, ORCH90_LEVELS_LABEL)
+                .on_hover_text(ORCH90_LEVELS_HOVER);
+        }
     }
 
     /// Display choice and TV chain knobs, popped up from the status bar's
@@ -212,50 +204,14 @@ impl CocoApp {
         }
     }
 
-    /// Printer menu: toggle printer paper window or open a captured print file.
+    /// Printer menu: toggle the printer paper window, and start, stop, or
+    /// open a print capture.
     pub(super) fn printer_menu_ui(&mut self, ui: &mut egui::Ui) {
         if ui.button("View Papers").clicked() {
             self.toggle_paper_window();
             ui.close();
         }
-        if ui
-            .add_enabled(
-                self.print_capture_path.is_some(),
-                egui::Button::new("Open Print Capture"),
-            )
-            .clicked()
-        {
-            if let Some(path) = &self.print_capture_path {
-                let result = {
-                    #[cfg(target_os = "macos")]
-                    {
-                        std::process::Command::new("open").arg(path).spawn()
-                    }
-                    #[cfg(target_os = "linux")]
-                    {
-                        std::process::Command::new("xdg-open").arg(path).spawn()
-                    }
-                    #[cfg(target_os = "windows")]
-                    {
-                        std::process::Command::new("cmd")
-                            .args(["/C", "start", ""])
-                            .arg(path)
-                            .spawn()
-                    }
-                };
-                if let Err(e) = result {
-                    self.cart_error = Some(format!("Failed to open: {}", e));
-                }
-            }
-            ui.close();
-        }
-    }
-
-    /// The Help menu.
-    fn help_menu_ui(&mut self, ui: &mut egui::Ui) {
-        if ui.button("About").clicked() {
-            self.show_about = !self.show_about;
-            ui.close();
-        }
+        ui.separator();
+        self.print_capture_items(ui);
     }
 }

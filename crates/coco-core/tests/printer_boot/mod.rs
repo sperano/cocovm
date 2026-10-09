@@ -14,7 +14,7 @@ use test_assets::{
 /// NitrOS-9's `/p` driver holds true 600 baud at the CoCo 3's doubled
 /// (`$FFD9`) clock by running its delay loop for twice the cycles Color
 /// BASIC's speed-oblivious driver would (see module doc comment and
-/// `docs/bitbanger-spec.md`).
+/// wiki `cocovm/bitbanger-spec`).
 pub const OS9_PRINTER_BIT_PERIOD: u32 = 2 * bitbanger::DEFAULT_BIT_PERIOD;
 
 fn tap(m: &mut Machine, pos: (u8, u8)) {

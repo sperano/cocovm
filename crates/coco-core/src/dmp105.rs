@@ -1,7 +1,7 @@
 //! Tandy DMP-105 dot-matrix printer interpreter: byte stream in (as decoded
 //! by [`crate::bitbanger::BitBanger`]), abstract dot-raster paper out
 //! (`crate::printer::Paper`). Every hardware fact cited here is sourced from
-//! `docs/dmp105-protocol.md`; only entries that document marks VERIFIED are
+//! wiki `cocovm/dmp105-protocol`; only entries that document marks VERIFIED are
 //! implemented. See that document's own INFERRED/UNVERIFIABLE flags for what
 //! remains out of scope, such as exact BUSY assertion granularity and the
 //! European character set's per-code glyph mapping.
@@ -20,7 +20,7 @@
 //! Graphics line feed follows the explicit 7/72-inch command definition
 //! on manual pp.25 and 39. Appendix D p.51 gives an incompatible repeated-
 //! feed ratio; no available evidence establishes the inferred 22/216-inch
-//! alternative. See `docs/dmp105-protocol.md` for the source conflict.
+//! alternative. See wiki `cocovm/dmp105-protocol` for the source conflict.
 
 use serde::{Deserialize, Serialize};
 
@@ -32,36 +32,36 @@ use crate::printer::{Paper, X_UNITS_PER_INCH, Y_UNITS_PER_INCH};
 mod protocol;
 
 /// Character cell width in dots at every pitch: 9 glyph + 3 gap
-/// (`dmp105-protocol.md` §1, Appendix G p.59: "dots/char = 12").
+/// (wiki `cocovm/dmp105-protocol` §1, Appendix G p.59: "dots/char = 12").
 const CELL_DOTS: u32 = 12;
 
 /// Block graphics spread their 6 dot columns over the whole 12-dot cell so
-/// adjoining cells join (`dmp105-protocol.md` §6); each column fills both
+/// adjoining cells join (wiki `cocovm/dmp105-protocol` §6); each column fills both
 /// positions so areas print solid, as bold text already does.
 const BLOCK_DOT_STEP: usize = CELL_DOTS as usize / BLOCK_SIZE;
 
 /// Row offset (in dot rows) of the descender row below the 7-dot glyph body
-/// (`dmp105-protocol.md` §1/§6).
+/// (wiki `cocovm/dmp105-protocol` §1/§6).
 const DOT_ROW_UNITS: u32 = Y_UNITS_PER_INCH / 72;
 const DESCENDER_ROW: u32 = 7 * DOT_ROW_UNITS;
 
-/// Fixed graphics-mode line feed: 7/72" (`dmp105-protocol.md` §5).
+/// Fixed graphics-mode line feed: 7/72" (wiki `cocovm/dmp105-protocol` §5).
 const GRAPHICS_LF_UNITS: u32 = 7 * DOT_ROW_UNITS;
 
 /// Right limit of the physical print zone in x-units: the head cannot move
-/// past the 8.0" line (`dmp105-protocol.md` §1 — 960 dot columns at 10 CPI).
+/// past the 8.0" line (wiki `cocovm/dmp105-protocol` §1 — 960 dot columns at 10 CPI).
 /// Marks past this are dropped, matching the physical platen limit; without
 /// it, a stream that never sends CR (or an out-of-range `1B 10` position)
 /// grows the paper model without bound.
 const PRINT_WIDTH_X_UNITS: u32 = 8 * X_UNITS_PER_INCH;
 
 /// Text-mode line-feed pitches, all exact whole numbers of
-/// [`Y_UNITS_PER_INCH`] (`dmp105-protocol.md` §4 T9).
+/// [`Y_UNITS_PER_INCH`] (wiki `cocovm/dmp105-protocol` §4 T9).
 const LF_PITCH_1_6: u32 = Y_UNITS_PER_INCH / 6;
 const LF_PITCH_1_8: u32 = Y_UNITS_PER_INCH / 8;
 const LF_PITCH_1_12: u32 = Y_UNITS_PER_INCH / 12;
 
-/// Non-ESC control codes (`dmp105-protocol.md` §3).
+/// Non-ESC control codes (wiki `cocovm/dmp105-protocol` §3).
 mod control {
     pub const NUL_IGNORED_0: u8 = 0x00;
     pub const NUL_IGNORED_1: u8 = 0x01;
@@ -82,7 +82,7 @@ mod control {
 }
 
 /// Escape-sequence selector bytes, that is, the byte immediately after `ESC`
-/// (`dmp105-protocol.md` §4).
+/// (wiki `cocovm/dmp105-protocol` §4).
 mod esc {
     pub const ELONGATE_START: u8 = 0x0E;
     pub const ELONGATE_END: u8 = 0x0F;
@@ -104,14 +104,14 @@ mod esc {
     pub const FEED_LATCH: u8 = 0x5B;
 }
 
-/// Character-Print vs Graphics mode (`dmp105-protocol.md` §5).
+/// Character-Print vs Graphics mode (wiki `cocovm/dmp105-protocol` §5).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 enum Mode {
     CharacterPrint,
     Graphics,
 }
 
-/// New-line mode selected by `1B 15`/`1B 16` (`dmp105-protocol.md` §4 T11).
+/// New-line mode selected by `1B 15`/`1B 16` (wiki `cocovm/dmp105-protocol` §4 T11).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 enum NlMode {
     CrOnly,
@@ -119,7 +119,7 @@ enum NlMode {
 }
 
 /// Carriage direction selected by `1B 55 00/01`
-/// (`dmp105-protocol.md` §1/§4 T16). Stored only: no physical print head
+/// (wiki `cocovm/dmp105-protocol` §1/§4 T16). Stored only: no physical print head
 /// exists to model direction against, so it never affects output. This matches
 /// the plan's "unidirectional/bidirectional affects nothing in emulation"
 /// direction for this task.
@@ -129,7 +129,7 @@ enum Direction {
     Unidirectional,
 }
 
-/// Print pitch (`dmp105-protocol.md` §1 Appendix G p.59). Character cell
+/// Print pitch (wiki `cocovm/dmp105-protocol` §1 Appendix G p.59). Character cell
 /// width is always [`CELL_DOTS`] dots regardless of pitch; pitch instead
 /// changes how many dots (thus inches) that fixed-width cell spans.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -171,7 +171,7 @@ impl Pitch {
 }
 
 /// Assembly state for a not-yet-complete multi-byte escape or repeat
-/// sequence (`dmp105-protocol.md` §4: "all sequences are 2-4 bytes, fixed
+/// sequence (wiki `cocovm/dmp105-protocol` §4: "all sequences are 2-4 bytes, fixed
 /// lengths").
 #[derive(Debug, Clone, Serialize, Deserialize)]
 enum Pending {
@@ -218,7 +218,7 @@ pub struct DMP105 {
 }
 
 impl Default for DMP105 {
-    /// Power-on defaults (`dmp105-protocol.md` §7): Normal 10 CPI, LF pitch
+    /// Power-on defaults (wiki `cocovm/dmp105-protocol` §7): Normal 10 CPI, LF pitch
     /// 1/6", and NL mode CR+LF. Head position (0, 0) is this implementation's
     /// choice because the manual gives no numeric value.
     fn default() -> Self {
@@ -245,7 +245,7 @@ impl DMP105 {
         Self::default()
     }
 
-    /// Power-cycle reset (`dmp105-protocol.md` §7: the only reset entry
+    /// Power-cycle reset (wiki `cocovm/dmp105-protocol` §7: the only reset entry
     /// point). Restores registers to power-on defaults; does **not** clear
     /// the paper — see [`Paper::clear`].
     pub fn reset(&mut self) {
@@ -328,7 +328,7 @@ impl DMP105 {
         }
     }
 
-    /// Graphics-mode data byte (`dmp105-protocol.md` §5): bits 0-6 are dot
+    /// Graphics-mode data byte (wiki `cocovm/dmp105-protocol` §5): bits 0-6 are dot
     /// rows top-to-bottom; bit 7 is the data marker, not an 8th pin.
     fn plot_graphics_byte(&mut self, b: u8) {
         let weights = b & 0x7F;

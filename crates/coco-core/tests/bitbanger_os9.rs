@@ -13,14 +13,14 @@
 //! `GIME::cpu_fast == true` — confirmed live, not assumed) and its `/p`
 //! driver does **not** behave like Color BASIC's, which busy-waits a fixed
 //! cycle count that the speed poke exactly doubles the effective baud of
-//! (`docs/bitbanger-spec.md` "Baud timing"). Direct instrumentation of
+//! (wiki `cocovm/bitbanger-spec` "Baud timing"). Direct instrumentation of
 //! `BitBanger::tick`'s raw PA1 edge intervals during a live boot (decoding a
 //! 619-byte `dir /dd >/p` listing byte-for-byte against the known directory
 //! contents) found the bit-cell quantum is **twice**
 //! [`bitbanger::DEFAULT_BIT_PERIOD`] (1486 cycles): NitrOS-9's driver holds
 //! true wall-clock baud at 600 regardless of `cpu_fast` by doubling its own
 //! delay-loop cycle count to compensate for the doubled clock, the opposite
-//! of BASIC's speed-oblivious driver. See `docs/bitbanger-spec.md`'s
+//! of BASIC's speed-oblivious driver. See wiki `cocovm/bitbanger-spec`'s
 //! "NitrOS-9 `/p` driver (T3 finding, empirical, not ROM-disassembled)" for
 //! the full derivation — this is a measured fact from unmodified EOU code,
 //! not a disassembly of the `/p` driver's source.

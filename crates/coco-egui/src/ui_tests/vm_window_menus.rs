@@ -1,6 +1,6 @@
 //! VM window menu/toolbar/hotkey tests, driving a `CocoApp` opened directly
-//! (not through the manager): transport controls, the Machine/View/Help
-//! menus, the status bar's keyboard/display menus,
+//! (not through the manager): transport controls, the status bar's
+//! keyboard/display/sound menus,
 //! media-action gating, save-state menu wiring, error/confirmation dialogs,
 //! and cartridge insertion (GMC) — peripherals themselves are configured
 //! only through `[peripherals]` now, so their menus are gone; see
@@ -24,6 +24,10 @@ use crate::*;
 use super::harness::*;
 
 const HEADLESS_SAMPLE_RATE_HZ: f64 = 48_000.0;
+/// The Sound menu's Orchestra-90 level meters toggle.
+const ORCH90_LEVELS: &str = "Orchestra-90 Levels";
+/// Size of the Orchestra-90/CC's ROM (8K).
+const ORCH90_ROM_SIZE: usize = 8 * 1024;
 
 /// The VM window's own toolbar: Start/Suspend/Stop/Reset plus the feature-gated
 /// Debug tile. While Running, Start is the one disabled tile (it only resumes a
@@ -251,23 +255,34 @@ fn printer_menu_opens_the_printer_paper_window() {
     harness.get_by_label_contains("Printer Paper");
 }
 
+/// The Sound menu offers the Orchestra-90 level meters only while one is
+/// inserted, and its checkbox toggles the meters window.
 #[test]
-fn help_about_toggles_the_about_window() {
+fn sound_menu_toggles_the_orchestra_90_levels_window() {
     let mut harness = boot_harness();
-
-    click(&mut harness, "Help");
-    click(&mut harness, "About");
-    assert!(harness.state().show_about);
-    harness.get_by_label("A Tandy Color Computer 3 emulator");
-
-    click(&mut harness, "Help");
-    click(&mut harness, "About");
-    assert!(!harness.state().show_about);
+    click(&mut harness, "Sound");
     assert!(
-        harness
-            .query_by_label("A Tandy Color Computer 3 emulator")
-            .is_none()
+        harness.query_by_label(ORCH90_LEVELS).is_none(),
+        "no Orchestra-90 inserted: no levels toggle"
     );
+    harness.key_press(egui::Key::Escape);
+    harness.step();
+
+    // The menu only checks that one is inserted; it never runs the pak's code.
+    let orch90 = coco_core::orch90::Orch90::from_rom_bytes(&[0; ORCH90_ROM_SIZE])
+        .expect("an 8K image is a valid Orchestra-90 ROM");
+    harness.state_mut().machine.insert_cartridge(orch90);
+    harness.step();
+
+    click(&mut harness, "Sound");
+    click(&mut harness, ORCH90_LEVELS);
+    assert!(harness.state().show_orch90);
+    harness.get_by_label("Orchestra-90");
+
+    click(&mut harness, "Sound");
+    click(&mut harness, ORCH90_LEVELS);
+    assert!(!harness.state().show_orch90);
+    assert!(harness.query_by_label("Orchestra-90").is_none());
 }
 
 /// With no tape mounted the seek field is disabled along with the rest of
@@ -291,18 +306,17 @@ fn status_bar_tape_menu_seek_field_is_disabled_without_a_tape() {
 fn media_actions_are_disabled_until_media_is_present() {
     let mut harness = harness_with_fd502();
 
-    click(&mut harness, "Machine");
-    assert!(
-        harness
-            .get_by_label("Stop Print Capture")
-            .accesskit_node()
-            .is_disabled(),
-        "Stop Print Capture should be disabled with nothing captured"
-    );
+    click(&mut harness, "Printer menu");
+    for label in ["Stop Print Capture", "Open Print Capture"] {
+        assert!(
+            harness.get_by_label(label).accesskit_node().is_disabled(),
+            "{label} should be disabled with nothing captured"
+        );
+    }
 
     // Toggle each menu closed before opening the next, so the entry's click opens its
     // popup rather than dismissing the previous one.
-    click(&mut harness, "Machine");
+    click(&mut harness, "Printer menu");
     click(&mut harness, "Disks menu");
     // Nothing mounted, so both drive eject entries are disabled too.
     for drive in 0..UI_DRIVES {
@@ -322,17 +336,6 @@ fn media_actions_are_disabled_until_media_is_present() {
             "{label} should be disabled with no tape mounted"
         );
     }
-}
-
-/// The Machine menu's Save/Load State section shows both file-dialog items
-/// — `rfd`'s native dialog makes this visibility-only.
-#[test]
-fn machine_menu_shows_save_and_load_state_items() {
-    let mut harness = boot_harness();
-
-    click(&mut harness, "Machine");
-    harness.get_by_label("Save State…");
-    harness.get_by_label("Load State…");
 }
 
 /// A save-then-load round trip driven directly through `save_state_to`/

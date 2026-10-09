@@ -1,5 +1,5 @@
 //! Tandy DMP-130 serial printer, including Tandy and IBM command grammars.
-//! See `docs/dmp130-protocol.md` for sources and rendering approximations.
+//! See wiki `cocovm/dmp130-protocol` for sources and rendering approximations.
 //! Text remains buffered until a print-triggering control code arrives.
 use crate::{
     bitbanger::PrinterSink,

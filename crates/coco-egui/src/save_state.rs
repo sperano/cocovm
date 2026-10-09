@@ -1,20 +1,23 @@
-//! Frontend save-state UX: Machine-menu Save/Load State, the quick states
-//! (`quick.rs`) with their keyboard chords, and the status-bar toast — all
+//! Frontend save-state UX: the quick states (`quick.rs`) with their toolbar
+//! controls and keyboard chords, state files anywhere on disk (`file.rs`),
+//! the machine-type prompt in front of user-requested loads
+//! (`load_request.rs`), and the status-bar toast — all
 //! built on top of the engine in [`coco_core::snapshot`], which this module
 //! is the only caller of.
 //!
-//! [`CocoApp::save_state_to`]/[`CocoApp::load_state_from`] are the two
-//! entry points; everything else here is either UI chrome around them or the
-//! fiddly frontend-side re-injection [`coco_core::snapshot::restore`] can't
-//! do itself (host-only resources, path mirrors, pacing — see
-//! [`CocoApp::apply_restored_machine`]).
-
-use eframe::egui;
+//! [`CocoApp::save_state_to`]/[`CocoApp::load_state_from`] are the
+//! unprompted entry points (suspend and resume); [`CocoApp::request_load`]
+//! is the prompted one. Everything else here is either UI chrome around
+//! them or the fiddly frontend-side re-injection
+//! [`coco_core::snapshot::restore`] can't do itself (host-only resources,
+//! path mirrors, pacing — see [`CocoApp::apply_restored_machine`]).
 
 use crate::CocoApp;
 
 #[cfg(test)]
 mod fd502_test;
+mod file;
+mod load_request;
 mod media_ref;
 #[cfg(test)]
 mod media_ref_test;
@@ -24,10 +27,14 @@ mod quick_test;
 mod restore;
 mod save;
 
+pub(crate) use load_request::PendingLoad;
+#[cfg(test)]
+pub(crate) use load_request::{CANCEL, LOAD_ANYWAY, LoadSource};
 pub(crate) use quick::{
     QUICK_SLOTS, StateFile, default_quick_state_dir, load_slot_shortcut, save_slot_shortcut,
     saved_time, slot_shortcuts_hint, state_name,
 };
+#[cfg(test)]
 pub(crate) use save::DRIVEWIRE_HOST_BUSY;
 
 /// How long a status-bar toast stays visible after [`CocoApp::set_toast`].
@@ -63,34 +70,6 @@ impl CocoApp {
             return None;
         }
         Some(msg.clone())
-    }
-
-    /// The Machine menu's Save/Load State section: file-dialog Save/Load.
-    /// The quick states live on the toolbar and the numbered chords.
-    pub(crate) fn draw_save_state_menu(&mut self, ui: &mut egui::Ui) {
-        if ui.button("Save State…").clicked() {
-            ui.close();
-            if let Some(path) = rfd::FileDialog::new()
-                .add_filter("CoCo save state", &["ccstate"])
-                .set_file_name("state.ccstate")
-                .save_file()
-                && let Err(e) = self.save_state_to(&path)
-            {
-                self.cart_error = Some(e);
-            }
-        }
-        if ui.button("Load State…").clicked() {
-            ui.close();
-            if let Some(path) = rfd::FileDialog::new()
-                .add_filter("CoCo save state", &["ccstate"])
-                .pick_file()
-            {
-                match self.load_state_from(&path) {
-                    Ok(()) => self.refresh_window_title(ui.ctx()),
-                    Err(e) => self.cart_error = Some(e),
-                }
-            }
-        }
     }
 }
 

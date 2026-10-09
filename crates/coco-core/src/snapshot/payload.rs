@@ -173,7 +173,7 @@ impl fmt::Display for RestoreNote {
             RestoreNote::PrintCaptureStopped => write!(
                 f,
                 "print capture was active when this snapshot was saved; capture is stopped until \
-                 restarted from the Machine menu"
+                 restarted from the Printer menu"
             ),
             RestoreNote::RS232EndpointLoopback => write!(
                 f,

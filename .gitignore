@@ -1,14 +1,9 @@
 .DS_Store
 /.idea/
 /target
-/docs/*.pdf
-/docs/txt/
-/docs/orig-scans/
-# in-flight plan docs — working notes, never committed
-/docs/plan-*.md
-/docs/*-plan.md
-/docs/txt/*
-docs/orig-scans/*
+# local-only reference material (PDFs, scans, OCR text, research notes —
+# research notes now live on the wiki, see CLAUDE.md's "Local resources")
+/docs/
 /roms/*
 # stray MAME run log
 /error.log

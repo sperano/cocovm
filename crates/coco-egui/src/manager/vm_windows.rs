@@ -8,7 +8,7 @@ use super::ManagerApp;
 /// Default size of the `ViewportClass::Embedded` fallback's `egui::Window`
 /// (`draw_running_vms`) — deliberately much smaller than
 /// [`vm_window_inner_size`]'s full native-window formula. That size (which
-/// includes room for a menu bar/toolbar/status bar this fallback never
+/// includes room for a toolbar/status bar this fallback never
 /// draws) is often close to or larger than the *entire* embedded canvas, so
 /// even anchored to a corner it can span most of the screen and silently
 /// eat clicks meant for the manager's own panels underneath (topmost window
@@ -21,7 +21,7 @@ const EMBEDDED_FALLBACK_SIZE: egui::Vec2 = egui::vec2(320.0, 240.0);
 fn vm_window_inner_size() -> egui::Vec2 {
     let img_h = coco_core::raster::CANVAS_H as f32 * crate::SCALE;
     let win_w = img_h * crate::TARGET_ASPECT;
-    let win_h = img_h + crate::MENU_BAR_H + crate::TOOLBAR_H + crate::STATUS_BAR_H;
+    let win_h = img_h + crate::TOOLBAR_H + crate::STATUS_BAR_H;
     egui::vec2(win_w, win_h)
 }
 

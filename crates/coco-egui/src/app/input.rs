@@ -54,6 +54,13 @@ impl CocoApp {
             return;
         }
 
+        // The machine-type prompt owns the keyboard: its Esc must not reach the
+        // machine, and a load chord must not replace the state it asks about.
+        if self.pending_load.is_some() {
+            self.release_keyboard_state();
+            return;
+        }
+
         self.consume_app_shortcuts(ctx);
 
         let (events, mods) = ctx.input(|i| (i.events.clone(), i.modifiers));

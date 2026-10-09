@@ -8,7 +8,9 @@ use std::path::Path;
 use coco_core::cart::Cart;
 use coco_core::drivewire::{self, DWImage};
 use coco_core::fdc;
-use coco_core::snapshot::{self, MediaRef, MediaRefs, MediaSources, RestoredMachine};
+use coco_core::snapshot::{
+    self, MediaRef, MediaRefs, MediaSources, RestoredMachine, SnapshotPayload,
+};
 use coco_core::vhd::{self, VHDImage};
 use eframe::egui;
 
@@ -22,6 +24,13 @@ use super::media_ref::{
     read_if_present, resolve_cart_roms, resolve_system_rom,
 };
 
+/// Read and decode the `.ccstate` at `path`, without touching the machine.
+pub(super) fn read_state(path: &Path) -> Result<SnapshotPayload, String> {
+    let bytes =
+        std::fs::read(path).map_err(|e| format!("could not read {}: {e}", path.display()))?;
+    snapshot::load(&bytes).map_err(|e| e.to_string())
+}
+
 impl CocoApp {
     /// [`Self::restore_state_from`], then the "State loaded" toast with any
     /// restore notes appended. Does not touch the window title — callers use
@@ -32,22 +41,24 @@ impl CocoApp {
         Ok(())
     }
 
-    /// Load, resolve media, and restore a `.ccstate` file, replacing
+    /// [`read_state`], then [`Self::restore_payload`]: replace
+    /// [`CocoApp::machine`] wholesale with the `.ccstate` at `path`, whatever
+    /// machine type it was saved on. Returns the restore notes.
+    pub(super) fn restore_state_from(&mut self, path: &Path) -> Result<Vec<String>, String> {
+        // Checked again by restore_payload, but first here so a busy host fails before reading.
+        self.ensure_drivewire_host_idle()?;
+        let payload = read_state(path)?;
+        self.restore_payload(payload)
+    }
+
+    /// Resolve media for a decoded `payload` and restore it, replacing
     /// [`CocoApp::machine`] wholesale. Returns the restore notes (media
     /// mismatches, substitutions) for the caller's toast; shows none itself.
-    pub(super) fn restore_state_from(&mut self, path: &Path) -> Result<Vec<String>, String> {
-        if self
-            .machine
-            .bus
-            .drivewire
-            .as_ref()
-            .is_some_and(|dw| !dw.host_is_idle())
-        {
-            return Err(super::DRIVEWIRE_HOST_BUSY.to_string());
-        }
-        let bytes =
-            std::fs::read(path).map_err(|e| format!("could not read {}: {e}", path.display()))?;
-        let mut payload = snapshot::load(&bytes).map_err(|e| e.to_string())?;
+    pub(super) fn restore_payload(
+        &mut self,
+        mut payload: SnapshotPayload,
+    ) -> Result<Vec<String>, String> {
+        self.ensure_drivewire_host_idle()?;
         let media = payload.media.clone();
         let ssc_slots: Vec<Option<u8>> = payload
             .machine

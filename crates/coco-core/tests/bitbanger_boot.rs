@@ -94,7 +94,7 @@ fn llist_captures_program_text_and_returns_to_ok_prompt() {
     /// `boots_to_disk_basic_and_dir_lists_the_synthesized_file`).
     const BASIC_SETTLE_FIELDS: usize = 300;
     /// Generous upper bound on how long `LLIST` can take to finish and return
-    /// to `OK`: at 600 baud (`bitbanger-spec.md` "Baud timing", 1486 cycles/
+    /// to `OK`: at 600 baud (wiki `cocovm/bitbanger-spec` "Baud timing", 1486 cycles/
     /// bit x 10 bits/byte = 14860 cycles/byte) even a few hundred bytes of
     /// listing plus ROM tokenizing/detokenizing overhead is nowhere near this.
     const MAX_LLIST_FIELDS: usize = 6_000;

@@ -15,7 +15,7 @@
 //! an `8*32*32*32`-entry precomputed table) — a genuinely nonlinear
 //! combination. [`AY8913::drain`] instead sums the three channels' already
 //! gated, already-DAC'd levels and divides by three (`SINGLE_OUTPUT` style,
-//! per `docs/ssc-spec.md`), which keeps full-scale output comparable
+//! per wiki `cocovm/ssc-spec`), which keeps full-scale output comparable
 //! regardless of how many channels are active but does not reproduce the
 //! real chip's channel-interaction nonlinearity. Good enough for a sound
 //! cartridge's music/SFX; not bit-accurate against a chip analyzer capture.
@@ -290,7 +290,7 @@ impl AY8913 {
     }
 
     /// Advance the generators by `master_clocks` AY master-clock cycles
-    /// (already 2× the CoCo E-clock — see `docs/ssc-spec.md`), accumulating
+    /// (already 2× the CoCo E-clock — see wiki `cocovm/ssc-spec`), accumulating
     /// samples for [`AY8913::drain`].
     pub fn step(&mut self, master_clocks: u32) {
         self.clock_accum += master_clocks;

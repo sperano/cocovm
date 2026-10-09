@@ -3,7 +3,7 @@
 //! it without sharing the per-model control-code interpreters.
 //!
 //! The paper is a continuous roll: no page/form-feed concept exists in any
-//! documented DMP-105 behavior (`dmp105-protocol.md` §3, "FF (0x0C): VERIFIED
+//! documented DMP-105 behavior (wiki `cocovm/dmp105-protocol` §3, "FF (0x0C): VERIFIED
 //! ABSENT"), so [`Paper`] never introduces one either — an 11" page boundary
 //! is purely a frontend rendering choice (T5), not modeled here.
 //!
@@ -16,7 +16,7 @@
 //!   (48, 72, 144, and 216). This is software precision, not a motor claim.
 //! - **Horizontal** ([`X_UNITS_PER_INCH`]): see its doc comment — a derived
 //!   internal choice, not a hardware register, so the three pitch densities
-//!   (`dmp105-protocol.md` §1 Appendix G) share one exact integer grid.
+//!   (wiki `cocovm/dmp105-protocol` §1 Appendix G) share one exact integer grid.
 
 use std::collections::BTreeMap;
 use std::mem;
@@ -25,11 +25,11 @@ use std::ops::ControlFlow;
 use serde::{Deserialize, Serialize};
 
 /// Exact software grid for both printers' documented vertical feed commands.
-/// See `docs/dmp130-protocol.md`; not a physical stepper resolution.
+/// See wiki `cocovm/dmp130-protocol`; not a physical stepper resolution.
 pub const Y_UNITS_PER_INCH: u32 = 432;
 
 /// Horizontal fixed-point resolution: 1/3600". Derived, not a hardware fact:
-/// `dmp105-protocol.md` Appendix G (p.59) gives 960/1152/1600 dots over an
+/// wiki `cocovm/dmp105-protocol` Appendix G (p.59) gives 960/1152/1600 dots over an
 /// (arithmetically derived, see `dmp105.rs`'s `Pitch`) constant 8" print
 /// width, that is, 120/144/200 dots per inch for Normal/Compressed/Condensed
 /// pitch. 3600 is the LCM of 120, 144, and 200, so each pitch's per-dot

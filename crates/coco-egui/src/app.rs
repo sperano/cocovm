@@ -24,8 +24,7 @@ pub(crate) struct CocoApp {
     pub(crate) type_ahead: TypeAhead,
     pub(crate) show_kbd_help: bool,
     pub(crate) keyboard_modifiers: typeahead::KeyModifiers,
-    pub(crate) show_about: bool,
-    /// "View > Orchestra-90 Levels" window toggle ([`orch90_meters::window`]).
+    /// The Sound menu's "Orchestra-90 Levels" window toggle ([`orch90_meters::window`]).
     /// Stays whatever the user last set even if the cartridge is later
     /// ejected — the window doesn't draw without a live `Orch90`
     /// (see the call site in `update`).
@@ -102,13 +101,13 @@ pub(crate) struct CocoApp {
     /// on Enter — not live-rebound on each keystroke, like `rs232_tcp_addr`.
     pub(crate) tape_seek_text: String,
     /// Destination path of the active bit-banger "print to text file"
-    /// capture, if any — shown in the Machine
+    /// capture, if any — shown in the Printer
     /// menu and gates "Stop Print Capture", like `tape_path` does for the
     /// cassette deck. Unlike disk/tape images, there is nothing to write
     /// back on eject: `coco_core::bitbanger::FileSink` writes straight
     /// through as bytes are decoded.
     pub(crate) print_capture_path: Option<PathBuf>,
-    /// Machine-menu "Translate CR to LF" checkbox: when set, print captures
+    /// Printer-menu "Translate CR to LF" checkbox: when set, print captures
     /// rewrite the CoCo's bare-CR line endings as LF so the file reads as
     /// normal host text (faithful raw bytes otherwise). Applies when a
     /// capture starts — an in-progress capture keeps the mode it began with.
@@ -173,6 +172,10 @@ pub(crate) struct CocoApp {
     /// load from any control selects the state it used
     /// (`save_state/quick.rs`).
     pub(crate) selected_quick_state: usize,
+    /// A state saved on another machine type, waiting for the user to
+    /// confirm or cancel loading it (`save_state/load_request.rs`). While
+    /// set, host keys don't reach the machine.
+    pub(crate) pending_load: Option<save_state::PendingLoad>,
     /// Status-bar device-activity icons: per-device pulse-stretched latches
     /// over the core's monotonic activity counters, plus the cassette reel
     /// angle (`status_icons.rs`). Purely UI state — not serialized, not
@@ -284,7 +287,7 @@ pub(crate) struct AppParams {
     pub(crate) drivewire: Option<DriveWireLaunch>,
     /// UI preference, not persisted per-machine yet — always `false` at
     /// launch, toggled at runtime in the tape menu (status bar's Cassette
-    /// deck entry, `chrome/menu_bar.rs`'s `tape_menu_ui`).
+    /// deck entry, `chrome/menus.rs`'s `tape_menu_ui`).
     pub(crate) save_tape_wav: bool,
 }
 
@@ -314,7 +317,6 @@ impl CocoApp {
             type_ahead: TypeAhead::default(),
             show_kbd_help: false,
             keyboard_modifiers: typeahead::KeyModifiers::default(),
-            show_about: false,
             show_orch90: false,
             display,
             tv: display::TVSettings::default(),
@@ -351,6 +353,7 @@ impl CocoApp {
             toast: None,
             quick_state_dir: save_state::default_quick_state_dir(),
             selected_quick_state: 0,
+            pending_load: None,
             activity: StatusActivity::default(),
             pending_suspend: false,
             pending_resume: false,
