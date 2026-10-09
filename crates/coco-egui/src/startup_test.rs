@@ -116,3 +116,73 @@ fn inventory_pluralizes_every_count() {
         "0 ROMs, 0 cartridges and 0 machine configurations found."
     );
 }
+
+#[test]
+fn visible_width_ignores_ansi_color() {
+    assert_eq!(visible_width("\x1b[2m│\x1b[0m"), 1);
+    assert_eq!(visible_width("\x1b[38;5;209m/\x1b[39m © É"), 5);
+}
+
+#[test]
+fn wrap_breaks_between_words_within_width() {
+    assert_eq!(wrap("aa bb cc", 5), ["aa bb", "cc"]);
+    assert_eq!(wrap("aa   bb", 10), ["aa bb"]);
+    assert_eq!(wrap("", 10), [""]);
+}
+
+#[test]
+fn wrap_splits_a_word_wider_than_the_line() {
+    assert_eq!(wrap("x abcdefgh", 3), ["x", "abc", "def", "gh"]);
+}
+
+#[test]
+fn wrap_measures_double_width_characters() {
+    // Each CJK ideograph takes two terminal columns.
+    assert_eq!(wrap("漢字漢字", 4), ["漢字", "漢字"]);
+}
+
+/// Columns the box's two walls add around its inner width.
+const WALL_COLUMNS: usize = 2;
+
+/// The renderer line from the report, wider than the box.
+const LONG_RENDERER: &str = "OpenGL version: 3.3 INTEL-24.1.11 (Parallels using \
+    Intel(R) Iris(TM) Plus Graphics OpenGL Engine (Compat)).";
+
+#[test]
+fn banner_wraps_long_rows_inside_the_walls() {
+    let title = banner_title();
+    let lines = banner_lines(&title, &[LONG_RENDERER, "17 ROMs found."]);
+    let box_width = BANNER_WIDTH + WALL_COLUMNS;
+    for line in &lines {
+        assert_eq!(visible_width(line), box_width, "{line:?}");
+    }
+    // Frame, title, rule, at least two renderer lines, inventory, frame.
+    const MIN_LINES: usize = 7;
+    assert!(lines.len() >= MIN_LINES, "{lines:#?}");
+    // Top frame, title and rule above the rows; bottom frame below.
+    const HEADER_LINES: usize = 3;
+    let rows: Vec<String> = lines[HEADER_LINES..lines.len() - 1]
+        .iter()
+        .map(|line| strip_ansi(line))
+        .collect();
+    let body: Vec<&str> = rows
+        .iter()
+        .flat_map(|row| row.trim_matches(|c| c == '│' || c == ' ').split(' '))
+        .filter(|word| !word.is_empty())
+        .collect();
+    let expected: Vec<&str> = LONG_RENDERER
+        .split_whitespace()
+        .chain("17 ROMs found.".split(' '))
+        .collect();
+    assert_eq!(body, expected);
+}
+
+#[test]
+fn banner_widens_for_a_title_longer_than_the_default() {
+    let title = "t".repeat(BANNER_WIDTH);
+    let lines = banner_lines(&title, &["short"]);
+    let box_width = BANNER_WIDTH + 2 * BANNER_MARGIN + WALL_COLUMNS;
+    for line in &lines {
+        assert_eq!(visible_width(line), box_width, "{line:?}");
+    }
+}

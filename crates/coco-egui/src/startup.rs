@@ -8,6 +8,7 @@ use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::util::SubscriberInitExt as _;
 use tracing_subscriber::{EnvFilter, Registry, reload};
+use unicode_width::{UnicodeWidthChar as _, UnicodeWidthStr as _};
 
 use coco_core::rom_db::KNOWN_CARTRIDGE_ROMS;
 
@@ -52,8 +53,15 @@ pub(crate) fn log_filter(level: LevelFilter) -> EnvFilter {
         .from_env_lossy()
 }
 
-/// Inner width of the banner box, in columns.
+/// Inner width of the banner box, in columns. The box widens past this only
+/// when the title alone needs more room.
 const BANNER_WIDTH: usize = 74;
+
+/// Blank columns between each wall of the banner box and the text inside it.
+const BANNER_MARGIN: usize = 1;
+
+/// The byte that opens an ANSI escape sequence.
+const ESC: char = '\x1b';
 
 /// What the banner box reports below its title rule.
 ///
@@ -142,31 +150,122 @@ pub(crate) fn cartridge_count() -> usize {
     asset_count(paths::cartridges_dir(), is_cartridge_file)
 }
 
-/// Print one content row of the banner box, padded out to the right wall.
-fn banner_row(wall: &str, text: &str) {
-    // The leading space eats one of the box's inner columns.
-    println!("{wall} {text:<0$}{wall}", BANNER_WIDTH - 1);
+/// `s` without its ANSI control sequences (`ESC [ … final`, all that
+/// owo-colors emits).
+fn strip_ansi(s: &str) -> String {
+    let mut plain = String::with_capacity(s.len());
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c == ESC {
+            // Skip the `[`, the parameters, and the final byte (`@`..=`~`).
+            chars.next();
+            chars.by_ref().find(|c| ('@'..='~').contains(c));
+        } else {
+            plain.push(c);
+        }
+    }
+    plain
 }
 
-pub(crate) fn banner(info: &StartupInfo) {
-    let fill = dim(&"═".repeat(BANNER_WIDTH));
-    let wall = dim("│");
-    println!("{}{fill}{}", dim("╭"), dim("╮"));
-    println!(
-        "{wall} CoCoVM {} {} A Tandy {}{}{} Color Computer emulator {} © 2026 Éric Spérano {wall}",
+/// Display width of `s` in terminal columns; ANSI color takes none.
+fn visible_width(s: &str) -> usize {
+    strip_ansi(s).width()
+}
+
+/// `word` cut into pieces at most `width` columns wide (at least one
+/// character each, so a too-wide character still makes progress).
+fn split_word(word: &str, width: usize) -> Vec<&str> {
+    let mut pieces = Vec::new();
+    let (mut start, mut columns) = (0, 0);
+    for (i, c) in word.char_indices() {
+        let c_width = c.width().unwrap_or(0);
+        if columns + c_width > width && i > start {
+            pieces.push(&word[start..i]);
+            (start, columns) = (i, 0);
+        }
+        columns += c_width;
+    }
+    pieces.push(&word[start..]);
+    pieces
+}
+
+/// Greedy word wrap of `text` into lines at most `width` columns wide. Runs
+/// of whitespace collapse to one space; a word wider than `width` (a long
+/// GPU or driver name) is split across lines.
+fn wrap(text: &str, width: usize) -> Vec<String> {
+    let mut lines = Vec::new();
+    let (mut line, mut columns) = (String::new(), 0);
+    let pieces = text
+        .split_whitespace()
+        .flat_map(|word| split_word(word, width));
+    for piece in pieces {
+        let piece_width = piece.width();
+        if !line.is_empty() && columns + 1 + piece_width > width {
+            lines.push(std::mem::take(&mut line));
+            columns = 0;
+        }
+        if !line.is_empty() {
+            line.push(' ');
+            columns += 1;
+        }
+        line.push_str(piece);
+        columns += piece_width;
+    }
+    if !line.is_empty() || lines.is_empty() {
+        lines.push(line);
+    }
+    lines
+}
+
+/// One row of the banner box: `text` between the walls, padded out to
+/// `inner` columns. `text` may carry ANSI color; only its visible width counts.
+fn banner_row(wall: &str, text: &str, inner: usize) -> String {
+    let margin = " ".repeat(BANNER_MARGIN);
+    let padding = " ".repeat(inner.saturating_sub(2 * BANNER_MARGIN + visible_width(text)));
+    format!("{wall}{margin}{text}{padding}{margin}{wall}")
+}
+
+/// The banner's colored title line, without walls.
+fn banner_title() -> String {
+    format!(
+        "CoCoVM {} {} A Tandy {}{}{} Color Computer emulator {} © 2026 Éric Spérano",
         env!("CARGO_PKG_VERSION").if_supports_color(Stream::Stdout, |v| v.cyan()),
         "-".if_supports_color(Stream::Stdout, |v| v.dimmed()),
         "/".if_supports_color(Stream::Stdout, |v| v.fg::<xterm::BittersweetOrange>()),
         "/".if_supports_color(Stream::Stdout, |v| v.fg::<xterm::PersianGreen>()),
         "/".if_supports_color(Stream::Stdout, |v| v.fg::<xterm::ScampiIndigo>()),
         "-".if_supports_color(Stream::Stdout, |v| v.dimmed()),
-    );
+    )
+}
+
+/// The banner box, one string per terminal line: `title` above a rule, then
+/// each of `rows` word-wrapped to the box so no line runs past its right wall.
+fn banner_lines(title: &str, rows: &[&str]) -> Vec<String> {
+    let inner = BANNER_WIDTH.max(visible_width(title) + 2 * BANNER_MARGIN);
+    let text_width = inner - 2 * BANNER_MARGIN;
+    let fill = dim(&"═".repeat(inner));
+    let wall = dim("│");
     // Light rule, so it reads as an inner divider rather than a box edge.
-    let rule = dim(&"─".repeat(BANNER_WIDTH));
-    println!("{}{rule}{}", dim("├"), dim("┤"));
-    banner_row(&wall, &info.renderer);
-    banner_row(&wall, &info.inventory());
-    println!("{}{fill}{}", dim("╰"), dim("╯"));
+    let rule = dim(&"─".repeat(inner));
+    let mut lines = vec![
+        format!("{}{fill}{}", dim("╭"), dim("╮")),
+        banner_row(&wall, title, inner),
+        format!("{}{rule}{}", dim("├"), dim("┤")),
+    ];
+    lines.extend(
+        rows.iter()
+            .flat_map(|row| wrap(row, text_width))
+            .map(|line| banner_row(&wall, &line, inner)),
+    );
+    lines.push(format!("{}{fill}{}", dim("╰"), dim("╯")));
+    lines
+}
+
+pub(crate) fn banner(info: &StartupInfo) {
+    let inventory = info.inventory();
+    for line in banner_lines(&banner_title(), &[&info.renderer, &inventory]) {
+        println!("{line}");
+    }
 }
 
 /// Where `--assets-url` (`COCOVM_ASSETS_URL`) points unless overridden. Must
@@ -289,9 +388,9 @@ fn display_paths(dir: &Path, names: Vec<&'static str>) -> Vec<String> {
 }
 
 /// Describe which graphics backend eframe actually created, and on what
-/// GPU, as one banner-sized line. eframe has no backend-name API, so this
-/// matches on which `CreationContext` handle is present and uses that
-/// backend's own introspection.
+/// GPU, as one line (the banner wraps it). eframe has no backend-name
+/// API, so this matches on which `CreationContext` handle is present and
+/// uses that backend's own introspection.
 pub(crate) fn renderer_info(cc: &eframe::CreationContext<'_>) -> String {
     #[cfg(feature = "wgpu")]
     if let Some(render_state) = cc.wgpu_render_state.as_ref() {
