@@ -4,9 +4,6 @@ impl CocoApp {
     /// Every optional window and modal dialog drawn over the display.
     pub(crate) fn windows_ui(&mut self, ctx: &egui::Context) {
         self.keyboard_window_ui(ctx);
-        if self.show_about {
-            about::window(ctx, &mut self.show_about);
-        }
         if self.show_orch90
             && let Some(orch90) = self.machine.bus.cart.as_orch90()
         {

@@ -7,6 +7,11 @@ const SUSPENDED_STATUS: &str = "Suspended";
 /// Hover text of that marker: what the window can still do.
 const SUSPENDED_STATUS_HOVER: &str =
     "Frozen to disk — press Start to resume, or close the window to keep it suspended";
+/// Hover text of the sound entry.
+const SOUND_HOVER: &str = "Sound output — click for mute and volume controls";
+/// [`SOUND_HOVER`] while an Orchestra-90 is inserted: its levels toggle is in the same menu.
+const SOUND_ORCH90_HOVER: &str =
+    "Sound output — click for mute and volume controls and the Orchestra-90 levels";
 /// Readout of an installed FD-502 with no disk in any drive.
 pub(crate) const NO_DISKS_READOUT: &str = "No disks";
 /// Hover text of that readout: where to mount one.
@@ -58,7 +63,7 @@ impl CocoApp {
     }
 
     /// The keyboard entry: icon + mode label are one click target that opens the
-    /// keyboard menu — the only way in, since the menu bar has no Keyboard entry.
+    /// keyboard menu — the only way in, since the window has no menu bar.
     fn keyboard_status(&mut self, ui: &mut egui::Ui) {
         let icon = keyboard_icon(ui).interact(egui::Sense::click());
         name_menu_icon(ui, &icon, "Keyboard menu");
@@ -103,17 +108,22 @@ impl CocoApp {
             .show(|ui| self.display_menu_ui(ui));
     }
 
-    /// The sound entry: a speaker icon and optional label open the mute and volume controls.
+    /// The sound entry: a speaker icon and optional label open the Sound menu (mute, volume,
+    /// and the Orchestra-90 levels toggle while one is inserted).
     fn sound_status(&mut self, ui: &mut egui::Ui) {
         ui.separator();
         let icon = speaker_icon(ui).interact(egui::Sense::click());
         name_menu_icon(ui, &icon, "Sound menu");
-        let entry = menu_entry(ui, self.status_bar_icons_only, icon, "Sound")
-            .on_hover_text("Sound output — click for mute and volume controls");
+        let hover = if self.machine.bus.cart.as_orch90().is_some() {
+            SOUND_ORCH90_HOVER
+        } else {
+            SOUND_HOVER
+        };
+        let entry = menu_entry(ui, self.status_bar_icons_only, icon, "Sound").on_hover_text(hover);
         egui::Popup::menu(&entry)
             .id(ui.id().with("sound_menu"))
             .align(egui::RectAlign::TOP_START)
-            .show(|ui| self.audio.menu_ui(ui));
+            .show(|ui| self.sound_menu_ui(ui));
     }
 
     fn cart_status(&self, ui: &mut egui::Ui) {

@@ -24,8 +24,7 @@ pub(crate) struct CocoApp {
     pub(crate) type_ahead: TypeAhead,
     pub(crate) show_kbd_help: bool,
     pub(crate) keyboard_modifiers: typeahead::KeyModifiers,
-    pub(crate) show_about: bool,
-    /// "View > Orchestra-90 Levels" window toggle ([`orch90_meters::window`]).
+    /// The Sound menu's "Orchestra-90 Levels" window toggle ([`orch90_meters::window`]).
     /// Stays whatever the user last set even if the cartridge is later
     /// ejected — the window doesn't draw without a live `Orch90`
     /// (see the call site in `update`).
@@ -288,7 +287,7 @@ pub(crate) struct AppParams {
     pub(crate) drivewire: Option<DriveWireLaunch>,
     /// UI preference, not persisted per-machine yet — always `false` at
     /// launch, toggled at runtime in the tape menu (status bar's Cassette
-    /// deck entry, `chrome/menu_bar.rs`'s `tape_menu_ui`).
+    /// deck entry, `chrome/menus.rs`'s `tape_menu_ui`).
     pub(crate) save_tape_wav: bool,
 }
 
@@ -318,7 +317,6 @@ impl CocoApp {
             type_ahead: TypeAhead::default(),
             show_kbd_help: false,
             keyboard_modifiers: typeahead::KeyModifiers::default(),
-            show_about: false,
             show_orch90: false,
             display,
             tv: display::TVSettings::default(),

@@ -9,7 +9,7 @@
 //!   press using the previous frame's hit-test data, so a press with no
 //!   prior hover misses windows that were (re)anchored this frame.
 //! - Menus close on *any* item click (egui's default menu close behavior),
-//!   so every menu interaction reopens the menu from the bar.
+//!   so every menu interaction reopens the menu from its button.
 //! - Submenu buttons expose their label with a trailing "⏵" arrow — match
 //!   them with `_contains`, not exactly.
 //!
@@ -17,7 +17,7 @@
 //! click/hover/combo-select interaction helpers every other module builds
 //! on; the rest are one topic apiece (the VM window's own dialogs/menus, its
 //! status-bar disk, tape and joysticks entries/menus and icon-only mode, and the manager window's
-//! scaffold/peripherals/lifecycle/settings).
+//! scaffold/peripherals/lifecycle/settings/Help menu).
 
 mod cartridge_detection;
 mod harness;
@@ -25,6 +25,7 @@ mod hotkeys;
 mod keyboard_test;
 mod manager_dos_rom_test;
 mod manager_drivewire_test;
+mod manager_help_test;
 mod manager_lifecycle;
 mod manager_peripherals;
 mod manager_roms;

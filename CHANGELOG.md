@@ -76,6 +76,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The Machine menu. Its Save State and Load State items are now Save to
   File… and Load from File… in the toolbar's State selector, and print
   capture moved to the Printer menu.
+- The VM window's menu bar. Its View menu's Orchestra-90 Levels item is
+  now in the status bar's Sound menu, shown while an Orchestra-90 is
+  inserted. Its Help menu's About item is now About cocovm, in the menu of
+  the manager toolbar's Help tile, which did nothing before.
 
 ## [0.7.8] - 2026-10-03
 

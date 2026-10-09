@@ -17,7 +17,7 @@ use crate::{
 /// File name [`launch_machine`] captures `[ports].serial = "file"` to,
 /// resolved against the machine's artifact directory — the same auto-named
 /// target the runtime Printer menu's "Start Print Capture…" item suggests
-/// (`chrome::menu_bar::print_capture`'s file dialog).
+/// (`chrome::menus::print_capture`'s file dialog).
 const PRINTOUT_FILE: &str = "printout.txt";
 
 /// Where a definition's `[media]` paths land once resolved against the
