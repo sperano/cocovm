@@ -107,6 +107,18 @@ pub(crate) use widgets::{
     window_title,
 };
 
+/// Wayland app id and eframe persistence name; must match
+/// `packaging/linux/cocovm.desktop` so launchers pair every window with its icon.
+pub(crate) const APP_ID: &str = "cocovm";
+
+/// Viewport builder for a native window. Every window, child viewports
+/// included, carries the app id: eframe passes the icon down but not the id.
+pub(crate) fn window_builder(title: impl Into<String>) -> egui::ViewportBuilder {
+    egui::ViewportBuilder::default()
+        .with_app_id(APP_ID)
+        .with_title(title)
+}
+
 /// Integer scale factor for the canvas rows when sizing a VM window.
 pub(crate) const SCALE: f32 = 3.0;
 /// Physical aspect the CoCo frame fills on an NTSC set (4:3). The canvas is

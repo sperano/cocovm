@@ -189,8 +189,7 @@ impl PaperWindow {
 
         // One stable ID so egui reuses the same native OS window across frames.
         let viewport_id = egui::ViewportId::from_hash_of("printer-paper");
-        let builder = egui::ViewportBuilder::default()
-            .with_title("Printer Paper")
+        let builder = crate::window_builder("Printer Paper")
             .with_inner_size([520.0, 700.0])
             .with_min_inner_size([280.0, 220.0]);
         ctx.show_viewport_immediate(viewport_id, builder, |ctx, class| {

@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- The application icon now reaches every platform's launcher, not just the
+  macOS bundle. The Windows executable embeds the icon and a version block,
+  so Explorer shows them without an installer. The Linux archive carries a
+  `cocovm.desktop` entry, the icon in the standard sizes, and an
+  `install.sh` that places them under `~/.local` (or a prefix you choose);
+  the window now also reports `cocovm` as its Wayland app id, so GNOME and
+  KDE pair the running window with the launcher. The macOS bundle step is a
+  script under `packaging/` that builds the same `cocovm.app` from a local
+  build.
 - The machine list's right-click menu item "Show config" is now "Show
   config in Finder" (macOS), "Show config in File Explorer" (Windows), or
   "Show config in File Manager" (Linux), and it does what the name says:

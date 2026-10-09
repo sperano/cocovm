@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Version=1.5
+Name=CoCoVM
+GenericName=Color Computer Emulator
+Comment=Tandy Color Computer 1, 2 and 3 emulator
+Exec=cocovm
+Icon=cocovm
+Terminal=false
+Categories=Game;Emulator;
+Keywords=CoCo;Tandy;Radio Shack;6809;Emulator;
+StartupWMClass=cocovm
