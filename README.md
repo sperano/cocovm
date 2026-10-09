@@ -10,6 +10,19 @@ CoCoVM is under active development and hasn't reached version 1.0. Save-state
 compatibility can change between releases. See the [changelog](CHANGELOG.md) for
 release details and known limitations.
 
+## Screenshots
+
+<table>
+  <tr>
+    <td><img src="screenshots/ss01.png" alt="The virtual machine manager listing five saved machines, with the General settings of a suspended NitrOS-9 CoCo 3"></td>
+    <td><img src="screenshots/ss02.png" alt="A CoCo 3 at the Extended Color BASIC 2.0 prompt"></td>
+  </tr>
+  <tr>
+    <td><img src="screenshots/ss03.png" alt="NitrOS-9 Level 2 Ease of Use Edition booting on a CoCo 3 with RGB colors and a mounted virtual hard disk"></td>
+    <td><img src="screenshots/ss04.png" alt="A CoCo 2 at the Extended Color BASIC 1.1 prompt on an emulated black-and-white TV"></td>
+  </tr>
+</table>
+
 ## Features
 
 - CoCo 1, CoCo 2, and CoCo 3 models with model-specific memory and video
