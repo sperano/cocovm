@@ -80,7 +80,7 @@ Then clone and run CoCoVM:
 ```sh
 git clone https://github.com/sperano/cocovm.git
 cd cocovm
-cargo run -p coco-egui
+cargo run
 ```
 
 For an optimized build, add `--release` to the `cargo run` command.
