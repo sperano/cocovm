@@ -383,9 +383,9 @@ fn display_paths(dir: &Path, names: Vec<&'static str>) -> Vec<String> {
 }
 
 /// Describe which graphics backend eframe actually created, and on what
-/// GPU, as one line (the banner wraps it). eframe has no backend-name API, so this
-/// matches on which `CreationContext` handle is present and uses that
-/// backend's own introspection.
+/// GPU, as one line (the banner wraps it). eframe has no backend-name
+/// API, so this matches on which `CreationContext` handle is present and
+/// uses that backend's own introspection.
 pub(crate) fn renderer_info(cc: &eframe::CreationContext<'_>) -> String {
     #[cfg(feature = "wgpu")]
     if let Some(render_state) = cc.wgpu_render_state.as_ref() {
