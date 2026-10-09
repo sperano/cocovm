@@ -38,9 +38,8 @@ pub fn run(
         manager_sort,
         ..
     } = config;
-    const ICON_BYTE_COUNT: usize = 8_628;
-    let icon_bytes: &[u8; ICON_BYTE_COUNT] = include_bytes!("../../assets/coco3-console-8bit.png");
-    let icon = eframe::icon_data::from_png_bytes(icon_bytes).expect("embedded icon PNG is valid");
+    const ICON_BYTES: &[u8] = include_bytes!("../../assets/cocovm-icon.png");
+    let icon = eframe::icon_data::from_png_bytes(ICON_BYTES).expect("embedded icon PNG is valid");
     let assets_dir = crate::require_data_dir().join(crate::paths::ASSETS_DIR_NAME);
     let missing = crate::missing_assets();
     let mut viewport = egui::ViewportBuilder::default()
