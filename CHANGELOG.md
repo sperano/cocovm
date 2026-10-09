@@ -51,6 +51,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so a long `enter_basic` call doesn't end the client's session.
 
 ### Changed
+- Five quick states instead of ten, and every one of them has keyboard
+  shortcuts: ⌘1 to ⌘5 (Ctrl+1 to Ctrl+5 on Windows and Linux) load States
+  1 to 5 and ⇧⌘1 to ⇧⌘5 (Ctrl+Shift+1 to Ctrl+Shift+5) save them. Before,
+  only States 1 to 3 had shortcuts. The shortcuts are editable in the
+  Settings dialog's Hotkeys tab like the other hotkeys, and are stored as
+  `hotkey_load_state_<n>` and `hotkey_save_state_<n>` in `config.toml`.
+  States 6 to 10 are gone; their files, if any, stay in the `save-states`
+  folder but are no longer listed. A `config.toml` that already gives ⌘4,
+  ⌘5, ⇧⌘4, or ⇧⌘5 (or the Ctrl equivalents) to another hotkey is refused
+  at startup, naming both actions, until one of them is rebound.
 - The MCP server's `list_vms` tool also reports each VM's model, RAM size,
   CPU, cartridge, and mounted media.
 - A pending MCP `wait`, `wait_for_text`, `type_text`, or `press_keys` call
@@ -72,7 +82,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   per-PR book-update gate is gone with it.
 - The Machine menu's Quick Save and Quick Load submenus. Save and load
   quick states with the toolbar's State selector and its Save and Load
-  tiles, or with the keyboard shortcuts for States 1 to 3.
+  tiles, or with each state's keyboard shortcuts.
 - The Machine menu. Its Save State and Load State items are now Save to
   File… and Load from File… in the toolbar's State selector, and print
   capture moved to the Printer menu.

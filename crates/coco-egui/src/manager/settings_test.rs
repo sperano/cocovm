@@ -41,7 +41,10 @@ fn non_default_values_round_trip() {
         hotkey_keyboard_mode: hotkey("Shift+F12"),
         hotkey_new_machine: hotkey("Cmd+Shift+N"),
         hotkey_debugger: hotkey("F11"),
+        hotkey_load_state_2: hotkey("Cmd+Alt+2"),
+        hotkey_save_state_5: hotkey("Cmd+Alt+Shift+5"),
         manager_sort: Some(ManagerSort::NameDesc),
+        ..FileConfig::default()
     };
     let dialog = SettingsDialog::from_file(
         FileConfig {
@@ -57,7 +60,10 @@ fn non_default_values_round_trip() {
             hotkey_keyboard_mode: file.hotkey_keyboard_mode,
             hotkey_new_machine: file.hotkey_new_machine,
             hotkey_debugger: file.hotkey_debugger,
+            hotkey_load_state_2: file.hotkey_load_state_2,
+            hotkey_save_state_5: file.hotkey_save_state_5,
             manager_sort: file.manager_sort,
+            ..FileConfig::default()
         },
         None,
     );

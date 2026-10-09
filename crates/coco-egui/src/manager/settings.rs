@@ -12,7 +12,7 @@ use eframe::egui;
 use crate::cli::LogLevel;
 use crate::config::{self, FileConfig, ManagerSort};
 use crate::control::DEFAULT_PORT;
-use crate::hotkeys::{DEFAULT_HOTKEYS, Hotkey, Hotkeys};
+use crate::hotkeys::{DEFAULT_HOTKEYS, Hotkey, HotkeyAction, Hotkeys};
 
 use super::{ManagerApp, NO_CONFIG_DIR};
 
@@ -127,7 +127,8 @@ impl SettingsDialog {
         let control_port = self.effective_control_port();
         let hotkeys = &self.hotkey_editor.hotkeys;
         let changed = |hotkey: Hotkey, default: Hotkey| (hotkey != default).then_some(hotkey);
-        FileConfig {
+        // The `hotkey_*` fields are filled in below, one per action.
+        let mut file = FileConfig {
             log_level: (self.log_level != config::DEFAULT_LOG_LEVEL).then_some(self.log_level),
             control_port: (control_port != DEFAULT_PORT).then_some(control_port),
             // An emptied field reads as "reset to default", not "set to ''".
@@ -146,12 +147,16 @@ impl SettingsDialog {
             welcome_image_shuffle: (self.welcome_image_shuffle
                 != config::DEFAULT_WELCOME_IMAGE_SHUFFLE)
                 .then_some(self.welcome_image_shuffle),
-            hotkey_key_layout: changed(hotkeys.key_layout, DEFAULT_HOTKEYS.key_layout),
-            hotkey_keyboard_mode: changed(hotkeys.keyboard_mode, DEFAULT_HOTKEYS.keyboard_mode),
-            hotkey_new_machine: changed(hotkeys.new_machine, DEFAULT_HOTKEYS.new_machine),
-            hotkey_debugger: changed(hotkeys.debugger, DEFAULT_HOTKEYS.debugger),
             manager_sort: self.manager_sort,
+            ..FileConfig::default()
+        };
+        for action in HotkeyAction::all() {
+            file.set_hotkey(
+                action,
+                changed(hotkeys.get(action), DEFAULT_HOTKEYS.get(action)),
+            );
         }
+        file
     }
 }
 

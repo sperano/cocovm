@@ -1,5 +1,5 @@
 //! The Settings dialog's Hotkeys section (`manager/settings.rs`): one row
-//! per [`HotkeyAction::ACTIVE`] action showing its binding as a button.
+//! per [`HotkeyAction::active`] action showing its binding as a button.
 //! Clicking the button captures the next key press as the new binding;
 //! Esc cancels the capture without closing the dialog.
 
@@ -38,8 +38,8 @@ impl HotkeyEditor {
         egui::Grid::new("settings_hotkeys")
             .num_columns(3)
             .show(ui, |ui| {
-                for action in HotkeyAction::ACTIVE {
-                    self.draw_row(ui, *action);
+                for action in HotkeyAction::active() {
+                    self.draw_row(ui, action);
                     ui.end_row();
                 }
             });
@@ -107,15 +107,15 @@ impl HotkeyEditor {
         let Some(action) = self.capturing else {
             return;
         };
-        let Some((key, mods)) = ui.input_mut(take_first_press) else {
+        let Some(press) = ui.input_mut(take_first_press) else {
             return;
         };
         self.capturing = None;
-        if key == egui::Key::Escape && mods.is_none() {
+        if press.key == egui::Key::Escape && press.modifiers.is_none() {
             self.error = None;
             return;
         }
-        match Hotkey::from_press(key, mods) {
+        match Hotkey::from_press(press.key, press.physical_key, press.modifiers) {
             Ok(hotkey) => match self.hotkeys.holder(hotkey, action) {
                 Some(other) => {
                     self.error = Some(format!("{hotkey} is already the {} hotkey", other.label()));
@@ -130,8 +130,16 @@ impl HotkeyEditor {
     }
 }
 
+/// A captured key press: what [`Hotkey::from_press`] needs from the event.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Press {
+    key: egui::Key,
+    physical_key: Option<egui::Key>,
+    modifiers: egui::Modifiers,
+}
+
 /// Removes and returns the first fresh key press in `input`.
-fn take_first_press(input: &mut egui::InputState) -> Option<(egui::Key, egui::Modifiers)> {
+fn take_first_press(input: &mut egui::InputState) -> Option<Press> {
     let index = input.events.iter().position(|event| {
         matches!(
             event,
@@ -143,7 +151,16 @@ fn take_first_press(input: &mut egui::InputState) -> Option<(egui::Key, egui::Mo
         )
     })?;
     match input.events.remove(index) {
-        egui::Event::Key { key, modifiers, .. } => Some((key, modifiers)),
+        egui::Event::Key {
+            key,
+            physical_key,
+            modifiers,
+            ..
+        } => Some(Press {
+            key,
+            physical_key,
+            modifiers,
+        }),
         _ => None,
     }
 }

@@ -12,7 +12,8 @@ use std::path::Path;
 use clap::ValueEnum;
 
 use crate::cli::{Cli, LogLevel};
-use crate::hotkeys::{DEFAULT_HOTKEYS, Hotkey, Hotkeys};
+use crate::hotkeys::{DEFAULT_HOTKEYS, Hotkey, HotkeyAction, Hotkeys};
+use crate::save_state::QUICK_SLOTS;
 
 /// Global config file's name under [`crate::paths::config_dir`].
 pub(crate) const CONFIG_FILE_NAME: &str = "config.toml";
@@ -67,29 +68,114 @@ pub(crate) struct FileConfig {
     /// swap-every-frame loop.
     pub(crate) welcome_image_cycle_secs: Option<NonZeroU32>,
     pub(crate) welcome_image_shuffle: Option<bool>,
-    /// The `hotkey_*` keys (`hotkeys.rs`). Settings-dialog and file only:
-    /// no CLI flag or environment variable sets a hotkey.
+    /// The `hotkey_*` keys (`hotkeys.rs`), one per [`HotkeyAction`] and
+    /// named by [`HotkeyAction::config_key`]. Settings-dialog and file
+    /// only: no CLI flag or environment variable sets a hotkey.
     pub(crate) hotkey_key_layout: Option<Hotkey>,
     pub(crate) hotkey_keyboard_mode: Option<Hotkey>,
     pub(crate) hotkey_new_machine: Option<Hotkey>,
     pub(crate) hotkey_debugger: Option<Hotkey>,
+    pub(crate) hotkey_load_state_1: Option<Hotkey>,
+    pub(crate) hotkey_load_state_2: Option<Hotkey>,
+    pub(crate) hotkey_load_state_3: Option<Hotkey>,
+    pub(crate) hotkey_load_state_4: Option<Hotkey>,
+    pub(crate) hotkey_load_state_5: Option<Hotkey>,
+    pub(crate) hotkey_save_state_1: Option<Hotkey>,
+    pub(crate) hotkey_save_state_2: Option<Hotkey>,
+    pub(crate) hotkey_save_state_3: Option<Hotkey>,
+    pub(crate) hotkey_save_state_4: Option<Hotkey>,
+    pub(crate) hotkey_save_state_5: Option<Hotkey>,
     pub(crate) manager_sort: Option<ManagerSort>,
 }
 
 impl FileConfig {
     /// The `hotkey_*` keys over [`DEFAULT_HOTKEYS`].
     pub(crate) fn hotkeys(&self) -> Hotkeys {
-        Hotkeys {
-            key_layout: self.hotkey_key_layout.unwrap_or(DEFAULT_HOTKEYS.key_layout),
-            keyboard_mode: self
-                .hotkey_keyboard_mode
-                .unwrap_or(DEFAULT_HOTKEYS.keyboard_mode),
-            new_machine: self
-                .hotkey_new_machine
-                .unwrap_or(DEFAULT_HOTKEYS.new_machine),
-            debugger: self.hotkey_debugger.unwrap_or(DEFAULT_HOTKEYS.debugger),
+        let mut hotkeys = DEFAULT_HOTKEYS;
+        for action in HotkeyAction::all() {
+            if let Some(hotkey) = self.hotkey(action) {
+                hotkeys.set(action, hotkey);
+            }
+        }
+        hotkeys
+    }
+
+    /// `action`'s `hotkey_*` key, `None` when the file leaves it unset.
+    pub(crate) fn hotkey(&self, action: HotkeyAction) -> Option<Hotkey> {
+        match action {
+            HotkeyAction::KeyLayout => self.hotkey_key_layout,
+            HotkeyAction::KeyboardMode => self.hotkey_keyboard_mode,
+            HotkeyAction::NewMachine => self.hotkey_new_machine,
+            HotkeyAction::Debugger => self.hotkey_debugger,
+            HotkeyAction::LoadState(slot) => self.load_state_hotkeys()[slot],
+            HotkeyAction::SaveState(slot) => self.save_state_hotkeys()[slot],
         }
     }
+
+    /// Sets `action`'s `hotkey_*` key; `None` unsets it.
+    pub(crate) fn set_hotkey(&mut self, action: HotkeyAction, hotkey: Option<Hotkey>) {
+        let field = match action {
+            HotkeyAction::KeyLayout => &mut self.hotkey_key_layout,
+            HotkeyAction::KeyboardMode => &mut self.hotkey_keyboard_mode,
+            HotkeyAction::NewMachine => &mut self.hotkey_new_machine,
+            HotkeyAction::Debugger => &mut self.hotkey_debugger,
+            HotkeyAction::LoadState(slot) => nth_field(self.load_state_hotkeys_mut(), slot),
+            HotkeyAction::SaveState(slot) => nth_field(self.save_state_hotkeys_mut(), slot),
+        };
+        *field = hotkey;
+    }
+
+    /// The `hotkey_load_state_<n>` keys, indexed by 0-based slot.
+    fn load_state_hotkeys(&self) -> [Option<Hotkey>; QUICK_SLOTS] {
+        [
+            self.hotkey_load_state_1,
+            self.hotkey_load_state_2,
+            self.hotkey_load_state_3,
+            self.hotkey_load_state_4,
+            self.hotkey_load_state_5,
+        ]
+    }
+
+    /// The `hotkey_save_state_<n>` keys, indexed by 0-based slot.
+    fn save_state_hotkeys(&self) -> [Option<Hotkey>; QUICK_SLOTS] {
+        [
+            self.hotkey_save_state_1,
+            self.hotkey_save_state_2,
+            self.hotkey_save_state_3,
+            self.hotkey_save_state_4,
+            self.hotkey_save_state_5,
+        ]
+    }
+
+    /// [`Self::load_state_hotkeys`], writable.
+    fn load_state_hotkeys_mut(&mut self) -> [&mut Option<Hotkey>; QUICK_SLOTS] {
+        [
+            &mut self.hotkey_load_state_1,
+            &mut self.hotkey_load_state_2,
+            &mut self.hotkey_load_state_3,
+            &mut self.hotkey_load_state_4,
+            &mut self.hotkey_load_state_5,
+        ]
+    }
+
+    /// [`Self::save_state_hotkeys`], writable.
+    fn save_state_hotkeys_mut(&mut self) -> [&mut Option<Hotkey>; QUICK_SLOTS] {
+        [
+            &mut self.hotkey_save_state_1,
+            &mut self.hotkey_save_state_2,
+            &mut self.hotkey_save_state_3,
+            &mut self.hotkey_save_state_4,
+            &mut self.hotkey_save_state_5,
+        ]
+    }
+}
+
+/// `fields[slot]`, moved out of the array of state-hotkey fields.
+fn nth_field(fields: [&mut Option<Hotkey>; QUICK_SLOTS], slot: usize) -> &mut Option<Hotkey> {
+    fields
+        .into_iter()
+        .nth(slot)
+        .expect("quick-state slot within QUICK_SLOTS")
 }
 
 /// Every global parameter, resolved to a concrete value.
@@ -251,15 +337,7 @@ fn default_config_template() -> String {
 # Cmd (Command on macOS, Ctrl on Windows/Linux), Ctrl, Alt, and Shift. A
 # hotkey without Cmd or Ctrl must be a function key from F3 up, so it never
 # types into the machine.
-# show/hide the key layout window
-# hotkey_key_layout = \"{key_layout}\"
-# switch positional/symbolic keyboard mode
-# hotkey_keyboard_mode = \"{keyboard_mode}\"
-# create a new machine (manager window)
-# hotkey_new_machine = \"{new_machine}\"
-# open/close the debugger (debug-ui builds)
-# hotkey_debugger = \"{debugger}\"
-
+{hotkeys}
 # created-desc | created-asc | name-asc | name-desc
 # manager_sort = \"{manager_sort}\"
 ",
@@ -270,12 +348,25 @@ fn default_config_template() -> String {
         welcome_image_cycle = DEFAULT_WELCOME_IMAGE_CYCLE,
         welcome_image_cycle_secs = DEFAULT_WELCOME_IMAGE_CYCLE_SECS,
         welcome_image_shuffle = DEFAULT_WELCOME_IMAGE_SHUFFLE,
-        key_layout = DEFAULT_HOTKEYS.key_layout,
-        keyboard_mode = DEFAULT_HOTKEYS.keyboard_mode,
-        new_machine = DEFAULT_HOTKEYS.new_machine,
-        debugger = DEFAULT_HOTKEYS.debugger,
+        hotkeys = hotkey_template_lines(),
         manager_sort = manager_sort_name(DEFAULT_MANAGER_SORT),
     )
+}
+
+/// The template's hotkey block: a description comment and a commented-out
+/// `hotkey_* = "<default>"` line per [`HotkeyAction`], in [`HotkeyAction::all`]
+/// order.
+fn hotkey_template_lines() -> String {
+    HotkeyAction::all()
+        .map(|action| {
+            format!(
+                "# {}\n# {} = \"{}\"\n",
+                action.description(),
+                action.config_key(),
+                DEFAULT_HOTKEYS.get(action)
+            )
+        })
+        .collect()
 }
 
 /// Writes [`default_config_template`] to `path` the first time cocovm starts
@@ -342,14 +433,9 @@ pub(crate) fn save_file(path: &Path, file: &FileConfig) -> Result<(), String> {
         "welcome_image_shuffle",
         file.welcome_image_shuffle,
     );
-    let hotkey_keys = [
-        ("hotkey_key_layout", file.hotkey_key_layout),
-        ("hotkey_keyboard_mode", file.hotkey_keyboard_mode),
-        ("hotkey_new_machine", file.hotkey_new_machine),
-        ("hotkey_debugger", file.hotkey_debugger),
-    ];
-    for (key, hotkey) in hotkey_keys {
-        set_or_remove(&mut doc, key, hotkey.map(|h| h.to_string()));
+    for action in HotkeyAction::all() {
+        let hotkey = file.hotkey(action).map(|h| h.to_string());
+        set_or_remove(&mut doc, &action.config_key(), hotkey);
     }
     set_or_remove(
         &mut doc,

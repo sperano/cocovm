@@ -18,13 +18,13 @@ fn minutes_from_now(minutes: i64) -> std::time::SystemTime {
     (now() + chrono::Duration::minutes(minutes)).into()
 }
 
-/// Ten states named State 1 to State 10, none called a slot.
+/// Five states named State 1 to State 5, none called a slot.
 #[test]
-fn there_are_ten_states_named_state_1_to_10() {
-    assert_eq!(QUICK_SLOTS, 10);
+fn there_are_five_states_named_state_1_to_5() {
+    assert_eq!(QUICK_SLOTS, 5);
     let names: Vec<String> = (0..QUICK_SLOTS).map(state_name).collect();
     assert_eq!(names.first().map(String::as_str), Some("State 1"));
-    assert_eq!(names.last().map(String::as_str), Some("State 10"));
+    assert_eq!(names.last().map(String::as_str), Some("State 5"));
     for (slot, name) in names.iter().enumerate() {
         assert_eq!(*name, format!("State {}", slot + 1));
     }
@@ -37,11 +37,11 @@ fn state_row_labels_describe_each_state() {
     let today = state_row_label(0, StateFile::Saved(Some(minutes_from_now(-5))), now());
     assert_eq!(today, "State 1 — saved 22:40");
     let older = state_row_label(
-        9,
+        4,
         StateFile::Saved(Some(minutes_from_now(-2 * 24 * 60))),
         now(),
     );
-    assert_eq!(older, "State 10 — saved 2026-10-05 22:45");
+    assert_eq!(older, "State 5 — saved 2026-10-05 22:45");
     assert_eq!(
         state_row_label(1, StateFile::Empty, now()),
         "State 2 — Empty"
@@ -52,34 +52,26 @@ fn state_row_labels_describe_each_state() {
     );
 }
 
-/// Only States 1 to 3 have numbered chords; 4 to 10 leave the keys free.
+/// The keyboard-help line names every state's load chord, then every
+/// save chord, as the current bindings spell them.
 #[test]
-fn only_states_1_to_3_have_shortcuts() {
-    for slot in 0..QUICK_SLOTS {
-        let chorded = slot < 3;
-        assert_eq!(
-            load_slot_shortcut(slot).is_some(),
-            chorded,
-            "load, slot {slot}"
-        );
-        assert_eq!(
-            save_slot_shortcut(slot).is_some(),
-            chorded,
-            "save, slot {slot}"
-        );
-    }
-    let cmd_shift = egui::Modifiers::COMMAND.plus(egui::Modifiers::SHIFT);
+fn the_shortcuts_hint_names_every_state_chord() {
+    let ctx = egui::Context::default();
+    let mut hotkeys = crate::hotkeys::DEFAULT_HOTKEYS;
+    hotkeys.load_state[4] = "Cmd+Alt+F5".parse().expect("valid hotkey");
+    let hint = slot_shortcuts_hint(&ctx, &hotkeys);
+    let name = |hotkey: crate::hotkeys::Hotkey| ctx.format_shortcut(&hotkey.shortcut());
+    let loads: Vec<String> = hotkeys.load_state.iter().copied().map(name).collect();
+    let saves: Vec<String> = hotkeys.save_state.iter().copied().map(name).collect();
     assert_eq!(
-        save_slot_shortcut(0),
-        Some(egui::KeyboardShortcut::new(cmd_shift, egui::Key::Num1))
+        hint,
+        format!(
+            "{}: quick-load State 1 to 5   ·   {}: quick-save",
+            loads.join(" / "),
+            saves.join(" / ")
+        )
     );
-    assert_eq!(
-        load_slot_shortcut(2),
-        Some(egui::KeyboardShortcut::new(
-            egui::Modifiers::COMMAND,
-            egui::Key::Num3
-        ))
-    );
+    assert!(hint.contains(&name(hotkeys.load_state[4])), "{hint}");
 }
 
 /// Only a missing file is empty: any file there, even an unloadable one,

@@ -1,13 +1,14 @@
 //! The VM toolbar's quick-state group (`chrome/toolbar/quick_states.rs`)
-//! and the quick actions it shares with the numbered chords
-//! (`save_state/quick.rs`): Load gated on the state file existing, the
-//! per-window selection, the collapsed and hidden layouts, and the
-//! empty-state chord. Every test points the window at its own scratch
+//! and the quick actions it shares with the state chords
+//! (`save_state/quick.rs`, bound in `hotkeys.rs`): Load gated on the state
+//! file existing, the per-window selection, the collapsed and hidden
+//! layouts, the empty-state chord, and the chords following rebinding. Every test points the window at its own scratch
 //! quick-state directory, never the user's.
 
 use egui_kittest::kittest::{NodeT, Queryable};
 
 use crate::chrome::toolbar::quick_states::{SHARED_NOTE, STATES_LABEL};
+use crate::hotkeys::Hotkey;
 use crate::machine_def::tests::TempDir;
 use crate::*;
 
@@ -93,7 +94,7 @@ fn a_corrupt_state_reports_an_error() {
     assert_eq!(harness.state().selected_quick_state, 0);
 }
 
-/// The selector lists all ten states plus the shared-storage note, and
+/// The selector lists all five states plus the shared-storage note, and
 /// picking a row (even an empty one) only retargets Save and Load.
 #[test]
 fn the_selector_only_changes_the_target() {
@@ -156,6 +157,48 @@ fn quick_actions_select_their_state_only_on_success() {
         2,
         "failure keeps State 3"
     );
+}
+
+/// Every state has its chords, the last one included: ⇧⌘5 saves State 5
+/// and ⌘5 loads it back.
+#[test]
+fn the_last_state_has_save_and_load_chords() {
+    let dir = TempDir::new("quick-last-state-chords");
+    let mut harness = harness_with_states(&dir);
+    let last = save_state::QUICK_SLOTS;
+    assert_eq!(last, 5, "the chords below press the 5 key");
+
+    let cmd_shift = egui::Modifiers::COMMAND.plus(egui::Modifiers::SHIFT);
+    harness.key_press_modifiers(cmd_shift, egui::Key::Num5);
+    harness.step();
+    assert!(state_path(&dir, last).is_file(), "State 5 was saved");
+    assert_eq!(toast(&mut harness).as_deref(), Some("Saved State 5"));
+
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Num5);
+    harness.step();
+    assert!(harness.state().cart_error.is_none());
+    assert_eq!(toast(&mut harness).as_deref(), Some("Loaded State 5"));
+    assert_eq!(harness.state().selected_quick_state, last - 1);
+}
+
+/// The chords follow the bindings the manager hands the window: once Load
+/// State 1 is rebound, ⌘1 is inert and the new chord loads instead.
+#[test]
+fn state_chords_follow_rebound_hotkeys() {
+    let dir = TempDir::new("quick-rebound-chord");
+    let mut harness = harness_with_states(&dir);
+    let rebound: Hotkey = "Cmd+Alt+F5".parse().expect("valid hotkey");
+    harness.state_mut().hotkeys.load_state[0] = rebound;
+    harness.step();
+
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Num1);
+    harness.step();
+    assert!(toast(&mut harness).is_none(), "⌘1 is no longer bound");
+
+    let cmd_alt = egui::Modifiers::COMMAND.plus(egui::Modifiers::ALT);
+    harness.key_press_modifiers(cmd_alt, egui::Key::F5);
+    harness.step();
+    assert_eq!(toast(&mut harness).as_deref(), Some("State 1 is empty"));
 }
 
 /// Suspended disables both actions; a debugger pause does not.

@@ -1,16 +1,16 @@
 //! Rebindable UI hotkeys: the key-layout window (F10), the keyboard-mode
-//! toggle (F12), New machine (⌘N), and the debugger (⌘D). Each one is a
-//! `hotkey_*` key in `config.toml` (`config.rs`), edited in the Settings
-//! dialog (`manager/settings/hotkeys.rs`), and pushed into every VM window
-//! each frame (`manager/vm_windows.rs`), like `toolbar_icons_only`.
-//!
-//! The quick-save/quick-load state chords (`save_state/quick.rs`) are a numbered
-//! family rather than single actions, so they stay fixed and are
-//! [`reserved`] here instead.
+//! toggle (F12), New machine (⌘N), the debugger (⌘D), and the quick-load
+//! (⌘1 to ⌘5) and quick-save (⇧⌘1 to ⇧⌘5) chords of the five quick states
+//! (`save_state/quick.rs`). Each one is a `hotkey_*` key in `config.toml`
+//! (`config.rs`), edited in the Settings dialog
+//! (`manager/settings/hotkeys.rs`), and pushed into every VM window each
+//! frame (`manager/vm_windows.rs`), like `toolbar_icons_only`.
 
 use std::fmt;
 
 use eframe::egui;
+
+use crate::save_state::{QUICK_SLOTS, state_name};
 
 /// `Cmd` in `config.toml`: egui's [`egui::Modifiers::COMMAND`], ⌘ on macOS
 /// and Ctrl on Windows/Linux.
@@ -30,6 +30,18 @@ const SEPARATOR: char = '+';
 /// Whether the Control key is distinct from COMMAND on this platform.
 const SEPARATE_CTRL: bool = cfg!(target_os = "macos");
 
+/// `config.toml` key prefix shared by every hotkey (`hotkey_key_layout`).
+const CONFIG_KEY_PREFIX: &str = "hotkey_";
+
+/// Digit keys of the default quick-state chords, State 1 to State 5.
+const STATE_KEYS: [egui::Key; QUICK_SLOTS] = [
+    egui::Key::Num1,
+    egui::Key::Num2,
+    egui::Key::Num3,
+    egui::Key::Num4,
+    egui::Key::Num5,
+];
+
 /// One hotkey: a logical key plus the modifiers held with it. The
 /// modifiers are normalized ([`normalize`]), so two `Hotkey`s are equal
 /// exactly when they fire on the same key press.
@@ -41,23 +53,12 @@ pub(crate) struct Hotkey {
 }
 
 /// Shortcuts the app binds outside this module, which no hotkey may take:
-/// the quick-load/quick-save chords of States 1-3 (`save_state/quick.rs`), the manager list's
-/// select-all (`manager/list.rs`), and the clipboard chords egui turns
-/// into copy/cut/paste events.
+/// the manager list's select-all (`manager/list.rs`), and the clipboard
+/// chords egui turns into copy/cut/paste events.
 pub(crate) fn reserved() -> impl Iterator<Item = egui::KeyboardShortcut> {
-    let slots = (0..crate::save_state::QUICK_SLOTS).flat_map(|slot| {
-        [
-            crate::save_state::load_slot_shortcut(slot),
-            crate::save_state::save_slot_shortcut(slot),
-        ]
-        .into_iter()
-        .flatten()
-    });
     let clipboard = [egui::Key::C, egui::Key::X, egui::Key::V]
         .map(|key| egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, key));
-    slots
-        .chain([crate::manager::list::SELECT_ALL_SHORTCUT])
-        .chain(clipboard)
+    std::iter::once(crate::manager::list::SELECT_ALL_SHORTCUT).chain(clipboard)
 }
 
 /// Folds a pressed key's modifiers into the form [`Hotkey`] stores: the
@@ -75,18 +76,42 @@ fn normalize(mods: egui::Modifiers) -> egui::Modifiers {
     }
 }
 
+/// A letter or digit key (`A` to `Z`, `0` to `9`): the keys whose
+/// [`egui::Key::name`] is the single character on the key cap.
+fn is_alphanumeric(key: egui::Key) -> bool {
+    let name = key.name().as_bytes();
+    name.len() == 1 && name[0].is_ascii_alphanumeric()
+}
+
+/// The key a press names, for matching and for the Settings capture. The
+/// logical key, except when the layout turned a letter or digit key into
+/// punctuation: egui-winit reports Shift+1 on a US layout as `!` with `1`
+/// as the physical key, and that press is still ⇧⌘1. Letters stay logical
+/// on purpose, so a Dvorak N is the N key wherever it sits.
+fn pressed_key(key: egui::Key, physical_key: Option<egui::Key>) -> egui::Key {
+    match physical_key {
+        Some(physical) if !is_alphanumeric(key) && is_alphanumeric(physical) => physical,
+        _ => key,
+    }
+}
+
 impl Hotkey {
     /// A built-in default. Not validated: callers pass known-good bindings.
     pub(crate) const fn new(modifiers: egui::Modifiers, key: egui::Key) -> Self {
         Self { modifiers, key }
     }
 
-    /// The hotkey for a key pressed with `mods`, if it is one a hotkey may
-    /// use ([`Hotkey::validate`]). The Settings dialog's capture path.
-    pub(crate) fn from_press(key: egui::Key, mods: egui::Modifiers) -> Result<Self, String> {
+    /// The hotkey for a press of `key` (physically `physical_key`) with
+    /// `mods`, if it is one a hotkey may use ([`Hotkey::validate`]). The
+    /// Settings dialog's capture path; names the key like [`pressed_key`].
+    pub(crate) fn from_press(
+        key: egui::Key,
+        physical_key: Option<egui::Key>,
+        mods: egui::Modifiers,
+    ) -> Result<Self, String> {
         let hotkey = Self {
             modifiers: normalize(mods),
-            key,
+            key: pressed_key(key, physical_key),
         };
         hotkey.validate()?;
         Ok(hotkey)
@@ -98,10 +123,15 @@ impl Hotkey {
         egui::KeyboardShortcut::new(self.modifiers, self.key)
     }
 
-    /// Whether a press of `key` with `mods` is this hotkey. Exact: Shift+F10
-    /// does not fire an F10 hotkey.
-    pub(crate) fn matches(self, key: egui::Key, mods: egui::Modifiers) -> bool {
-        key == self.key && normalize(mods) == self.modifiers
+    /// Whether a press of `key` (physically `physical_key`) with `mods` is
+    /// this hotkey. Exact: Shift+F10 does not fire an F10 hotkey.
+    pub(crate) fn matches(
+        self,
+        key: egui::Key,
+        physical_key: Option<egui::Key>,
+        mods: egui::Modifiers,
+    ) -> bool {
+        pressed_key(key, physical_key) == self.key && normalize(mods) == self.modifiers
     }
 
     /// Removes every press of this hotkey (key repeats included) from
@@ -112,11 +142,11 @@ impl Hotkey {
         input.events.retain(|event| match event {
             egui::Event::Key {
                 key,
+                physical_key,
                 modifiers,
                 pressed: true,
                 repeat,
-                ..
-            } if self.matches(*key, *modifiers) => {
+            } if self.matches(*key, *physical_key, *modifiers) => {
                 fresh |= !repeat;
                 false
             }
@@ -252,37 +282,75 @@ pub(crate) enum HotkeyAction {
     NewMachine,
     /// Open/close the debugger (`debugger.rs`, `debug-ui` builds only).
     Debugger,
+    /// Quick-load the quick state with this 0-based slot
+    /// (`save_state/quick.rs`).
+    LoadState(usize),
+    /// Quick-save to the quick state with this 0-based slot.
+    SaveState(usize),
 }
 
 impl HotkeyAction {
-    /// Every action, for clash checks: a build without the debugger still
-    /// keeps its binding free, so the file it saves loads in a `debug-ui`
-    /// build too.
-    const ALL: [Self; 4] = [
+    /// The single actions, in Settings-dialog order; the quick-state
+    /// chords follow them in [`Self::all`].
+    const SINGLE: [Self; 4] = [
         Self::KeyLayout,
         Self::KeyboardMode,
         Self::NewMachine,
         Self::Debugger,
     ];
+
+    /// Every action, in Settings-dialog and `config.toml` order: the
+    /// single actions, then Load State 1 to 5, then Save State 1 to 5. For
+    /// clash checks too: a build without the debugger still keeps its
+    /// binding free, so the file it saves loads in a `debug-ui` build.
+    pub(crate) fn all() -> impl Iterator<Item = Self> {
+        let loads = (0..QUICK_SLOTS).map(Self::LoadState);
+        let saves = (0..QUICK_SLOTS).map(Self::SaveState);
+        Self::SINGLE.into_iter().chain(loads).chain(saves)
+    }
 
     /// Every action this build acts on, in Settings-dialog order. The
     /// debugger exists only with the `debug-ui` feature; its `config.toml`
     /// key still parses without it, so one file serves every build.
-    pub(crate) const ACTIVE: &[Self] = &[
-        Self::KeyLayout,
-        Self::KeyboardMode,
-        Self::NewMachine,
-        #[cfg(feature = "debug-ui")]
-        Self::Debugger,
-    ];
+    pub(crate) fn active() -> impl Iterator<Item = Self> {
+        Self::all().filter(|action| cfg!(feature = "debug-ui") || *action != Self::Debugger)
+    }
 
     /// The Settings dialog's row label.
-    pub(crate) fn label(self) -> &'static str {
+    pub(crate) fn label(self) -> String {
         match self {
-            Self::KeyLayout => "Key layout window",
-            Self::KeyboardMode => "Keyboard mode",
-            Self::NewMachine => "New machine",
-            Self::Debugger => "Debugger",
+            Self::KeyLayout => "Key layout window".to_string(),
+            Self::KeyboardMode => "Keyboard mode".to_string(),
+            Self::NewMachine => "New machine".to_string(),
+            Self::Debugger => "Debugger".to_string(),
+            Self::LoadState(slot) => format!("Load {}", state_name(slot)),
+            Self::SaveState(slot) => format!("Save {}", state_name(slot)),
+        }
+    }
+
+    /// This action's `config.toml` key: `hotkey_key_layout`,
+    /// `hotkey_load_state_1` (1-based, like the state's name).
+    pub(crate) fn config_key(self) -> String {
+        let suffix = match self {
+            Self::KeyLayout => "key_layout".to_string(),
+            Self::KeyboardMode => "keyboard_mode".to_string(),
+            Self::NewMachine => "new_machine".to_string(),
+            Self::Debugger => "debugger".to_string(),
+            Self::LoadState(slot) => format!("load_state_{}", slot + 1),
+            Self::SaveState(slot) => format!("save_state_{}", slot + 1),
+        };
+        format!("{CONFIG_KEY_PREFIX}{suffix}")
+    }
+
+    /// One-line description for the `config.toml` template's comment.
+    pub(crate) fn description(self) -> String {
+        match self {
+            Self::KeyLayout => "show/hide the key layout window".to_string(),
+            Self::KeyboardMode => "switch positional/symbolic keyboard mode".to_string(),
+            Self::NewMachine => "create a new machine (manager window)".to_string(),
+            Self::Debugger => "open/close the debugger (debug-ui builds)".to_string(),
+            Self::LoadState(slot) => format!("quick-load {}", state_name(slot)),
+            Self::SaveState(slot) => format!("quick-save to {}", state_name(slot)),
         }
     }
 }
@@ -294,14 +362,32 @@ pub(crate) struct Hotkeys {
     pub(crate) keyboard_mode: Hotkey,
     pub(crate) new_machine: Hotkey,
     pub(crate) debugger: Hotkey,
+    /// Quick-load chords, indexed by 0-based state slot.
+    pub(crate) load_state: [Hotkey; QUICK_SLOTS],
+    /// Quick-save chords, indexed by 0-based state slot.
+    pub(crate) save_state: [Hotkey; QUICK_SLOTS],
 }
 
-/// The built-in bindings: F10, F12, ⌘N, ⌘D.
+/// [`STATE_KEYS`] each under `modifiers`, for the default state chords.
+const fn state_hotkeys(modifiers: egui::Modifiers) -> [Hotkey; QUICK_SLOTS] {
+    let mut hotkeys = [Hotkey::new(modifiers, STATE_KEYS[0]); QUICK_SLOTS];
+    let mut slot = 0;
+    while slot < QUICK_SLOTS {
+        hotkeys[slot] = Hotkey::new(modifiers, STATE_KEYS[slot]);
+        slot += 1;
+    }
+    hotkeys
+}
+
+/// The built-in bindings: F10, F12, ⌘N, ⌘D, ⌘1 to ⌘5 to load a state and
+/// ⇧⌘1 to ⇧⌘5 to save one.
 pub(crate) const DEFAULT_HOTKEYS: Hotkeys = Hotkeys {
     key_layout: Hotkey::new(egui::Modifiers::NONE, egui::Key::F10),
     keyboard_mode: Hotkey::new(egui::Modifiers::NONE, egui::Key::F12),
     new_machine: Hotkey::new(egui::Modifiers::COMMAND, egui::Key::N),
     debugger: Hotkey::new(egui::Modifiers::COMMAND, egui::Key::D),
+    load_state: state_hotkeys(egui::Modifiers::COMMAND),
+    save_state: state_hotkeys(egui::Modifiers::COMMAND.plus(egui::Modifiers::SHIFT)),
 };
 
 impl Default for Hotkeys {
@@ -312,41 +398,43 @@ impl Default for Hotkeys {
 
 impl Hotkeys {
     pub(crate) fn get(&self, action: HotkeyAction) -> Hotkey {
-        *self.slot(action)
+        *self.binding(action)
     }
 
     pub(crate) fn set(&mut self, action: HotkeyAction, hotkey: Hotkey) {
-        *self.slot_mut(action) = hotkey;
+        *self.binding_mut(action) = hotkey;
     }
 
-    fn slot(&self, action: HotkeyAction) -> &Hotkey {
+    fn binding(&self, action: HotkeyAction) -> &Hotkey {
         match action {
             HotkeyAction::KeyLayout => &self.key_layout,
             HotkeyAction::KeyboardMode => &self.keyboard_mode,
             HotkeyAction::NewMachine => &self.new_machine,
             HotkeyAction::Debugger => &self.debugger,
+            HotkeyAction::LoadState(slot) => &self.load_state[slot],
+            HotkeyAction::SaveState(slot) => &self.save_state[slot],
         }
     }
 
-    fn slot_mut(&mut self, action: HotkeyAction) -> &mut Hotkey {
+    fn binding_mut(&mut self, action: HotkeyAction) -> &mut Hotkey {
         match action {
             HotkeyAction::KeyLayout => &mut self.key_layout,
             HotkeyAction::KeyboardMode => &mut self.keyboard_mode,
             HotkeyAction::NewMachine => &mut self.new_machine,
             HotkeyAction::Debugger => &mut self.debugger,
+            HotkeyAction::LoadState(slot) => &mut self.load_state[slot],
+            HotkeyAction::SaveState(slot) => &mut self.save_state[slot],
         }
     }
 
     /// The action other than `action` already bound to `hotkey`.
     pub(crate) fn holder(&self, hotkey: Hotkey, action: HotkeyAction) -> Option<HotkeyAction> {
-        HotkeyAction::ALL
-            .into_iter()
-            .find(|other| *other != action && self.get(*other) == hotkey)
+        HotkeyAction::all().find(|other| *other != action && self.get(*other) == hotkey)
     }
 
     /// `Err` naming the first two actions that share a binding.
     pub(crate) fn check_distinct(&self) -> Result<(), String> {
-        for action in HotkeyAction::ALL {
+        for action in HotkeyAction::all() {
             let hotkey = self.get(action);
             if let Some(other) = self.holder(hotkey, action) {
                 return Err(format!(

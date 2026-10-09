@@ -1,9 +1,9 @@
 //! Frontend save-state UX: the quick states (`quick.rs`) with their toolbar
-//! controls and keyboard chords, state files anywhere on disk (`file.rs`),
-//! the machine-type prompt in front of user-requested loads
-//! (`load_request.rs`), and the status-bar toast — all
-//! built on top of the engine in [`coco_core::snapshot`], which this module
-//! is the only caller of.
+//! controls and rebindable chords (`hotkeys.rs`), state files anywhere on
+//! disk (`file.rs`), the machine-type prompt in front of user-requested
+//! loads (`load_request.rs`), and the status-bar toast — all built on top
+//! of the engine in [`coco_core::snapshot`], which this module is the only
+//! caller of.
 //!
 //! [`CocoApp::save_state_to`]/[`CocoApp::load_state_from`] are the
 //! unprompted entry points (suspend and resume); [`CocoApp::request_load`]
@@ -31,8 +31,7 @@ pub(crate) use load_request::PendingLoad;
 #[cfg(test)]
 pub(crate) use load_request::{CANCEL, LOAD_ANYWAY, LoadSource};
 pub(crate) use quick::{
-    QUICK_SLOTS, StateFile, default_quick_state_dir, load_slot_shortcut, save_slot_shortcut,
-    saved_time, slot_shortcuts_hint, state_name,
+    QUICK_SLOTS, StateFile, default_quick_state_dir, saved_time, slot_shortcuts_hint, state_name,
 };
 #[cfg(test)]
 pub(crate) use save::DRIVEWIRE_HOST_BUSY;

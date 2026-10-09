@@ -21,14 +21,15 @@ fn take_first_press_takes_only_the_first_fresh_press() {
         key_event(egui::Key::F9, true, false),
         key_event(egui::Key::F11, true, false),
     ];
-    assert_eq!(
-        take_first_press(&mut input),
-        Some((egui::Key::F9, egui::Modifiers::SHIFT))
-    );
+    let press = |key| {
+        Some(Press {
+            key,
+            physical_key: None,
+            modifiers: egui::Modifiers::SHIFT,
+        })
+    };
+    assert_eq!(take_first_press(&mut input), press(egui::Key::F9));
     assert_eq!(input.events.len(), 3);
-    assert_eq!(
-        take_first_press(&mut input),
-        Some((egui::Key::F11, egui::Modifiers::SHIFT))
-    );
+    assert_eq!(take_first_press(&mut input), press(egui::Key::F11));
     assert_eq!(take_first_press(&mut input), None);
 }
