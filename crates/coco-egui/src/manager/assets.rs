@@ -31,7 +31,7 @@ const BUTTON_RADIUS: u8 = 6;
 const PRIMARY_FILL: egui::Color32 = egui::Color32::from_rgb(11, 99, 206);
 const SECONDARY_DARK: egui::Color32 = egui::Color32::from_rgb(180, 180, 180);
 const SECONDARY_LIGHT: egui::Color32 = egui::Color32::from_rgb(96, 96, 96);
-const ICON_BYTES: &[u8] = include_bytes!("../../assets/coco3-console-8bit.png");
+const ICON_BYTES: &[u8] = include_bytes!("../../assets/cocovm-icon.png");
 
 /// What one dialog frame resolved to.
 pub(super) enum Verdict {

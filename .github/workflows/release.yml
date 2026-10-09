@@ -134,8 +134,11 @@ jobs:
           cp "$BIN" "$APP/Contents/MacOS/cocovm"
 
           # Finder icon from the same art the app embeds for its Dock icon.
-          # Guarded so dispatch against a tag predating the asset still works.
-          ICON_SRC=crates/coco-egui/assets/coco3-console-8bit.png
+          # Older tags retain their original artwork; pre-icon tags skip it.
+          ICON_SRC=crates/coco-egui/assets/cocovm-icon.png
+          if [ ! -f "$ICON_SRC" ]; then
+            ICON_SRC=crates/coco-egui/assets/coco3-console-8bit.png
+          fi
           if [ -f "$ICON_SRC" ]; then
             ICONSET="$RUNNER_TEMP/cocovm.iconset"
             mkdir "$ICONSET"

@@ -9,8 +9,8 @@ const TITLE_SIZE: f32 = 30.0;
 const DETAIL_SIZE: f32 = 12.0;
 const TEXT_GAP: f32 = 6.0;
 const SECTION_GAP: f32 = 16.0;
-const ICON_BYTES: &[u8] = include_bytes!("../assets/coco3-console-8bit.png");
-const ICON_CACHE_ID: &str = "about_console_icon";
+const ICON_BYTES: &[u8] = include_bytes!("../assets/cocovm-icon.png");
+const ICON_CACHE_ID: &str = "about_cocovm_icon";
 const GITHUB_URL: &str = "https://github.com/sperano/cocovm";
 
 /// Draw the About window. `open` is toggled by the window's close box.
@@ -60,7 +60,7 @@ fn icon_texture(ctx: &egui::Context) -> egui::TextureHandle {
     let icon = ctx.load_texture(
         ICON_CACHE_ID,
         egui::ColorImage::from_rgba_unmultiplied(size, image.as_raw()),
-        egui::TextureOptions::NEAREST,
+        egui::TextureOptions::LINEAR,
     );
     ctx.data_mut(|data| data.insert_temp(id, icon.clone()));
     icon

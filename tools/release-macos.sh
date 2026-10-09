@@ -87,7 +87,7 @@ cp "$BIN" "$APP/Contents/MacOS/cocovm"
 
 # Finder icon: .icns generated from the same 1024px art the running app
 # embeds for its Dock icon, so the two remain consistent.
-ICON_SRC=crates/coco-egui/assets/coco3-console-8bit.png
+ICON_SRC=crates/coco-egui/assets/cocovm-icon.png
 ICONSET="$WORK/cocovm.iconset"
 mkdir "$ICONSET"
 for s in 16 32 128 256 512; do
