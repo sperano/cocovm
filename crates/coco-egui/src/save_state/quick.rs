@@ -8,7 +8,7 @@ use std::time::SystemTime;
 
 use eframe::egui;
 
-use crate::hotkeys::Hotkeys;
+use crate::hotkeys::{Hotkey, Hotkeys};
 use crate::{CocoApp, paths};
 
 use super::load_request::LoadSource;
@@ -30,7 +30,7 @@ const NO_DATA_DIR: &str = "no data directory found for quick states";
 /// `hotkeys`, state by state, formatted per-platform using
 /// [`egui::Context::format_shortcut`].
 pub(crate) fn slot_shortcuts_hint(ctx: &egui::Context, hotkeys: &Hotkeys) -> String {
-    let format = |chords: &[crate::hotkeys::Hotkey]| {
+    let format = |chords: &[Hotkey]| {
         chords
             .iter()
             .map(|hotkey| ctx.format_shortcut(&hotkey.shortcut()))
