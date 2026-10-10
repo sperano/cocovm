@@ -34,6 +34,7 @@ pub use channel::{
     ChannelInfo,
 };
 pub use image::DWImage;
+pub mod share;
 mod transfer;
 
 use channel::Channels;
@@ -42,6 +43,7 @@ use host::HostCompletion;
 use host::HostExecutor;
 use lifecycle::PendingHost;
 use protocol::State;
+use share::ShareSession;
 
 /// Fixed sector size for DriveWire images: a flat file with sector N at
 /// byte offset `SECTOR_SIZE * N`, no header, no metadata (same convention
@@ -286,6 +288,10 @@ pub struct DWServer {
     pending_host: Option<PendingHost>,
     #[serde(skip)]
     service_completions: VecDeque<HostCompletion>,
+    /// Skipped: open host handles and leases cannot be restored. The
+    /// frontend reinstalls the share table through [`DWServer::set_shares`].
+    #[serde(skip)]
+    shares: ShareSession,
     /// Set on a successful [`opcode::WRITE`]/[`opcode::REWRITE`]; cleared by
     /// [`DWServer::mount`]/[`DWServer::eject`].
     dirty: [bool; DRIVE_COUNT],
@@ -332,6 +338,7 @@ impl DWServer {
             host: HostExecutor::new(),
             pending_host: None,
             service_completions: VecDeque::new(),
+            shares: ShareSession::default(),
             dirty: [false; DRIVE_COUNT],
             reply: VecDeque::new(),
             state: State::Idle,

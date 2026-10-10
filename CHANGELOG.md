@@ -23,6 +23,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   its queued bytes are read. No host service answers on the channels yet;
   the `dw` commands are planned. Hover over a DriveWire status entry to see
   open channels, queued bytes, and dropped bytes.
+- DriveWire host shares. The DriveWire tab's Host shares group names host
+  folders, each read-only or read/write, and saves them as
+  `[[drivewire.shares]]` in the machine definition. Guests cannot leave a
+  share's folder through `..`, absolute paths, or symlinks, and each VM
+  keeps its own current directory and open files. No guest service uses
+  shares yet.
+
+### Changed
+- Two running VMs can no longer mount the same DriveWire disk image. The
+  second VM reports that the image is in use by another running VM, and a
+  snapshot restore leaves that drive empty with a note.
 
 ## [0.7.9] - 2026-10-09
 

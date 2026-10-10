@@ -81,3 +81,32 @@ fn cold_resume_ignores_changed_startup_media_and_restores_saved_drivewire() {
         }
     }
 }
+
+#[test]
+fn cold_resume_keeps_the_saved_shares() {
+    let dir = TempDir::new("resume-dw-shares");
+    let (mut manager, _) = manager_with_disk(dir.path(), true);
+    manager.entries[0].def.drivewire.shares = vec![machine_def::DriveWireShareDTO {
+        name: "games".to_string(),
+        path: dir.path().display().to_string(),
+        access: machine_def::ShareAccessDTO::ReadOnly,
+    }];
+    manager.start_vm(0);
+    manager.suspend_vm(0);
+    manager.entries[0].vm = None;
+
+    manager.resume_vm(0);
+
+    let entry = &manager.entries[0];
+    assert!(entry.launch_error.is_none(), "{:?}", entry.launch_error);
+    let dw = entry
+        .vm
+        .as_ref()
+        .unwrap()
+        .machine
+        .bus
+        .drivewire
+        .as_ref()
+        .unwrap();
+    assert!(dw.share_session().table().get("games").is_some());
+}

@@ -4,6 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use coco_core::MachineConfig;
+use coco_core::drivewire::share::ShareOp;
 
 use super::*;
 use crate::machine_def::{self, tests::TempDir};
@@ -166,4 +167,152 @@ fn a_mode_change_leaves_mounted_drives_untouched() {
     assert!(dw.hdbdos_mode());
     // A remount would have cleared the dirty flag.
     assert!(dw.dirty(0));
+}
+
+fn share(
+    name: &str,
+    root: &Path,
+    access: machine_def::ShareAccessDTO,
+) -> machine_def::DriveWireShareDTO {
+    machine_def::DriveWireShareDTO {
+        name: name.to_string(),
+        path: root.display().to_string(),
+        access,
+    }
+}
+
+fn share_cwd(manager: &ManagerApp, index: usize) -> String {
+    manager.entries[index]
+        .share_status()
+        .expect("share session")
+        .cwd
+}
+
+fn change_dir(manager: &ManagerApp, index: usize, path: &str) {
+    let dw = manager.entries[index]
+        .vm
+        .as_ref()
+        .unwrap()
+        .machine
+        .bus
+        .drivewire
+        .as_ref();
+    dw.unwrap()
+        .share_session()
+        .execute(ShareOp::ChangeDir {
+            path: path.as_bytes().to_vec(),
+        })
+        .unwrap();
+}
+
+#[test]
+fn saved_shares_reach_the_running_vm_and_unrelated_saves_keep_its_session() {
+    let dir = TempDir::new("live-dw-shares");
+    let root = dir.path().join("games");
+    fs::create_dir_all(root.join("sub")).unwrap();
+    let mut manager = running_manager(dir.path(), None);
+    let drivewire = &mut manager.entries[0].def.drivewire;
+    drivewire.enabled = true;
+    drivewire.shares = vec![share("games", &root, machine_def::ShareAccessDTO::ReadOnly)];
+    manager.apply_live_drivewire(0);
+    assert!(manager.entries[0].launch_error.is_none());
+    change_dir(&manager, 0, "games/sub");
+
+    manager.entries[0].def.drivewire.hdbdos_mode = true;
+    manager.apply_live_drivewire(0);
+    assert_eq!(share_cwd(&manager, 0), "/games/sub");
+
+    manager.entries[0].def.drivewire.shares[0].access = machine_def::ShareAccessDTO::ReadWrite;
+    manager.apply_live_drivewire(0);
+    assert_eq!(
+        share_cwd(&manager, 0),
+        "/",
+        "a changed share starts a fresh session"
+    );
+}
+
+#[test]
+fn an_invalid_share_list_is_reported_without_touching_the_session() {
+    let dir = TempDir::new("live-dw-shares-invalid");
+    let mut manager = running_manager(dir.path(), None);
+    let drivewire = &mut manager.entries[0].def.drivewire;
+    drivewire.enabled = true;
+    drivewire.shares = vec![
+        share("games", dir.path(), machine_def::ShareAccessDTO::ReadOnly),
+        share("GAMES", dir.path(), machine_def::ShareAccessDTO::ReadOnly),
+    ];
+    manager.apply_live_drivewire(0);
+    let error = manager.entries[0].launch_error.as_deref().unwrap();
+    assert!(error.contains("used twice"), "{error}");
+}
+
+#[test]
+fn two_running_vms_share_a_root_or_use_their_own() {
+    let dir = TempDir::new("live-dw-two-vms");
+    let common = dir.path().join("common");
+    let private = dir.path().join("private");
+    fs::create_dir_all(common.join("a")).unwrap();
+    fs::create_dir_all(common.join("b")).unwrap();
+    fs::create_dir_all(&private).unwrap();
+    let mut defs = Vec::new();
+    for (name, extra) in [("vm-a", None), ("vm-b", Some(&private))] {
+        let mut def =
+            machine_def::MachineDef::from_config(name.to_string(), None, &MachineConfig::default());
+        def.drivewire.enabled = true;
+        def.drivewire.shares = vec![share(
+            "common",
+            &common,
+            machine_def::ShareAccessDTO::ReadOnly,
+        )];
+        if let Some(root) = extra {
+            def.drivewire
+                .shares
+                .push(share("mine", root, machine_def::ShareAccessDTO::ReadWrite));
+        }
+        defs.push(MachineEntry::new(name.to_string(), def));
+    }
+    let mut manager = ManagerApp::new(
+        None,
+        Some(dir.path().join("machines")),
+        Some(dir.path().join("artifacts")),
+        defs,
+        None,
+    );
+    manager.start_vm(0);
+    manager.start_vm(1);
+
+    change_dir(&manager, 0, "common/a");
+    change_dir(&manager, 1, "common/b");
+    assert_eq!(share_cwd(&manager, 0), "/common/a");
+    assert_eq!(share_cwd(&manager, 1), "/common/b");
+    let table = |index: usize| {
+        let dw = manager.entries[index]
+            .vm
+            .as_ref()
+            .unwrap()
+            .machine
+            .bus
+            .drivewire
+            .as_ref();
+        dw.unwrap().share_session().table().clone()
+    };
+    assert!(table(0).get("mine").is_none());
+    assert!(table(1).get("mine").is_some());
+}
+
+#[test]
+fn a_second_vm_cannot_start_with_an_image_the_first_has_mounted() {
+    let dir = TempDir::new("live-dw-image-conflict");
+    let disk = write_disk(dir.path(), "shared.dsk");
+    let mut manager = running_manager(dir.path(), Some(&disk));
+    let mut def = manager.entries[0].def.clone();
+    def.name = "Second".to_string();
+    manager
+        .entries
+        .push(MachineEntry::new("second".to_string(), def));
+
+    manager.start_vm(1);
+    let error = manager.entries[1].launch_error.as_deref().unwrap();
+    assert!(error.contains("in use by another running VM"), "{error}");
+    assert!(manager.entries[1].vm.is_none());
 }

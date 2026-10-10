@@ -29,12 +29,14 @@ use crate::paths;
 mod dto;
 mod io;
 mod peripherals_dto;
+mod share_dto;
 
 pub use dto::{
     DriveWireDTO, HardwareDTO, HiResInterfaceDTO, JoySourceDTO, KbModeDTO, MediaDTO, PortsDTO,
     SerialDTO, StatsDTO, UIDTO,
 };
 pub use peripherals_dto::{CartridgeDTO, DosRom, PeripheralsDTO, RS232EndpointDTO, SlotDTO};
+pub use share_dto::{DriveWireShareDTO, ShareAccessDTO};
 // Only tests build definitions with an explicit display DTO so far —
 // production writers go through `HardwareDTO::from_config`.
 #[cfg(test)]
@@ -130,7 +132,7 @@ impl MachineDef {
         if self.drivewire.enabled && self.peripherals.cartridge.contains_games_master() {
             return Err(DRIVEWIRE_GMC_CONFLICT.to_string());
         }
-        Ok(())
+        self.drivewire.validate_shares()
     }
 
     /// The display device this definition asks for: `[hardware].display`,

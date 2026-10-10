@@ -86,6 +86,9 @@ pub(crate) fn remap_definition_paths(def: &mut MachineDef, old_dir: &Path, new_d
     remap_optional_string(&mut def.drivewire.disk1, old_dir, new_dir);
     remap_optional_string(&mut def.drivewire.disk2, old_dir, new_dir);
     remap_optional_string(&mut def.drivewire.disk3, old_dir, new_dir);
+    for share in &mut def.drivewire.shares {
+        remap_string(&mut share.path, old_dir, new_dir);
+    }
     remap_cartridge_dto(&mut def.peripherals.cartridge, old_dir, new_dir);
 }
 
@@ -118,6 +121,7 @@ impl CocoApp {
         for path in &mut self.dw_paths {
             remap_optional_path(path, old_dir, new_dir);
         }
+        self.remap_drivewire_shares(old_dir, new_dir);
         remap_optional_path(&mut self.tape_path, old_dir, new_dir);
         remap_optional_path(&mut self.print_capture_path, old_dir, new_dir);
         remap_optional_path(&mut self.rs232_eprom_path, old_dir, new_dir);
@@ -128,6 +132,18 @@ impl CocoApp {
         }
         if let ROMSource::File(path) = &mut self.rom_source {
             remap_path(path, old_dir, new_dir);
+        }
+    }
+
+    /// Shares rooted in the moved artifact directory follow it. A changed
+    /// table starts a fresh share session.
+    fn remap_drivewire_shares(&mut self, old_dir: &Path, new_dir: &Path) {
+        let mut specs = self.dw_shares.shares().to_vec();
+        for spec in &mut specs {
+            remap_path(&mut spec.root, old_dir, new_dir);
+        }
+        if let Ok(table) = coco_core::drivewire::share::ShareTable::new(specs) {
+            self.set_drivewire_shares(table);
         }
     }
 }

@@ -121,7 +121,11 @@ impl ManagerApp {
         if self.entries[index].suspended {
             // Resume restores DriveWire from the snapshot. Startup images may
             // have changed or disappeared since suspension and must not block it.
-            def.drivewire = machine_def::DriveWireDTO::default();
+            // Shares are configuration, not session media, so they carry over.
+            def.drivewire = machine_def::DriveWireDTO {
+                shares: std::mem::take(&mut def.drivewire.shares),
+                ..machine_def::DriveWireDTO::default()
+            };
         }
         match crate::launch_machine_with_gamepad(
             &def,
