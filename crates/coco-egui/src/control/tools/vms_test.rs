@@ -105,7 +105,8 @@ fn a_failed_stop_is_an_error_result_carrying_the_message() {
 }
 
 /// One VM in each status, covering a direct-port cartridge, a MultiPak, and
-/// known and unknown media. `tools`' own tests reuse it.
+/// known and unknown media. `tools`' own tests and `control::resources`'
+/// tests reuse it.
 pub(in crate::control) fn sample_vms() -> Vec<VmInfo> {
     let running = VmInfo {
         slug: "vm0".into(),

@@ -13,7 +13,7 @@ use serde_json::{Value, json};
 
 use super::jsonrpc::{INTERNAL_ERROR, INVALID_PARAMS, RpcError};
 use super::protocol::{Action, ControlError, Reply, Request, VmInfo, VmStatus};
-use super::tools::Backend;
+use super::tools::{Backend, UNEXPECTED_REPLY};
 
 /// MCP's error code for a `resources/read` of a URI the server does not
 /// serve (spec: server features → resources → error handling).
@@ -242,10 +242,7 @@ pub fn read(backend: &mut dyn Backend, params: Value) -> Result<Value, RpcError>
             "blob": png_base64,
         }),
         _ => {
-            return Err(RpcError::new(
-                INTERNAL_ERROR,
-                super::tools::UNEXPECTED_REPLY,
-            ));
+            return Err(RpcError::new(INTERNAL_ERROR, UNEXPECTED_REPLY));
         }
     };
     Ok(json!({"contents": [contents]}))
@@ -268,10 +265,7 @@ fn list_vms(backend: &mut dyn Backend) -> Result<Vec<VmInfo>, RpcError> {
     };
     match backend.call(&req) {
         Ok(Reply::Vms(vms)) => Ok(vms),
-        Ok(_) => Err(RpcError::new(
-            INTERNAL_ERROR,
-            super::tools::UNEXPECTED_REPLY,
-        )),
+        Ok(_) => Err(RpcError::new(INTERNAL_ERROR, UNEXPECTED_REPLY)),
         Err(error) => Err(RpcError::new(INTERNAL_ERROR, error.message)),
     }
 }
