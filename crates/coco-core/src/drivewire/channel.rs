@@ -139,7 +139,8 @@ impl Channel {
     }
 
     /// Ends the guest session. Unread guest output stays available to the
-    /// host until the channel opens again; unread host output is discarded.
+    /// host until the channel opens again, when it is discarded and counted
+    /// as dropped; unread host output is discarded.
     fn close(&mut self) {
         self.opens = 0;
         self.hangup = false;
@@ -193,14 +194,17 @@ impl Channels {
         let Some(slot) = self.slot_mut(channel) else {
             return;
         };
+        let mut unread = 0;
         if slot.opens == 0 {
             // Session 0 means "never opened"; skip it if the count wraps.
             slot.session = slot.session.wrapping_add(1).max(1);
             slot.hangup = false;
             slot.to_guest.clear();
+            unread = slot.from_guest.len();
             slot.from_guest.clear();
         }
         slot.opens = slot.opens.saturating_add(1);
+        self.dropped_bytes += unread as u64;
     }
 
     /// `SS.Close`: one guest path closed. A close after the host hangup was

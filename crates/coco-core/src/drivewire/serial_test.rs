@@ -330,6 +330,11 @@ fn reopening_a_channel_invalidates_the_old_handle() {
         Err(ChannelError::Stale)
     );
     assert!(guest.server.channel_receive(new, 1).unwrap().is_empty());
+    assert_eq!(
+        guest.server.channel_diagnostics().dropped_bytes,
+        1,
+        "the unread byte from the old session counts as dropped"
+    );
 }
 
 #[test]
