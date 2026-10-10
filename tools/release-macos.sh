@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Build, sign, notarize, and package cocovm for macOS — the local twin of
-# the macOS steps in .github/workflows/release.yml (keep the two in sync;
-# the workflow embeds its own copy of the Info.plist so it can service
-# tags that predate any given repo file).
+# the macOS steps in .github/workflows/release.yml. Both use the shared
+# packaging/macos/bundle.sh helper to create the application bundle.
 #
 # One-time setup (stores the app-specific password in your login keychain):
 #
@@ -61,42 +60,7 @@ echo "target:     $TARGET"
 
 # --- cocovm.app bundle -----------------------------------------------------
 APP="$WORK/cocovm.app"
-mkdir -p "$APP/Contents/MacOS"
-cat > "$APP/Contents/Info.plist" <<PLIST
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>CFBundleName</key><string>cocovm</string>
-  <key>CFBundleDisplayName</key><string>CoCoVM</string>
-  <key>CFBundleIdentifier</key><string>com.sperano.cocovm</string>
-  <key>CFBundleExecutable</key><string>cocovm</string>
-  <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>$VERSION</string>
-  <key>CFBundleVersion</key><string>$VERSION</string>
-  <key>LSMinimumSystemVersion</key><string>11.0</string>
-  <key>NSHighResolutionCapable</key><true/>
-  <key>LSApplicationCategoryType</key><string>public.app-category.games</string>
-  <key>NSHumanReadableCopyright</key><string>GPL-3.0-or-later</string>
-  <key>CFBundleIconFile</key><string>cocovm</string>
-</dict>
-</plist>
-PLIST
-plutil -lint "$APP/Contents/Info.plist"
-cp "$BIN" "$APP/Contents/MacOS/cocovm"
-
-# Finder icon: .icns generated from the same 1024px art the running app
-# embeds for its Dock icon, so the two remain consistent.
-ICON_SRC=crates/coco-egui/assets/cocovm-icon.png
-ICONSET="$WORK/cocovm.iconset"
-mkdir "$ICONSET"
-for s in 16 32 128 256 512; do
-  sips -z "$s" "$s" "$ICON_SRC" --out "$ICONSET/icon_${s}x${s}.png" > /dev/null
-  sips -z "$((s * 2))" "$((s * 2))" "$ICON_SRC" \
-    --out "$ICONSET/icon_${s}x${s}@2x.png" > /dev/null
-done
-mkdir -p "$APP/Contents/Resources"
-iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/cocovm.icns"
+packaging/macos/bundle.sh "$BIN" "$VERSION" "$APP"
 
 # Hardened runtime + secure timestamp are notarization requirements.
 codesign --force --options runtime --timestamp --sign "$IDENTITY" "$APP"
