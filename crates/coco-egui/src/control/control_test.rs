@@ -14,6 +14,7 @@ use std::time::{Duration, Instant};
 use serde_json::{Value, json};
 
 use super::*;
+use crate::control::ScreenSnapshot;
 
 fn bind() -> ControlServer {
     ControlServer::bind(0, Arc::new(|| {})).expect("bind ephemeral port")
@@ -368,6 +369,58 @@ fn negotiated_protocol_version_gates_structured_output() {
     assert_eq!(status, 200);
     let latest = ("Mcp-Session-Id", headers["mcp-session-id"].as_str());
     assert_eq!(lists_output_schemas(port, &[latest]), Ok(true));
+}
+
+/// A `resources/read` crosses the queue like a `tools/call`: the connection
+/// thread blocks on the [`ReplyHandle`] until the UI side answers.
+#[test]
+fn resources_read_round_trips_through_the_queue() {
+    let server = bind();
+    let session_id = initialize_session(&server, mcp::PROTOCOL_VERSION_2025_06_18);
+    let port = server.port();
+    let client = thread::spawn(move || {
+        let body = json!({
+            "jsonrpc": "2.0",
+            "id": 9,
+            "method": "resources/read",
+            "params": {"uri": "cocovm://vm/coco3/screen.txt"},
+        })
+        .to_string();
+        send(
+            port,
+            "POST",
+            MCP_PATH,
+            &[("Mcp-Session-Id", &session_id)],
+            &body,
+        )
+    });
+
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let incoming = loop {
+        if let Some(incoming) = server.try_recv() {
+            break incoming;
+        }
+        assert!(Instant::now() < deadline, "request wasn't queued");
+        thread::yield_now();
+    };
+    assert_eq!(
+        incoming.request,
+        Request {
+            vm: Some("coco3".into()),
+            action: Action::ScreenText,
+        }
+    );
+    incoming.reply(Response::Ok(Reply::Screen(ScreenSnapshot {
+        lines: vec!["OK".into()],
+        mode: "text".into(),
+        cursor: None,
+    })));
+
+    let (status, _, response) = client.join().unwrap();
+    assert_eq!(status, 200);
+    let response: Value = serde_json::from_str(&response).unwrap();
+    assert_eq!(response["id"], json!(9));
+    assert_eq!(response["result"]["contents"][0]["text"], json!("OK"));
 }
 
 #[test]

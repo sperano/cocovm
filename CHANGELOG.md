@@ -23,6 +23,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   share's folder through `..`, absolute paths, or symlinks, and each VM
   keeps its own current directory and open files. No guest service uses
   shares yet.
+- MCP resources for the screen. The server now offers the `resources`
+  capability: `resources/list` reports `cocovm://vm/<slug>/screen.txt`
+  (the text screen as `text/plain`) and `cocovm://vm/<slug>/screen.png`
+  (the framebuffer as `image/png`) for every VM, and `resources/read`
+  returns them. `resources/templates/list` describes the two URI shapes.
+  Subscriptions and list-change notifications aren't offered, because
+  the server sends no server-to-client stream.
 
 ### Changed
 - Two running VMs can no longer mount the same DriveWire disk image. The
