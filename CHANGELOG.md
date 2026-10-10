@@ -58,6 +58,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - An MCP session no longer expires while one of its requests is still
   running. The 5-minute idle timeout now starts when the response is sent,
   so a long `enter_basic` call doesn't end the client's session.
+- On macOS, the application menu's About item opens CoCoVM's own About
+  window instead of the system's generic panel, and reads "About CoCoVM".
+  It works from a VM window too: the manager comes to the front to show it.
+  The manager's Help tile, which held only that item, is gone on macOS; on
+  Linux and Windows its item is now also spelled "About CoCoVM".
 
 ### Changed
 - Five quick states instead of ten, and every one of them has keyboard
