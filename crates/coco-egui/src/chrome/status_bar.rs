@@ -385,6 +385,7 @@ impl CocoApp {
 }
 
 fn drivewire_hover(dw: &coco_core::drivewire::DWServer, drive: Option<usize>) -> String {
+    use coco_core::drivewire::host::HostError;
     let diagnostics = dw.host_diagnostics();
     let heading = drive.map_or_else(
         || "DriveWire host services".to_string(),
@@ -401,8 +402,10 @@ fn drivewire_hover(dw: &coco_core::drivewire::DWServer, drive: Option<usize>) ->
         diagnostics.stale,
         diagnostics.backpressure,
     );
-    if let Some(error) = diagnostics.last_error {
-        hover.push_str(&format!("\nLast error: {error:?}"));
+    match diagnostics.last_error {
+        Some(HostError::Share(error)) => hover.push_str(&format!("\nLast error: share {error}")),
+        Some(error) => hover.push_str(&format!("\nLast error: {error:?}")),
+        None => {}
     }
     hover
 }

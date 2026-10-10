@@ -89,6 +89,12 @@ pub(crate) struct CocoApp {
     /// the UI exposes (status bar, eject menu items). Like `vhd_paths`, writes
     /// hit the backing file directly.
     pub(crate) dw_paths: [Option<PathBuf>; drivewire::DRIVE_COUNT],
+    /// Write leases on the `dw_paths` images: no other running VM may open them.
+    pub(crate) dw_leases: [Option<drivewire::share::Lease>; drivewire::DRIVE_COUNT],
+    /// Host shares, installed whenever the DriveWire server exists.
+    pub(crate) dw_shares: drivewire::share::ShareTable,
+    /// This VM's identity in cross-VM file leases.
+    pub(crate) lease_owner: drivewire::share::LeaseOwner,
     /// Source path of the mounted cassette tape (.cas), if any — the
     /// write-back target for recordings, like `disk_paths` for floppies.
     pub(crate) tape_path: Option<PathBuf>,
@@ -336,6 +342,9 @@ impl CocoApp {
             disk_paths: [None, None],
             vhd_paths: [None, None],
             dw_paths: std::array::from_fn(|_| None),
+            dw_leases: std::array::from_fn(|_| None),
+            dw_shares: drivewire::share::ShareTable::default(),
+            lease_owner: drivewire::share::LeaseOwner::new(),
             tape_path: None,
             save_tape_wav,
             tape_seek_text: String::new(),

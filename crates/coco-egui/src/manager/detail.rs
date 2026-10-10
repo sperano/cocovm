@@ -10,7 +10,8 @@ use eframe::egui;
 use crate::{humanize_runtime, machine_def, new_vm, titled_group};
 
 use super::{
-    DETAIL_SECTION_GAP, ManagerApp, NO_CONFIG_DIR, detail_map, roms, thumbnails, vm_status_label,
+    DETAIL_SECTION_GAP, ManagerApp, NO_CONFIG_DIR, detail_map, live_drivewire, roms, thumbnails,
+    vm_status_label,
 };
 
 /// The detail pane's working state for the selected entry: the shared
@@ -217,14 +218,6 @@ fn draw_input_tab(ui: &mut egui::Ui, form: &mut new_vm::MachineForm) {
     });
 }
 
-/// The switches sit bare — the tab's own label already says "DriveWire".
-fn draw_drivewire_tab(ui: &mut egui::Ui, form: &mut new_vm::MachineForm) {
-    form.drivewire_rows(ui);
-
-    ui.add_space(DETAIL_SECTION_GAP);
-    titled_group(ui, "Disk images", |ui| form.drivewire_disk_rows(ui));
-}
-
 /// How often the detail pane asks for its next repaint while showing a
 /// running machine's ticking Runtime row (see [`draw_statistics`]'s call
 /// site).
@@ -335,7 +328,10 @@ impl ManagerApp {
             DetailTab::Display => draw_display_tab(ui, &slug, &mut edit.form),
             DetailTab::Devices => draw_devices_tab(ui, &slug, &mut edit.form),
             DetailTab::Input => draw_input_tab(ui, &mut edit.form),
-            DetailTab::DriveWire => draw_drivewire_tab(ui, &mut edit.form),
+            DetailTab::DriveWire => {
+                let session = self.entries[index].share_status();
+                live_drivewire::draw_drivewire_tab(ui, &mut edit.form, &slug, session);
+            }
         }
         // Constraints cross tab boundaries: a General-tab model change, for
         // example, must normalize Display, Input, Devices, and DriveWire.

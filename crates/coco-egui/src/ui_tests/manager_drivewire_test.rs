@@ -316,3 +316,96 @@ fn edits_reach_the_running_session_without_resetting_its_protocol() {
     assert_eq!(saved.drivewire.disk0.as_deref(), next_startup.to_str());
     assert!(saved.drivewire.hdbdos_mode);
 }
+
+#[test]
+fn host_shares_are_added_edited_and_removed_through_the_drivewire_tab() {
+    let (dir, mut entry, file) = seed_manager("ui-drivewire-shares");
+    entry.def.drivewire.enabled = true;
+    let folder = dir.path().join("games");
+    fs::create_dir_all(&folder).unwrap();
+    let mut harness = manager_harness(Some(dir.path().to_path_buf()), vec![entry]);
+    select_drivewire(&mut harness);
+
+    click(&mut harness, "Add share");
+    let saved = saved_def(&file).drivewire.shares;
+    assert_eq!(saved.len(), 1);
+    assert_eq!(saved[0].name, "share1");
+    assert_eq!(saved[0].access, machine_def::ShareAccessDTO::ReadOnly);
+    harness.get_by_label("No folder selected; this share is inactive.");
+
+    harness.get_by_label("Share 1 folder").focus();
+    harness.step();
+    harness
+        .get_by_label("Share 1 folder")
+        .type_text(&folder.display().to_string());
+    harness.step();
+    harness.step();
+    assert_eq!(
+        saved_def(&file).drivewire.shares[0].path,
+        folder.display().to_string()
+    );
+    assert!(
+        harness
+            .query_by_label("No folder selected; this share is inactive.")
+            .is_none()
+    );
+
+    click(&mut harness, "Share 1 access");
+    click(&mut harness, "Read/write");
+    assert_eq!(
+        saved_def(&file).drivewire.shares[0].access,
+        machine_def::ShareAccessDTO::ReadWrite
+    );
+
+    click(&mut harness, "Add share");
+    harness.get_by_label("Share 2 name").focus();
+    harness.step();
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    harness.get_by_label("Share 2 name").type_text("SHARE1");
+    harness.step();
+    harness.step();
+    // Shown under the row and as the auto-save error that keeps the file unchanged.
+    let duplicate = "DriveWire share name \"SHARE1\" is used twice";
+    assert_eq!(harness.query_all_by_label(duplicate).count(), 2);
+    assert_eq!(saved_def(&file).drivewire.shares[1].name, "share2");
+
+    click(&mut harness, "Remove share 2");
+    click(&mut harness, "Remove share 1");
+    assert!(saved_def(&file).drivewire.shares.is_empty());
+}
+
+#[test]
+fn host_share_controls_follow_the_drivewire_switch() {
+    let (dir, mut entry, _) = seed_manager("ui-drivewire-shares-disabled");
+    entry.def.drivewire.shares = vec![machine_def::DriveWireShareDTO {
+        name: "games".to_string(),
+        path: dir.path().join("missing").display().to_string(),
+        access: machine_def::ShareAccessDTO::ReadOnly,
+    }];
+    let mut harness = manager_harness(Some(dir.path().to_path_buf()), vec![entry]);
+    select_drivewire(&mut harness);
+    for label in [
+        "Add share",
+        "Share 1 name",
+        "Share 1 folder",
+        "Remove share 1",
+    ] {
+        assert!(
+            harness.get_by_label(label).accesskit_node().is_disabled(),
+            "{label}"
+        );
+    }
+    click(&mut harness, "Enable DriveWire");
+    assert!(
+        !harness
+            .get_by_label("Add share")
+            .accesskit_node()
+            .is_disabled()
+    );
+    assert!(
+        harness
+            .query_all_by_label_contains("not found")
+            .next()
+            .is_some()
+    );
+}
