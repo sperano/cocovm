@@ -59,6 +59,9 @@ pub struct GuestMediaChange {
 #[derive(Default, Serialize, Deserialize)]
 pub(super) struct MediaTable {
     drives: [Option<DriveMedia>; DRIVE_COUNT],
+    /// The guest emptied the drive with `dw disk eject`.
+    #[serde(default)]
+    guest_ejected: [bool; DRIVE_COUNT],
     /// Leases on guest-mounted images; host mounts keep their own.
     #[serde(skip)]
     leases: [Option<Lease>; DRIVE_COUNT],
@@ -91,6 +94,22 @@ impl DWServer {
         }
     }
 
+    /// Writes to `drive` fail: the guest mounted it from a read-only share.
+    /// Unlike [`Self::drive_media`], this holds before a restored server's
+    /// images are reattached, so the frontend can reopen them read-only.
+    pub fn drive_write_protected(&self, drive: usize) -> bool {
+        self.media.write_protected(drive)
+    }
+
+    /// Whether the guest's `dw disk insert` or `dw disk eject` decided what
+    /// `drive` holds now. Holds across snapshots.
+    pub fn guest_changed(&self, drive: usize) -> bool {
+        self.media.guest_ejected[drive]
+            || self.media.drives[drive]
+                .as_ref()
+                .is_some_and(|media| media.origin == MediaOrigin::Guest)
+    }
+
     /// Guest mounts and ejects since the last call, latest per drive.
     pub fn take_guest_media_changes(&mut self) -> Vec<GuestMediaChange> {
         self.media
@@ -107,11 +126,13 @@ impl DWServer {
     pub(super) fn record_host_mount(&mut self, drive: usize) {
         self.media.drives[drive] = Some(DriveMedia::host());
         self.media.leases[drive] = None;
+        self.media.guest_ejected[drive] = false;
     }
 
     pub(super) fn record_host_eject(&mut self, drive: usize) {
         self.media.drives[drive] = None;
         self.media.leases[drive] = None;
+        self.media.guest_ejected[drive] = false;
     }
 
     /// A restored image keeps its snapshot description; a snapshot from
@@ -139,6 +160,7 @@ impl DWServer {
             return false;
         }
         self.eject(drive);
+        self.media.guest_ejected[drive] = true;
         self.media.changes[drive] = Some(None);
         true
     }

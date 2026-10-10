@@ -154,6 +154,13 @@ fn eject_empties_a_drive_once() {
         "OK command successful\n\rDisk ejected from drive 1.\r\n"
     );
     assert_eq!(read_sector(&mut guest, DRIVE, 0).0, error::NOT_READY);
+    assert!(guest.server.guest_changed(DRIVE));
+    let saved = serde_json::to_string(&guest.server).unwrap();
+    let restored: DWServer = serde_json::from_str(&saved).unwrap();
+    assert!(
+        restored.guest_changed(DRIVE),
+        "the eject survives a snapshot"
+    );
     assert_eq!(
         guest.run_text("dw disk eject 1"),
         "FAIL 102 There is no disk in drive 1\n\r"
@@ -212,6 +219,7 @@ fn a_host_mount_replaces_a_guest_mount_and_its_lease() {
         guest.server.drive_media(DRIVE).unwrap().origin,
         MediaOrigin::Host
     );
+    assert!(!guest.server.guest_changed(DRIVE));
     assert_eq!(
         other.run_text("dw disk insert 0 games/disks/a.dsk"),
         "OK command successful\n\rDisk inserted in drive 0.\r\n"
@@ -249,6 +257,7 @@ fn a_snapshot_keeps_the_description_and_write_protection() {
     let media = restored.drive_media(DRIVE).unwrap();
     assert_eq!(media.origin, MediaOrigin::Guest);
     assert!(media.write_protected);
+    assert!(restored.guest_changed(DRIVE));
     assert!(restored.take_guest_media_changes().is_empty());
 }
 

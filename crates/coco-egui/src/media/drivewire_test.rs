@@ -125,7 +125,7 @@ fn rw_shares(root: &Path) -> ShareTable {
 }
 
 /// Runs `line` as the guest's `dw` utility would, waiting for the hangup.
-fn guest_command(app: &mut CocoApp, line: &str) {
+pub(crate) fn guest_command(app: &mut CocoApp, line: &str) {
     use drivewire::opcode;
     let dw = app.machine.bus.drivewire.as_mut().unwrap();
     let mut request = vec![opcode::SERSETSTAT, CHANNEL, SS_OPEN];

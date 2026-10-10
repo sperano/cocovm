@@ -85,18 +85,42 @@ pub(super) fn open_if_present(
     role: &str,
     warnings: &mut Vec<String>,
 ) -> Option<std::fs::File> {
+    open_checked(mr, role, warnings, open_read_write)
+}
+
+/// [`open_if_present`] for a DriveWire drive the guest mounted from a
+/// read-only share: its host file may not be writable, and the restored
+/// server refuses its writes anyway.
+pub(super) fn open_read_only_if_present(
+    mr: &MediaRef,
+    role: &str,
+    warnings: &mut Vec<String>,
+) -> Option<std::fs::File> {
+    open_checked(mr, role, warnings, open_read_only)
+}
+
+fn open_checked(
+    mr: &MediaRef,
+    role: &str,
+    warnings: &mut Vec<String>,
+    open: fn(&Path) -> std::io::Result<std::fs::File>,
+) -> Option<std::fs::File> {
     match mr.verify() {
         MediaCheck::Missing => None,
         MediaCheck::Mismatch { .. } => {
             warnings.push(mismatch_warning(role, mr));
-            open_read_write(&mr.path).ok()
+            open(&mr.path).ok()
         }
-        MediaCheck::Ok => open_read_write(&mr.path).ok(),
+        MediaCheck::Ok => open(&mr.path).ok(),
     }
 }
 
 /// Mirrors [`crate::CocoApp::insert_vhd`]/[`crate::CocoApp::insert_dw_disk`]'s
 /// own `OpenOptions` — VHD/DriveWire writes hit the backing file directly.
+fn open_read_only(path: &Path) -> std::io::Result<std::fs::File> {
+    std::fs::File::open(path)
+}
+
 fn open_read_write(path: &Path) -> std::io::Result<std::fs::File> {
     std::fs::OpenOptions::new()
         .read(true)

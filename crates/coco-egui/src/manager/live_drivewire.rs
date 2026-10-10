@@ -1,8 +1,8 @@
 //! The DriveWire tab. Its edits reach a Running machine as they are saved.
 //! A Suspended machine is left alone: Resume restores its saved session.
 
+use coco_core::drivewire;
 use coco_core::drivewire::share::ShareStatus;
-use coco_core::drivewire::{self, MediaOrigin};
 use eframe::egui;
 
 use super::{DETAIL_SECTION_GAP, MachineEntry, ManagerApp};
@@ -48,8 +48,9 @@ impl MachineEntry {
             return Vec::new();
         };
         (0..drivewire::DRIVE_COUNT)
-            .filter_map(|drive| match dw.drive_media(drive) {
-                Some(media) if media.origin == MediaOrigin::Guest => Some(format!(
+            .filter(|&drive| dw.guest_changed(drive))
+            .map(|drive| match dw.drive_media(drive) {
+                Some(media) => format!(
                     "DW{drive} now holds {}{}, inserted by the guest until the VM restarts.",
                     media.name.as_deref().unwrap_or("an image"),
                     if media.write_protected {
@@ -57,11 +58,8 @@ impl MachineEntry {
                     } else {
                         ""
                     },
-                )),
-                None if vm.dw_startup[drive].is_some() => Some(format!(
-                    "DW{drive} is empty: the guest ejected it until the VM restarts."
-                )),
-                _ => None,
+                ),
+                None => format!("DW{drive} is empty: the guest ejected it until the VM restarts."),
             })
             .collect()
     }

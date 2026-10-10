@@ -116,6 +116,22 @@ impl CocoApp {
         Ok(())
     }
 
+    /// A restored host mount becomes the drive's applied startup path, so the
+    /// next settings change brings a differing drive back in line with the
+    /// definition. A drive the guest changed keeps the startup path applied
+    /// before the restore: only a changed setting may replace its media.
+    fn restore_dw_startup(&mut self) {
+        let Some(dw) = self.machine.bus.drivewire.as_ref() else {
+            self.dw_startup = Default::default();
+            return;
+        };
+        for drive in 0..drivewire::DRIVE_COUNT {
+            if !dw.guest_changed(drive) {
+                self.dw_startup[drive] = self.dw_paths[drive].clone();
+            }
+        }
+    }
+
     /// Follow the guest's `dw disk insert`/`eject` in the session media. The
     /// server holds a guest image's lease; the replaced image's lease ends here.
     /// Settings and `dw_startup` stay as they are.
@@ -130,11 +146,9 @@ impl CocoApp {
     }
 
     /// Lease the images a snapshot restore mounted. An image another running
-    /// VM holds is ejected and reported in `notes`, like a missing one. The
-    /// restored mounts become the applied startup paths, so the next settings
-    /// change brings each differing drive back in line with the definition.
+    /// VM holds is ejected and reported in `notes`, like a missing one.
     pub(crate) fn lease_restored_dw_images(&mut self, notes: &mut Vec<String>) {
-        self.dw_startup = self.dw_paths.clone();
+        self.restore_dw_startup();
         let registry = AccessRegistry::global();
         for drive in 0..drivewire::DRIVE_COUNT {
             let Some(path) = self.dw_paths[drive].clone() else {
@@ -197,4 +211,4 @@ fn image_lease_error(path: &Path, error: ShareError) -> String {
 
 #[cfg(test)]
 #[path = "drivewire_test.rs"]
-mod tests;
+pub(crate) mod tests;
