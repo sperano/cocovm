@@ -120,7 +120,7 @@ impl CocoApp {
     /// server holds a guest image's lease; the replaced image's lease ends here.
     /// Settings and `dw_startup` stay as they are.
     pub(crate) fn sync_guest_dw_media(&mut self) {
-        let Some(ref mut dw) = self.machine.bus.drivewire else {
+        let Some(dw) = self.machine.bus.drivewire.as_mut() else {
             return;
         };
         for change in dw.take_guest_media_changes() {

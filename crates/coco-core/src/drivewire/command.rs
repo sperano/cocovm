@@ -188,7 +188,9 @@ impl Active {
     }
 }
 
-/// A job's typed result, or why there is none.
+/// A job's typed result, or why there is none. Every job fills its outcome
+/// before it succeeds, so a missing one is reported as a host failure rather
+/// than a panic on the emulation thread.
 fn outcome<T>(
     result: Result<Vec<u8>, HostError>,
     slot: Option<&Outcome<T>>,

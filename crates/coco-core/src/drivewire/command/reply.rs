@@ -7,6 +7,8 @@
 //! line is cut to fit it. Payload text ends lines with CR LF as the Java
 //! commands do.
 
+use std::fmt::Write;
+
 use super::super::share::ShareError;
 use super::super::{DriveMedia, MediaOrigin};
 use super::parse::{Failure, code};
@@ -94,7 +96,8 @@ pub(super) fn help(verbs: &[&str]) -> Vec<u8> {
         if index > 0 && index % per_row == 0 {
             text.push_str(CRLF);
         }
-        text.push_str(&format!("{verb:<width$}"));
+        // Writing to a `String` cannot fail.
+        let _ = write!(text, "{verb:<width$}");
     }
     text.push_str(CRLF);
     text.into_bytes()
@@ -131,10 +134,11 @@ pub(super) fn disk_list<'a>(drives: impl IntoIterator<Item = (usize, &'a DriveMe
         } else {
             ' '
         };
-        text.push_str(&format!(
+        let _ = write!(
+            text,
             "X{drive:<DRIVE_COLUMN$}{mark}{}{CRLF}",
             media_name(media)
-        ));
+        );
     }
     text.into_bytes()
 }

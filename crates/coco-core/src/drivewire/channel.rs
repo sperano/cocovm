@@ -183,7 +183,7 @@ impl Channels {
     /// The slot for a wire channel number, counting an unknown one. Every
     /// guest operation goes through here, so it also counts the activity.
     fn slot_mut(&mut self, channel: u8) -> Option<&mut Channel> {
-        self.activity = self.activity.wrapping_add(1);
+        self.bump_activity();
         let slot = self.slots.get_mut(usize::from(channel));
         if slot.is_none() {
             self.unknown_channel_ops += 1;
@@ -276,7 +276,7 @@ impl Channels {
         for offset in 0..CHANNEL_COUNT {
             let index = (start + offset) % CHANNEL_COUNT;
             if let Some(reply) = self.poll_slot(index) {
-                self.activity = self.activity.wrapping_add(1);
+                self.bump_activity();
                 self.poll_cursor = ((index + 1) % CHANNEL_COUNT) as u8;
                 return reply;
             }
@@ -310,7 +310,7 @@ impl Channels {
         }
         self.poll_cursor = 0;
         self.epoch = next_epoch();
-        self.activity = self.activity.wrapping_add(1);
+        self.bump_activity();
     }
 
     pub(super) fn clear_counters(&mut self) {
@@ -328,12 +328,16 @@ impl Channels {
             slot.hangup = slot.is_open();
         }
         self.epoch = next_epoch();
-        self.activity = self.activity.wrapping_add(1);
+        self.bump_activity();
     }
 
     /// Changes whenever the guest side of any channel may have changed.
     pub(super) fn activity(&self) -> u64 {
         self.activity
+    }
+
+    fn bump_activity(&mut self) {
+        self.activity = self.activity.wrapping_add(1);
     }
 
     /// Guest output not yet received, without taking it.
