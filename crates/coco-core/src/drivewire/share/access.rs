@@ -96,7 +96,7 @@ impl AccessRegistry {
         owner: LeaseOwner,
         mode: AccessMode,
     ) -> Result<Lease, ShareError> {
-        let key = file_key(file, path).map_err(|error| ShareError::from_io(&error))?;
+        let key = file_key(file, path)?;
         let mut leases = self.lock();
         let holders = leases.files.get(&key).map_or(&[][..], Vec::as_slice);
         let conflict = holders.iter().any(|holder| {

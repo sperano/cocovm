@@ -196,18 +196,6 @@ pub enum ShareError {
 }
 
 impl ShareError {
-    /// Maps an operating-system error met while resolving or opening a path.
-    pub fn from_io(error: &io::Error) -> Self {
-        match error.kind() {
-            io::ErrorKind::NotFound => Self::NotFound,
-            io::ErrorKind::NotADirectory => Self::NotADirectory,
-            io::ErrorKind::IsADirectory => Self::IsADirectory,
-            io::ErrorKind::PermissionDenied => Self::PermissionDenied,
-            io::ErrorKind::ReadOnlyFilesystem => Self::ReadOnly,
-            kind => Self::Io(kind),
-        }
-    }
-
     /// The `dw` command result code for this failure (see [`command_code`]).
     pub fn command_code(self) -> u16 {
         match self {
@@ -247,6 +235,20 @@ impl ShareError {
             Self::BadHandle => "file not open",
             Self::TooLarge => "request too large",
             Self::Io(_) => "host I/O error",
+        }
+    }
+}
+
+/// Maps an operating-system error met while resolving or opening a path.
+impl From<io::Error> for ShareError {
+    fn from(error: io::Error) -> Self {
+        match error.kind() {
+            io::ErrorKind::NotFound => Self::NotFound,
+            io::ErrorKind::NotADirectory => Self::NotADirectory,
+            io::ErrorKind::IsADirectory => Self::IsADirectory,
+            io::ErrorKind::PermissionDenied => Self::PermissionDenied,
+            io::ErrorKind::ReadOnlyFilesystem => Self::ReadOnly,
+            kind => Self::Io(kind),
         }
     }
 }

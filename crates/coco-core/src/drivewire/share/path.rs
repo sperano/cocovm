@@ -163,7 +163,7 @@ pub(super) fn resolve_existing(
         .components
         .iter()
         .fold(root.clone(), |path, component| path.join(component));
-    let host = fs::canonicalize(&candidate).map_err(|error| ShareError::from_io(&error))?;
+    let host = fs::canonicalize(&candidate)?;
     contain(&root, &host)?;
     Ok(Resolved { access, root, host })
 }
@@ -178,13 +178,16 @@ pub(super) fn resolve_new(guest: &GuestPath, table: &ShareTable) -> Result<Resol
     let parent = parents
         .iter()
         .fold(root.clone(), |path, component| path.join(component));
-    let parent = fs::canonicalize(&parent).map_err(|error| ShareError::from_io(&error))?;
+    let parent = fs::canonicalize(&parent)?;
     contain(&root, &parent)?;
     let mut host = parent.join(name);
     if let Ok(metadata) = fs::symlink_metadata(&host) {
         if metadata.file_type().is_symlink() {
             // A dangling link would create its target wherever it points.
-            host = fs::canonicalize(&host).map_err(|_| ShareError::Escape)?;
+            host = fs::canonicalize(&host).map_err(|error| match ShareError::from(error) {
+                ShareError::NotFound => ShareError::Escape,
+                error => error,
+            })?;
             contain(&root, &host)?;
         }
         if fs::metadata(&host).is_ok_and(|metadata| metadata.is_dir()) {
@@ -215,7 +218,7 @@ pub(super) fn list(
     }
     let Resolved { root, host, .. } = resolve_existing(guest, table)?;
     let mut entries = Vec::new();
-    let reader = fs::read_dir(&host).map_err(|error| ShareError::from_io(&error))?;
+    let reader = fs::read_dir(&host)?;
     for (scanned, item) in reader.enumerate() {
         if scanned >= MAX_DIR_ENTRIES {
             return Err(ShareError::DirectoryTooLarge);
@@ -223,7 +226,7 @@ pub(super) fn list(
         if is_cancelled() {
             return Err(ShareError::Io(std::io::ErrorKind::Interrupted));
         }
-        let item = item.map_err(|error| ShareError::from_io(&error))?;
+        let item = item?;
         if let Some(entry) = guest_entry(&root, &item) {
             entries.push(entry);
         }

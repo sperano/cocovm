@@ -234,7 +234,7 @@ impl ShareSession {
         let slot = free_slot(state)?;
         let guest = self.file_path(state, path)?;
         let resolved = path::resolve_existing(&guest, &self.table)?;
-        let file = File::open(&resolved.host).map_err(|error| ShareError::from_io(&error))?;
+        let file = File::open(&resolved.host)?;
         reject_directory(&file)?;
         let lease = self
             .registry
@@ -254,13 +254,11 @@ impl ShareSession {
             .write(true)
             .create(true)
             .truncate(false)
-            .open(&resolved.host)
-            .map_err(|error| ShareError::from_io(&error))?;
+            .open(&resolved.host)?;
         let lease = self
             .registry
             .acquire(&file, &resolved.host, self.owner, AccessMode::Write)?;
-        file.set_len(0)
-            .map_err(|error| ShareError::from_io(&error))?;
+        file.set_len(0)?;
         Ok(store(state, slot, file, true, lease))
     }
 
@@ -271,8 +269,7 @@ impl ShareSession {
         let file = OpenOptions::new()
             .read(true)
             .write(writable)
-            .open(&resolved.host)
-            .map_err(|error| ShareError::from_io(&error))?;
+            .open(&resolved.host)?;
         reject_directory(&file)?;
         let mode = if writable {
             AccessMode::Write
@@ -348,9 +345,7 @@ fn open_file(state: &mut State, handle: ShareHandle) -> Result<&mut OpenFile, Sh
 }
 
 fn reject_directory(file: &File) -> Result<(), ShareError> {
-    let metadata = file
-        .metadata()
-        .map_err(|error| ShareError::from_io(&error))?;
+    let metadata = file.metadata()?;
     if metadata.is_dir() {
         Err(ShareError::IsADirectory)
     } else {
@@ -361,10 +356,7 @@ fn reject_directory(file: &File) -> Result<(), ShareError> {
 fn read(open: &mut OpenFile, max: usize) -> Result<Vec<u8>, ShareError> {
     let limit = u64::try_from(max.min(MAX_HOST_RESPONSE_BYTES)).expect("bounded by a usize");
     let mut bytes = Vec::new();
-    (&mut open.file)
-        .take(limit)
-        .read_to_end(&mut bytes)
-        .map_err(|error| ShareError::from_io(&error))?;
+    (&mut open.file).take(limit).read_to_end(&mut bytes)?;
     Ok(bytes)
 }
 
@@ -376,9 +368,7 @@ fn write(state: &mut State, handle: ShareHandle, data: &[u8]) -> Result<Vec<u8>,
     if !open.writable {
         return Err(ShareError::ReadOnly);
     }
-    open.file
-        .write_all(data)
-        .map_err(|error| ShareError::from_io(&error))?;
+    open.file.write_all(data)?;
     Ok(Vec::new())
 }
 

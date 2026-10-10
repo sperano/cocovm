@@ -174,7 +174,7 @@ fn io_errors_map_to_share_errors() {
         ),
     ];
     for (kind, expected) in cases {
-        assert_eq!(ShareError::from_io(&Error::from(kind)), expected);
+        assert_eq!(ShareError::from(Error::from(kind)), expected);
     }
 }
 

@@ -112,7 +112,7 @@ impl CocoApp {
                 continue;
             };
             let lease = std::fs::File::open(&path)
-                .map_err(|e| ShareError::from_io(&e))
+                .map_err(ShareError::from)
                 .and_then(|file| {
                     registry.acquire(&file, &path, self.lease_owner, AccessMode::Write)
                 });

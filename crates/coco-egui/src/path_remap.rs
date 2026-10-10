@@ -134,9 +134,7 @@ impl CocoApp {
             remap_path(path, old_dir, new_dir);
         }
     }
-}
 
-impl CocoApp {
     /// Shares rooted in the moved artifact directory follow it. A changed
     /// table starts a fresh share session.
     fn remap_drivewire_shares(&mut self, old_dir: &Path, new_dir: &Path) {

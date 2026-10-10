@@ -62,11 +62,7 @@ fn root_problem(root: &Path) -> Option<String> {
     match std::fs::metadata(root) {
         Ok(metadata) if metadata.is_dir() => None,
         Ok(_) => Some(format!("{} is not a folder.", root.display())),
-        Err(error) => Some(format!(
-            "{}: {}",
-            root.display(),
-            ShareError::from_io(&error)
-        )),
+        Err(error) => Some(format!("{}: {}", root.display(), ShareError::from(error))),
     }
 }
 
