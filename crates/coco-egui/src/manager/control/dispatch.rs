@@ -136,6 +136,16 @@ impl ManagerApp {
                 });
                 reply.reply(response(result));
             }
+            Action::LoadBinary {
+                segments,
+                exec_address,
+            } => {
+                let result = self.resolve_vm(&vm, true).map(|idx| {
+                    self.vm_mut(idx).load_binary(&segments, exec_address);
+                    Reply::Done
+                });
+                reply.reply(response(result));
+            }
         }
     }
 

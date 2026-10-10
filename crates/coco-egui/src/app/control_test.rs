@@ -1,6 +1,7 @@
 use crate::control::{MemAddr, Reply};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
+use coco_core::decb::DecbSegment;
 
 use crate::{AppParams, CocoApp, MachineConfig, ROMSource};
 
@@ -227,6 +228,47 @@ fn poke_bytes_rejects_more_than_max_poke_len() {
         .poke_bytes(0x0400, &too_many)
         .expect_err("oversized poke must be rejected");
     assert!(err.contains("at most"));
+}
+
+#[test]
+fn load_binary_writes_in_order_wraps_and_optionally_sets_pc() {
+    let mut app = boot();
+    let original_pc = app.machine.cpu.pc;
+    let segments = [
+        DecbSegment {
+            address: 0xFFFE,
+            bytes: vec![0x11, 0x22, 0x33, 0x44],
+        },
+        DecbSegment {
+            address: 0x0000,
+            bytes: vec![0x55],
+        },
+    ];
+
+    app.load_binary(&segments, None);
+
+    assert_eq!(app.peek_bytes(0x0000, 2), [0x55, 0x44]);
+    assert_eq!(app.machine.cpu.pc, original_pc);
+
+    app.machine.cpu.state = mc6809::State::Syncing;
+    app.load_binary(&[], Some(0x3456));
+    assert_eq!(app.machine.cpu.pc, 0x3456);
+    assert_eq!(app.machine.cpu.state, mc6809::State::Running);
+}
+
+#[test]
+fn load_binary_is_not_limited_to_the_poke_tool_size() {
+    let mut app = boot();
+    let bytes = vec![0xA5; crate::control::MAX_POKE_LEN + 1];
+    app.load_binary(
+        &[DecbSegment {
+            address: 0x2000,
+            bytes,
+        }],
+        None,
+    );
+
+    assert_eq!(app.peek_bytes(0x2000, 1), [0xA5]);
 }
 
 #[test]

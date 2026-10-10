@@ -10,6 +10,7 @@ use super::jsonrpc::{INVALID_PARAMS, RpcError};
 use super::protocol::{Action, ControlError, Reply, Request, ScreenSnapshot, Stick, TextMatcher};
 use super::tool_defs;
 
+mod load_binary;
 mod memory;
 mod vms;
 
@@ -94,6 +95,7 @@ fn dispatch(backend: &mut dyn Backend, params: Value) -> Result<Value, RpcError>
         "enter_basic" => super::enter_basic::dispatch(backend, args),
         "peek" => memory::dispatch_peek(backend, args),
         "poke" => memory::dispatch_poke(backend, args),
+        "load_binary" => load_binary::dispatch(backend, args),
         other => Err(RpcError::new(
             INVALID_PARAMS,
             format!("unknown tool: {other}"),

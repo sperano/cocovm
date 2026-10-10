@@ -8,6 +8,7 @@ use std::ops::Range;
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
+use coco_core::decb::DecbSegment;
 use coco_core::keyboard::Pos;
 
 use crate::control::MemAddr;
@@ -217,6 +218,21 @@ impl CocoApp {
             self.machine.poke(addr.wrapping_add(i as u16), b);
         }
         Ok(())
+    }
+
+    /// `load_binary`: write every validated segment through the logical bus
+    /// in file order, then optionally jump to the requested address.
+    pub(crate) fn load_binary(&mut self, segments: &[DecbSegment], exec_address: Option<u16>) {
+        for segment in segments {
+            for (offset, &byte) in segment.bytes.iter().enumerate() {
+                self.machine
+                    .poke(segment.address.wrapping_add(offset as u16), byte);
+            }
+        }
+        if let Some(address) = exec_address {
+            self.machine.cpu.pc = address;
+            self.machine.cpu.state = mc6809::State::Running;
+        }
     }
 
     /// `peek` at either address kind: a logical read wraps past $FFFF, a

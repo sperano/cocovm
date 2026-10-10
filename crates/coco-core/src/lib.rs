@@ -13,6 +13,7 @@ pub mod cassette;
 pub mod cassette_wav;
 pub mod config;
 pub mod debug;
+pub mod decb;
 pub mod dmp;
 pub mod dmp105;
 mod dmp105_font;

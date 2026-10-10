@@ -13,6 +13,7 @@ use super::{
     MAX_TYPE_TEXT_CHARS, MAX_WAIT_FIELDS, MAX_WAIT_PATTERN_CHARS,
 };
 
+mod load_binary;
 mod vms;
 
 /// Highest floppy drive index a tool call may name — [`crate::UI_DRIVES`] is
@@ -486,6 +487,7 @@ pub fn definitions(include_annotations: bool) -> Vec<Value> {
         wait_for_text(include_annotations),
         peek(include_annotations),
         poke(include_annotations),
+        load_binary::definition(include_annotations),
     ]
 }
 
