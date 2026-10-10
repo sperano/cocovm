@@ -59,7 +59,10 @@ impl MachineEntry {
                         ""
                     },
                 ),
-                None => format!("DW{drive} is empty: the guest ejected it until the VM restarts."),
+                None => format!(
+                    "DW{drive} stays empty until the VM restarts: the guest ejected it, \
+                     or its guest-inserted image was missing on restore."
+                ),
             })
             .collect()
     }
