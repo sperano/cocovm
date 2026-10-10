@@ -188,7 +188,8 @@ impl DWServer {
     }
 
     /// Reattached media survives restore; external requests are never
-    /// replayed, and open virtual channels hang up once drained.
+    /// replayed, open virtual channels hang up once drained, and the share
+    /// session starts over.
     pub fn after_restore(&mut self) {
         self.host.cancel();
         self.service_completions.clear();
