@@ -36,6 +36,9 @@ pub fn run(
         manager_sort,
         ..
     } = config;
+    #[cfg(target_os = "macos")]
+    const ICON_BYTES: &[u8] = include_bytes!("../../assets/cocovm-icon-macos.png");
+    #[cfg(not(target_os = "macos"))]
     const ICON_BYTES: &[u8] = include_bytes!("../../assets/cocovm-icon.png");
     let icon = eframe::icon_data::from_png_bytes(ICON_BYTES).expect("embedded icon PNG is valid");
     let assets_dir = crate::require_data_dir().join(crate::paths::ASSETS_DIR_NAME);
