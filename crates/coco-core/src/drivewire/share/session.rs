@@ -174,7 +174,9 @@ impl ShareSession {
     }
 
     /// Opens a disk image for a guest mount, leased for writing when the
-    /// share is read/write and for reading otherwise.
+    /// share is read/write and for reading otherwise. Blocks on the host
+    /// filesystem and the session lock, so call it from a host job, never
+    /// inside a Becker register access.
     pub fn open_image(&self, path: &[u8]) -> Result<ShareImage, ShareError> {
         let state = lock(&self.state);
         let result = self.open_image_in(&state, path);
