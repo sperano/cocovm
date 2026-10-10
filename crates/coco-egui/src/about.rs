@@ -13,8 +13,10 @@ const ICON_BYTES: &[u8] = include_bytes!("../assets/cocovm-icon.png");
 const ICON_CACHE_ID: &str = "about_cocovm_icon";
 const GITHUB_URL: &str = "https://github.com/sperano/cocovm";
 
-/// Draw the About window. `open` is toggled by the window's close box.
-pub fn window(ctx: &egui::Context, open: &mut bool) {
+/// Draw the About window. `open` is toggled by the window's close box;
+/// `inventory` is the installed-asset and machine count line
+/// ([`crate::startup::inventory`]).
+pub fn window(ctx: &egui::Context, open: &mut bool, inventory: &str) {
     egui::Window::new(crate::window_title(ctx, "About CoCoVM"))
         .open(open)
         .resizable(false)
@@ -23,11 +25,11 @@ pub fn window(ctx: &egui::Context, open: &mut bool) {
         .show(ctx, |ui| {
             egui::Frame::NONE
                 .inner_margin(CONTENT_MARGIN)
-                .show(ui, contents);
+                .show(ui, |ui| contents(ui, inventory));
         });
 }
 
-fn contents(ui: &mut egui::Ui) {
+fn contents(ui: &mut egui::Ui, inventory: &str) {
     let icon = icon_texture(ui.ctx());
     ui.spacing_mut().item_spacing.y = TEXT_GAP;
     ui.vertical_centered(|ui| {
@@ -37,6 +39,8 @@ fn contents(ui: &mut egui::Ui) {
         ui.add_space(SECTION_GAP);
         ui.label("A Tandy Color Computer emulator");
         ui.label(egui::RichText::new("Built with Rust + egui").size(DETAIL_SIZE));
+        ui.add_space(SECTION_GAP);
+        ui.label(egui::RichText::new(inventory).size(DETAIL_SIZE));
         ui.add_space(SECTION_GAP);
         ui.separator();
         ui.add_space(TEXT_GAP);
