@@ -4,9 +4,10 @@ use std::time::{Duration, Instant};
 
 use super::*;
 
-/// How long [`wait_for_result`] lets a loopback check run.
-const CHECK_DEADLINE: Duration = Duration::from_secs(10);
-const POLL_INTERVAL: Duration = Duration::from_millis(10);
+/// How long a loopback check may run before a test fails.
+pub(crate) const CHECK_DEADLINE: Duration = Duration::from_secs(10);
+/// Pause between polls of a running check.
+pub(crate) const POLL_INTERVAL: Duration = Duration::from_millis(10);
 /// Read size for the request `fetch_latest` sends.
 const REQUEST_BUFFER_SIZE: usize = 4096;
 

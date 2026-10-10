@@ -3,7 +3,7 @@
 //! Settings checkbox. Checks run against a loopback server
 //! (`update::tests::serve_once`), never GitHub.
 
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use egui_kittest::kittest::Queryable;
 
@@ -11,16 +11,12 @@ use crate::about::{CHECK_FAILED_TEXT, UP_TO_DATE_TEXT};
 use crate::machine_def::tests::TempDir;
 use crate::manager;
 use crate::manager::welcome::{DISMISS_LABEL, RELEASE_LINK_TEXT};
-use crate::update::tests::{release_json, serve_once};
+use crate::update::tests::{CHECK_DEADLINE, POLL_INTERVAL, release_json, serve_once};
 use crate::update::{Release, Status, UpdateCheck};
 use crate::*;
 
 use super::harness::*;
 use super::manager_settings::settings_harness;
-
-/// How long a loopback check may take before the test fails.
-const CHECK_DEADLINE: Duration = Duration::from_secs(10);
-const POLL_INTERVAL: Duration = Duration::from_millis(10);
 
 /// A manager whose update check queries `url`.
 fn update_harness(url: String) -> ManagerHarness {

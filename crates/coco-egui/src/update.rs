@@ -41,7 +41,7 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 const TAG_PREFIX: char = 'v';
 
 /// A published release, as far as the notice needs it.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Debug)]
 pub(crate) struct Release {
     pub(crate) version: semver::Version,
     /// The release's GitHub page: notes and downloads.
