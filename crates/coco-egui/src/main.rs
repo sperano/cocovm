@@ -33,6 +33,8 @@ mod kbd_help;
 mod keymap;
 mod launch;
 mod machine_def;
+#[cfg(target_os = "macos")]
+mod macos_menu;
 mod manager;
 mod media;
 mod mpi;

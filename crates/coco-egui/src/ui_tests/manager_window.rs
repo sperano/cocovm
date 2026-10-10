@@ -13,6 +13,15 @@ use crate::*;
 
 use super::harness::*;
 
+/// The toolbar's tiles on this platform: macOS has no Help tile.
+fn toolbar_tiles() -> Vec<&'static str> {
+    let mut tiles = vec!["New", "Start", "Suspend", "Stop", "Reset", "Settings"];
+    if !cfg!(target_os = "macos") {
+        tiles.push("Help");
+    }
+    tiles
+}
+
 /// The detail pane's RAM fieldset: the group's title is a real accessibility
 /// node, and clicking a size radio auto-saves the definition.
 #[test]
@@ -67,9 +76,7 @@ fn manager_window_shows_its_toolbar() {
     harness.set_size(egui::vec2(1080.0, 720.0));
     harness.step();
 
-    for label in [
-        "New", "Start", "Suspend", "Stop", "Reset", "Settings", "Help",
-    ] {
+    for label in toolbar_tiles() {
         harness.get_by_label(label);
     }
     assert!(
@@ -106,9 +113,7 @@ fn toolbar_icons_only_keeps_every_tile_reachable_by_label() {
     harness.step();
 
     assert!(harness.state().toolbar_icons_only);
-    for label in [
-        "New", "Start", "Suspend", "Stop", "Reset", "Settings", "Help",
-    ] {
+    for label in toolbar_tiles() {
         harness.get_by_label(label);
     }
 }

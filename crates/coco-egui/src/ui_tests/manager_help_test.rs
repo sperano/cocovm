@@ -1,4 +1,5 @@
-//! The manager toolbar's Help tile: its menu opens the About window.
+//! The About window's two entry points: the toolbar's Help menu and the
+//! macOS application menu's request.
 
 use egui_kittest::kittest::Queryable;
 
@@ -10,7 +11,8 @@ use super::harness::*;
 /// A line of the About window's text, to tell whether it is drawn.
 const ABOUT_TEXT: &str = "A Tandy Color Computer emulator";
 
-/// Help > About cocovm opens the About window; its close box closes it.
+/// Help > About CoCoVM opens the About window; its close box closes it.
+#[cfg(not(target_os = "macos"))]
 #[test]
 fn help_menu_opens_the_about_window() {
     let mut harness = egui_kittest::Harness::new_eframe(|_cc| {
@@ -21,7 +23,27 @@ fn help_menu_opens_the_about_window() {
     assert!(harness.query_by_label(ABOUT_TEXT).is_none());
 
     click(&mut harness, "Help");
-    click(&mut harness, "About cocovm");
+    click(&mut harness, crate::about::MENU_LABEL);
+    assert!(harness.state().show_about);
+    harness.get_by_label(ABOUT_TEXT);
+
+    click(&mut harness, "Close window");
+    assert!(!harness.state().show_about);
+    assert!(harness.query_by_label(ABOUT_TEXT).is_none());
+}
+
+/// A raised request opens the About window once: closing it keeps it closed.
+#[test]
+fn about_request_opens_the_about_window() {
+    let mut harness = egui_kittest::Harness::new_eframe(|_cc| {
+        manager::ManagerApp::new(None, None, None, Vec::new(), None)
+    });
+    harness.set_size(egui::vec2(1080.0, 720.0));
+    harness.step();
+    assert!(harness.query_by_label(ABOUT_TEXT).is_none());
+
+    harness.state().about_request.raise();
+    harness.step();
     assert!(harness.state().show_about);
     harness.get_by_label(ABOUT_TEXT);
 
