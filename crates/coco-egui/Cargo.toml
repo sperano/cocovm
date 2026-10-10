@@ -79,6 +79,12 @@ pluralizer = "0.5.0"
 # through the `wgpu` feature (naga -> codespan-reporting).
 unicode-width = "0.2"
 
+# All MIT. Retarget the application menu's About item (`macos_menu.rs`).
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = ["NSApplication", "NSMenu", "NSMenuItem", "NSResponder"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["NSArray", "NSString"] }
+
 [features]
 perf = []
 debug-ui = []
@@ -94,12 +100,5 @@ tms7000 = { path = "../tms7000" }
 
 # MIT. Compiles `assets/cocovm.ico` and the version block into the Windows
 # executable (`build.rs`), so Explorer shows the icon with no installer.
-# All MIT. Retarget the application menu's About item (`macos_menu.rs`);
-# already resolved through `rfd`.
-[target.'cfg(target_os = "macos")'.dependencies]
-objc2 = "0.6"
-objc2-app-kit = { version = "0.3", default-features = false, features = ["NSApplication", "NSMenu", "NSMenuItem", "NSResponder"] }
-objc2-foundation = { version = "0.3", default-features = false, features = ["NSArray", "NSString"] }
-
 [target."cfg(windows)".build-dependencies]
 winresource = "0.1"

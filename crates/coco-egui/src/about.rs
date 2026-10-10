@@ -24,6 +24,7 @@ const GITHUB_URL: &str = "https://github.com/sperano/cocovm";
 pub(crate) struct AboutRequest(Arc<AtomicBool>);
 
 impl AboutRequest {
+    /// Ask for the About window; the manager opens it on its next update.
     #[cfg(any(target_os = "macos", test))]
     pub(crate) fn raise(&self) {
         self.0.store(true, Ordering::Relaxed);

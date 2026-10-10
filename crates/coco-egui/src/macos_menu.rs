@@ -69,7 +69,7 @@ pub(crate) fn install_about(ctx: &egui::Context, request: AboutRequest) {
         item.setAction(Some(sel!(openAbout:)));
     }
     item.setTitle(&NSString::from_str(MENU_LABEL));
-    std::mem::forget(target);
+    let _ = Retained::into_raw(target);
 }
 
 /// The app menu item wired to AppKit's standard About panel.
