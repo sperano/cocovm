@@ -155,6 +155,12 @@ fn every_listed_tool_round_trips_through_the_mock() {
             json!({"bytes": "AQID", "address": 0x1000}),
             vec![Reply::Done],
         ),
+        ("save_state", json!({"slot": 1}), vec![Reply::Done]),
+        (
+            "load_state",
+            json!({"path": "/tmp/state.ccstate"}),
+            vec![Reply::Done],
+        ),
     ];
     assert_eq!(
         cases.len(),

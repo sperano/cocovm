@@ -21,6 +21,8 @@ const EXPECTED_NAMES: &[&str] = &[
     "peek",
     "poke",
     "load_binary",
+    "save_state",
+    "load_state",
 ];
 
 #[test]
@@ -125,6 +127,8 @@ fn annotations_classify_read_only_and_mutating_tools() {
         ("peek", true, false, true),
         ("poke", false, true, false),
         ("load_binary", false, true, false),
+        ("save_state", false, true, false),
+        ("load_state", false, true, false),
     ];
     for (name, read_only, destructive, idempotent) in expected {
         let annotations = &defs
@@ -235,4 +239,23 @@ fn load_binary_schema_requires_exactly_one_source_and_bounds_address() {
     assert_eq!(schema["oneOf"].as_array().unwrap().len(), 2);
     assert_eq!(schema["properties"]["address"]["maximum"], json!(u16::MAX));
     assert_eq!(schema["properties"]["exec"]["default"], json!(false));
+}
+
+#[test]
+fn state_tools_require_exactly_one_bounded_target() {
+    let defs = definitions(true);
+    for name in ["save_state", "load_state"] {
+        let definition = defs
+            .iter()
+            .find(|definition| definition["name"] == name)
+            .unwrap();
+        let schema = &definition["inputSchema"];
+        assert_eq!(schema["oneOf"].as_array().unwrap().len(), 2, "{name}");
+        assert_eq!(schema["properties"]["slot"]["minimum"], json!(1), "{name}");
+        assert_eq!(
+            schema["properties"]["slot"]["maximum"],
+            json!(crate::save_state::QUICK_SLOTS),
+            "{name}"
+        );
+    }
 }

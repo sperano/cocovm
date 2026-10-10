@@ -16,6 +16,7 @@ use super::{MachineEntry, ManagerApp};
 mod dispatch;
 mod lifecycle;
 mod pending;
+mod state;
 mod vm_info;
 
 /// Slack a deferred request (`type_text`, `press_keys`, `wait`) gets beyond

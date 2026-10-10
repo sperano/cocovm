@@ -158,6 +158,25 @@ impl CocoApp {
 
     /// Create the quick-state directory on demand and write `slot`'s file.
     fn write_quick_state(&mut self, slot: usize) -> Result<(), String> {
+        let path = self.prepare_quick_state_path(slot)?;
+        self.write_state_to(&path)
+    }
+
+    /// Save directly to a quick-state slot for non-UI callers.
+    pub(crate) fn save_state_to_slot(&mut self, slot: usize) -> Result<(), String> {
+        let path = self.prepare_quick_state_path(slot)?;
+        self.save_state_to(&path)
+    }
+
+    /// Load directly from a quick-state slot for non-UI callers.
+    pub(crate) fn load_state_from_slot(&mut self, slot: usize) -> Result<(), String> {
+        let path = self
+            .quick_state_path(slot)
+            .ok_or_else(|| NO_DATA_DIR.to_string())?;
+        self.load_state_from(&path)
+    }
+
+    fn prepare_quick_state_path(&self, slot: usize) -> Result<PathBuf, String> {
         let path = self
             .quick_state_path(slot)
             .ok_or_else(|| NO_DATA_DIR.to_string())?;
@@ -165,7 +184,7 @@ impl CocoApp {
             std::fs::create_dir_all(dir)
                 .map_err(|e| format!("could not create {}: {e}", dir.display()))?;
         }
-        self.write_state_to(&path)
+        Ok(path)
     }
 
     /// Quick Load `slot` — the load-side sibling of [`Self::quick_save`],
