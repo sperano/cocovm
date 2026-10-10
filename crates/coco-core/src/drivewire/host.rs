@@ -11,6 +11,8 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, mpsc};
 use std::thread;
 
+use super::share::ShareError;
+
 /// Largest result that a host operation can return to the emulation thread.
 pub const MAX_HOST_RESPONSE_BYTES: usize = 4096;
 
@@ -45,9 +47,14 @@ impl Cancellation {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum HostError {
     Io(io::ErrorKind),
+    /// A share operation failed; see [`super::share`].
+    Share(ShareError),
     Cancelled,
     Panicked,
-    ResponseTooLarge { size: usize, max: usize },
+    ResponseTooLarge {
+        size: usize,
+        max: usize,
+    },
 }
 
 impl From<io::Error> for HostError {

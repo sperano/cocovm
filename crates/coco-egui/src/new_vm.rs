@@ -20,6 +20,7 @@ mod cartridge_combo;
 mod cartridge_form;
 mod config_form;
 mod drivewire_form;
+mod drivewire_shares_form;
 mod form;
 mod known_cartridges;
 
@@ -224,6 +225,8 @@ pub struct MachineForm {
     pub config: MachineConfig,
     /// Saved startup configuration, independent of the running DriveWire session.
     pub drivewire: crate::machine_def::DriveWireDTO,
+    /// Cached checks of the share folders in `drivewire`.
+    share_roots: drivewire_shares_form::ShareRootChecks,
     /// Whether the HDB-DOS ROM was picked at the last constrain pass; `None` before the first.
     hdbdos_selected: Option<bool>,
     /// The Cartridge-row pick.

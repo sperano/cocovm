@@ -335,6 +335,9 @@ pub struct DriveWireDTO {
     pub disk2: Option<String>,
     #[serde(default)]
     pub disk3: Option<String>,
+    /// `[[drivewire.shares]]`; see `share_dto`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shares: Vec<super::DriveWireShareDTO>,
 }
 
 impl DriveWireDTO {

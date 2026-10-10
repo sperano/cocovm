@@ -67,6 +67,11 @@ fn full_def() -> MachineDef {
             disk1: None,
             disk2: Some("/shared/dw2.dsk".to_string()),
             disk3: None,
+            shares: vec![DriveWireShareDTO {
+                name: "games".to_string(),
+                path: "/shared/games".to_string(),
+                access: ShareAccessDTO::ReadWrite,
+            }],
         },
         peripherals: PeripheralsDTO {
             cartridge: CartridgeDTO::MPI {

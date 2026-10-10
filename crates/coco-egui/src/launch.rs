@@ -100,6 +100,7 @@ pub(crate) fn launch_machine_with_gamepad(
     );
     mount_peripherals(&mut app, media, cartridge);
     mount_serial(&mut app, def.ports.serial, slug);
+    app.set_drivewire_shares(def.drivewire.share_table(slug)?);
 
     // Promote any `cart_error` the insert_*/mpi_insert_* helpers recorded into this launch
     // `Result`.

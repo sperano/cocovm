@@ -208,6 +208,7 @@ impl CocoApp {
         self.rebuild_cart_mirrors(media);
         self.reapply_configured_rs232();
         self.rebuild_media_path_mirrors(media);
+        self.lease_restored_dw_images(notes);
 
         // Drop time owed to the wall clock (like a pause) and reset the frontend's audio ring
         // buffer/filter history.
@@ -218,7 +219,7 @@ impl CocoApp {
     }
 
     /// Re-inject every host-only resource `#[serde(skip)]` dropped by the
-    /// round trip: RTC time source, DriveWire clock, RS-232 endpoint (restored
+    /// round trip: RTC time source, DriveWire clock and shares, RS-232 endpoint (restored
     /// as loopback here; [`Self::reapply_configured_rs232`] rebinds it to a
     /// non-default kind afterward if one was configured).
     fn reinject_host_only_resources(&mut self) {
@@ -228,6 +229,7 @@ impl CocoApp {
         if let Some(dw) = self.machine.bus.drivewire.as_mut() {
             dw.set_clock(host_dw_clock());
         }
+        self.install_drivewire_shares();
         if let Some(pak) = self.machine.bus.cart.as_deluxe_rs232() {
             pak.set_endpoint(Box::new(coco_core::serial::Loopback::new()));
         }
@@ -363,3 +365,7 @@ impl CocoApp {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "restore_test.rs"]
+mod tests;
