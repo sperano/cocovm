@@ -32,6 +32,7 @@ pub fn run(
         welcome_image_cycle_secs_overridden,
         welcome_image_shuffle,
         welcome_image_shuffle_overridden,
+        check_for_updates,
         hotkeys,
         manager_sort,
         ..
@@ -111,7 +112,14 @@ pub fn run(
             welcome.load_random();
             app.config_path = config_path;
             #[cfg(target_os = "macos")]
-            crate::macos_menu::install_about(&creation.egui_ctx, app.about_request.clone());
+            crate::macos_menu::install(
+                &creation.egui_ctx,
+                app.about_request.clone(),
+                app.update_request.clone(),
+            );
+            if check_for_updates {
+                app.update_check.start(&creation.egui_ctx, false);
+            }
             app.roms_dir = crate::paths::roms_dir();
             app.cartridges_dir = crate::paths::cartridges_dir();
             app.log_reload = Some(log_reload);

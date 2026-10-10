@@ -50,7 +50,7 @@ mod sort;
 mod thumbnails;
 mod toolbar;
 mod vm_windows;
-mod welcome;
+pub(crate) mod welcome;
 mod welcome_image;
 
 pub use run::run;
@@ -375,7 +375,12 @@ pub struct ManagerApp {
     /// counted when the window opens rather than every frame.
     about_inventory: String,
     /// Opens the About window from the macOS application menu.
-    pub(crate) about_request: crate::about::AboutRequest,
+    pub(crate) about_request: crate::menu_request::MenuRequest,
+    /// Starts an update check from the macOS application menu.
+    pub(crate) update_request: crate::menu_request::MenuRequest,
+    /// The session's update check (`update.rs`), shown in the welcome
+    /// panel and the About window. `pub(crate)` for `ui_tests`.
+    pub(crate) update_check: crate::update::UpdateCheck,
     /// Monotonic clock for saved-preview LRU stamps.
     thumbnail_use_clock: u64,
     /// Synchronous preview decodes still available in this manager update.
@@ -458,7 +463,9 @@ impl ManagerApp {
             settings: None,
             show_about: false,
             about_inventory: String::new(),
-            about_request: crate::about::AboutRequest::default(),
+            about_request: crate::menu_request::MenuRequest::default(),
+            update_request: crate::menu_request::MenuRequest::default(),
+            update_check: crate::update::UpdateCheck::new(crate::update::LATEST_RELEASE_URL),
             thumbnail_use_clock: 0,
             thumbnail_loads_remaining: thumbnails::THUMBNAIL_LOADS_PER_UPDATE,
             scroll_to_row: None,
@@ -499,14 +506,16 @@ impl eframe::App for ManagerApp {
         // window's only content — the manager UI appears after a successful
         // download (Cancel quits the app, `manager/assets.rs`).
         if self.asset_dialog.is_some() {
-            // The dialog-sized window has no room for About; drop the request.
+            // The dialog-sized window has no room for About; drop the requests.
             self.about_request.take();
+            self.update_request.take();
             self.draw_asset_dialog(ctx);
             self.draw_exit_confirmation(ctx);
             return;
         }
 
-        self.poll_about_request(ctx);
+        self.update_check.poll();
+        self.poll_menu_requests(ctx);
         self.welcome_image.service(ctx, self.selection.is_empty());
         self.thumbnail_loads_remaining = thumbnails::THUMBNAIL_LOADS_PER_UPDATE;
 
@@ -540,7 +549,12 @@ impl eframe::App for ManagerApp {
         // welcome instructions and image when nothing's selected.
         egui::CentralPanel::default().show(ctx, |ui| {
             if self.selection.is_empty() {
-                welcome::draw(ui, &mut self.welcome_image, !self.entries.is_empty());
+                welcome::draw(
+                    ui,
+                    &mut self.welcome_image,
+                    !self.entries.is_empty(),
+                    &mut self.update_check,
+                );
             } else {
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     egui::Frame::NONE
@@ -557,7 +571,12 @@ impl eframe::App for ManagerApp {
             self.draw_delete_confirmation(ctx);
             self.draw_settings_dialog(ctx);
             if self.show_about {
-                crate::about::window(ctx, &mut self.show_about, &self.about_inventory);
+                crate::about::window(
+                    ctx,
+                    &mut self.show_about,
+                    &self.about_inventory,
+                    &self.update_check,
+                );
             }
         }
         self.drain_control();

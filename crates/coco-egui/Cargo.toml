@@ -57,6 +57,10 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 png = "0.18.0"
 owo-colors = {version="4.3.0",  features = ["supports-colors"]}
 rfd = "0.17.2"
+# MIT OR Apache-2.0, no dependencies. Compares the latest GitHub release's
+# tag with the built version (`update.rs`). Cargo.lock already pins it for
+# winit's Android build tooling.
+semver = "1.0.28"
 # MIT OR Apache-2.0. Extracts the downloaded assets tarball
 # (`unpack_assets` in main.rs); the gzip half comes from the earlier `flate2` entry.
 tar = "0.4.46"
@@ -71,7 +75,7 @@ toml = "0.9"
 # write-back into `config.toml` (`config.rs::save_file`).
 toml_edit = "0.25"
 # MIT OR Apache-2.0. Blocking HTTP client for the first-run assets download
-# (`download_and_unpack_assets` in main.rs).
+# (`download_and_unpack_assets` in main.rs) and the update check (`update.rs`).
 ureq = "3.3.0"
 pluralizer = "0.5.0"
 # MIT OR Apache-2.0. Terminal column widths for wrapping the startup banner

@@ -7,8 +7,8 @@ use tracing_subscriber::filter::LevelFilter;
 /// `main.rs`); naming a machine's slug starts that machine's VM as the
 /// manager opens, so a saved machine can be launched without finding its row
 /// in the list. The rest are the log level, the control listener's port, the
-/// asset bundle's URL, the toolbar and status-bar caption toggles, and the
-/// welcome-image cycle.
+/// asset bundle's URL, the toolbar and status-bar caption toggles, the
+/// welcome-image cycle, and the startup update check.
 /// Every settings field is `Option`: `None` means "not given here", so
 /// `config::resolve` can fall through to `config.toml` and then the built-in
 /// default (`config.rs`'s precedence chain). clap's own `env` fallback already
@@ -94,6 +94,18 @@ pub(crate) struct Cli {
         value_parser = clap::builder::BoolishValueParser::new()
     )]
     pub(crate) welcome_image_shuffle: Option<bool>,
+
+    /// Ask GitHub for the latest release at startup and show a notice when
+    /// it is newer (`update.rs`). `--check-for-updates=false` turns it off
+    /// for this launch. Same flag grammar as `--toolbar-icons-only`.
+    #[arg(
+        long,
+        env = "COCOVM_CHECK_FOR_UPDATES",
+        num_args = 0..=1,
+        default_missing_value = "true",
+        value_parser = clap::builder::BoolishValueParser::new()
+    )]
+    pub(crate) check_for_updates: Option<bool>,
 }
 
 /// `--log-level`, the CLI's spelling of a [`LevelFilter`]. Also `config.toml`'s

@@ -28,6 +28,7 @@ fn no_relevant_env_vars_set() -> bool {
         "COCOVM_WELCOME_IMAGE_CYCLE",
         "COCOVM_WELCOME_IMAGE_CYCLE_SECS",
         "COCOVM_WELCOME_IMAGE_SHUFFLE",
+        "COCOVM_CHECK_FOR_UPDATES",
     ]
     .iter()
     .all(|var| std::env::var_os(var).is_none())
@@ -49,6 +50,7 @@ fn cli_flag_beats_file_and_default() {
         "--welcome-image-cycle-secs",
         "5",
         "--welcome-image-shuffle",
+        "--check-for-updates=false",
     ])
     .expect("flags parse");
     let file = FileConfig {
@@ -60,6 +62,7 @@ fn cli_flag_beats_file_and_default() {
         welcome_image_cycle: Some(false),
         welcome_image_cycle_secs: NonZeroU32::new(99),
         welcome_image_shuffle: Some(false),
+        check_for_updates: Some(true),
         manager_sort: Some(ManagerSort::NameDesc),
         ..FileConfig::default()
     };
@@ -79,6 +82,7 @@ fn cli_flag_beats_file_and_default() {
     assert!(config.welcome_image_cycle_secs_overridden);
     assert!(config.welcome_image_shuffle);
     assert!(config.welcome_image_shuffle_overridden);
+    assert!(!config.check_for_updates);
     assert_eq!(config.manager_sort, ManagerSort::NameDesc);
 }
 
@@ -117,6 +121,7 @@ fn file_value_beats_built_in_default() {
         welcome_image_cycle: Some(true),
         welcome_image_cycle_secs: NonZeroU32::new(8),
         welcome_image_shuffle: Some(true),
+        check_for_updates: Some(false),
         hotkey_key_layout: hotkey("F9"),
         hotkey_keyboard_mode: hotkey("Shift+F9"),
         hotkey_new_machine: hotkey("Cmd+Alt+N"),
@@ -142,6 +147,7 @@ fn file_value_beats_built_in_default() {
     assert!(!config.welcome_image_cycle_secs_overridden);
     assert!(config.welcome_image_shuffle);
     assert!(!config.welcome_image_shuffle_overridden);
+    assert!(!config.check_for_updates);
     assert_eq!(Some(config.hotkeys.key_layout), hotkey("F9"));
     assert_eq!(Some(config.hotkeys.keyboard_mode), hotkey("Shift+F9"));
     assert_eq!(Some(config.hotkeys.new_machine), hotkey("Cmd+Alt+N"));
@@ -166,6 +172,7 @@ fn built_in_defaults_apply_when_nothing_else_is_set() {
     assert_eq!(config.assets_url, crate::startup::DEFAULT_ASSETS_URL);
     assert!(!config.toolbar_icons_only);
     assert!(!config.status_bar_icons_only);
+    assert!(config.check_for_updates);
     assert_eq!(config.hotkeys, DEFAULT_HOTKEYS);
     assert_eq!(config.manager_sort, ManagerSort::CreatedDesc);
 }
@@ -275,6 +282,7 @@ fn default_template_uncommented_resolves_to_true_defaults() {
         welcome_image_cycle,
         welcome_image_cycle_secs,
         welcome_image_shuffle,
+        check_for_updates,
         hotkey_key_layout: _,
         hotkey_keyboard_mode: _,
         hotkey_new_machine: _,
@@ -321,6 +329,10 @@ fn default_template_uncommented_resolves_to_true_defaults() {
     );
     assert!(
         welcome_image_shuffle.is_some(),
+        "every FileConfig parameter needs a commented line in the template"
+    );
+    assert!(
+        check_for_updates.is_some(),
         "every FileConfig parameter needs a commented line in the template"
     );
     // The `hotkey_*` fields are covered through their actions: `hotkey`
@@ -393,6 +405,7 @@ fn a_valid_full_config_file_loads() {
         welcome_image_cycle = true
         welcome_image_cycle_secs = 45
         welcome_image_shuffle = true
+        check_for_updates = false
         hotkey_key_layout = "F9"
         hotkey_keyboard_mode = "Shift+F11"
         hotkey_new_machine = "Cmd+Shift+N"
@@ -415,6 +428,7 @@ fn a_valid_full_config_file_loads() {
             welcome_image_cycle: Some(true),
             welcome_image_cycle_secs: NonZeroU32::new(45),
             welcome_image_shuffle: Some(true),
+            check_for_updates: Some(false),
             hotkey_key_layout: hotkey("F9"),
             hotkey_keyboard_mode: hotkey("Shift+F11"),
             hotkey_new_machine: hotkey("Cmd+Shift+N"),
@@ -516,6 +530,7 @@ fn save_file_round_trips_through_load() {
         welcome_image_cycle: Some(true),
         welcome_image_cycle_secs: NonZeroU32::new(12),
         welcome_image_shuffle: Some(true),
+        check_for_updates: Some(false),
         hotkey_key_layout: hotkey("F9"),
         hotkey_keyboard_mode: hotkey("Alt+F12"),
         hotkey_new_machine: hotkey("Cmd+Shift+N"),

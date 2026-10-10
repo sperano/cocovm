@@ -3,8 +3,8 @@
 //! VM window's own toolbar, `chrome::toolbar`). Layout is New – Start –
 //! Suspend – Stop – Reset – separator – Settings – separator – Help.
 //! Settings opens the global `config.toml` editor (`manager/settings.rs`);
-//! Help pops up a menu holding "About CoCoVM" (no Help tile on macOS, where
-//! the application menu carries that item).
+//! Help pops up a menu holding "Check for Updates…" and "About CoCoVM" (no
+//! Help tile on macOS, where the application menu carries those items).
 //! The four transport tiles act on the current selection through the same
 //! [`super::bulk::BulkAction`]/[`ManagerApp::apply_bulk`] dispatch used by the
 //! bulk context menu — one code path, three surfaces.
@@ -42,7 +42,8 @@ const START_DISABLED_HOVER: &str = "The selected machines are already running";
 const STOP_HOVER: &str = "Shut down the selected machines that are running or suspended";
 const STOP_DISABLED_HOVER: &str = "None of the selected machines are running or suspended";
 const RESET_HOVER: &str = "Press the reset button on the selected running machines";
-/// macOS keeps About in the application menu, which would leave the Help tile empty.
+/// macOS keeps About and Check for Updates in the application menu, which
+/// would leave the Help tile empty.
 const HELP_TILE: bool = !cfg!(target_os = "macos");
 
 impl ManagerApp {
@@ -125,10 +126,21 @@ impl ManagerApp {
 
     /// The Help tile's menu.
     fn help_menu_ui(&mut self, ui: &mut egui::Ui) {
+        if ui.button(crate::update::MENU_LABEL).clicked() {
+            self.check_for_updates(ui.ctx());
+            ui.close();
+        }
         if ui.button(crate::about::MENU_LABEL).clicked() {
             self.open_about();
             ui.close();
         }
+    }
+
+    /// Start a requested update check and open the About window, which
+    /// shows its progress and outcome.
+    fn check_for_updates(&mut self, ctx: &egui::Context) {
+        self.update_check.start(ctx, true);
+        self.open_about();
     }
 
     /// Open the About window with freshly counted assets and machines, so
@@ -142,13 +154,18 @@ impl ManagerApp {
         self.show_about = true;
     }
 
-    /// Open the About window on the manager, brought to the front, when the
-    /// application menu asked for it.
-    pub(super) fn poll_about_request(&mut self, ctx: &egui::Context) {
-        if !self.about_request.take() {
+    /// Act on the application menu's About and Check for Updates items.
+    /// Both open the About window on the manager, brought to the front.
+    pub(super) fn poll_menu_requests(&mut self, ctx: &egui::Context) {
+        let about = self.about_request.take();
+        let update = self.update_request.take();
+        if update {
+            self.check_for_updates(ctx);
+        } else if about {
+            self.open_about();
+        } else {
             return;
         }
-        self.open_about();
         let manager = egui::ViewportId::ROOT;
         ctx.send_viewport_cmd_to(manager, egui::ViewportCommand::Minimized(false));
         ctx.send_viewport_cmd_to(manager, egui::ViewportCommand::Focus);

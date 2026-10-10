@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- An update check. At startup, CoCoVM asks GitHub for the latest release
+  and, when it is newer, shows a notice above the welcome artwork with a
+  link to the release page and a Dismiss button. The About window shows
+  whether a newer version is available. Check for Updates… in the Help
+  menu (in the application menu on macOS) checks on demand. To turn off
+  the startup check, clear "Check for updates at startup" in the Settings
+  dialog's General tab, set `check_for_updates = false` in `config.toml`,
+  or launch with `--check-for-updates=false`. Nothing is downloaded or
+  installed.
+
 ## [0.7.9] - 2026-10-09
 
 ### Added

@@ -40,6 +40,8 @@ pub(crate) struct SettingsDialog {
     /// keeps it nonzero.
     welcome_image_cycle_secs: u32,
     welcome_image_shuffle: bool,
+    /// Saved only; the check reads it at the next launch.
+    check_for_updates: bool,
     hotkey_editor: HotkeyEditor,
     tab: SettingsTab,
     /// Preserved unchanged because the machine-list control owns this key.
@@ -105,6 +107,9 @@ impl SettingsDialog {
             welcome_image_shuffle: file
                 .welcome_image_shuffle
                 .unwrap_or(config::DEFAULT_WELCOME_IMAGE_SHUFFLE),
+            check_for_updates: file
+                .check_for_updates
+                .unwrap_or(config::DEFAULT_CHECK_FOR_UPDATES),
             hotkey_editor: HotkeyEditor::new(hotkeys),
             tab: SettingsTab::General,
             manager_sort: file.manager_sort,
@@ -147,6 +152,8 @@ impl SettingsDialog {
             welcome_image_shuffle: (self.welcome_image_shuffle
                 != config::DEFAULT_WELCOME_IMAGE_SHUFFLE)
                 .then_some(self.welcome_image_shuffle),
+            check_for_updates: (self.check_for_updates != config::DEFAULT_CHECK_FOR_UPDATES)
+                .then_some(self.check_for_updates),
             manager_sort: self.manager_sort,
             ..FileConfig::default()
         };

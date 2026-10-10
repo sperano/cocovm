@@ -39,6 +39,10 @@ pub(crate) const DEFAULT_WELCOME_IMAGE_CYCLE_SECS: NonZeroU32 = NonZeroU32::new(
 /// Built-in default for `welcome_image_shuffle`: cycle in file-name order.
 pub(crate) const DEFAULT_WELCOME_IMAGE_SHUFFLE: bool = false;
 
+/// Built-in default for `check_for_updates`: one request to GitHub per
+/// launch (`update.rs`).
+pub(crate) const DEFAULT_CHECK_FOR_UPDATES: bool = true;
+
 /// Machine-list ordering values accepted by `config.toml`'s `manager_sort` key.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -68,6 +72,7 @@ pub(crate) struct FileConfig {
     /// swap-every-frame loop.
     pub(crate) welcome_image_cycle_secs: Option<NonZeroU32>,
     pub(crate) welcome_image_shuffle: Option<bool>,
+    pub(crate) check_for_updates: Option<bool>,
     /// The `hotkey_*` keys (`hotkeys.rs`), one per [`HotkeyAction`] and
     /// named by [`HotkeyAction::config_key`]. Settings-dialog and file
     /// only: no CLI flag or environment variable sets a hotkey.
@@ -206,6 +211,8 @@ pub(crate) struct Config {
     pub(crate) welcome_image_shuffle: bool,
     /// `toolbar_icons_only_overridden`'s counterpart for `welcome_image_shuffle`.
     pub(crate) welcome_image_shuffle_overridden: bool,
+    /// Read once, at startup; Settings changes take effect on the next launch.
+    pub(crate) check_for_updates: bool,
     pub(crate) hotkeys: Hotkeys,
     pub(crate) manager_sort: ManagerSort,
 }
@@ -289,6 +296,10 @@ pub(crate) fn resolve(cli: Cli, file: FileConfig) -> Config {
             .or(file.welcome_image_shuffle)
             .unwrap_or(DEFAULT_WELCOME_IMAGE_SHUFFLE),
         welcome_image_shuffle_overridden,
+        check_for_updates: cli
+            .check_for_updates
+            .or(file.check_for_updates)
+            .unwrap_or(DEFAULT_CHECK_FOR_UPDATES),
         hotkeys,
         manager_sort: file.manager_sort.unwrap_or(DEFAULT_MANAGER_SORT),
     }
@@ -333,6 +344,9 @@ fn default_config_template() -> String {
 # pick each next welcome image at random instead of in file-name order; only read while welcome_image_cycle is true
 # welcome_image_shuffle = {welcome_image_shuffle}
 
+# ask GitHub for the latest release at startup and show a notice when it is newer
+# check_for_updates = {check_for_updates}
+
 # UI hotkeys: modifier names, then a key name, joined by +. Modifiers are
 # Cmd (Command on macOS, Ctrl on Windows/Linux), Ctrl, Alt, and Shift. A
 # hotkey without Cmd or Ctrl must be a function key from F3 up, so it never
@@ -348,6 +362,7 @@ fn default_config_template() -> String {
         welcome_image_cycle = DEFAULT_WELCOME_IMAGE_CYCLE,
         welcome_image_cycle_secs = DEFAULT_WELCOME_IMAGE_CYCLE_SECS,
         welcome_image_shuffle = DEFAULT_WELCOME_IMAGE_SHUFFLE,
+        check_for_updates = DEFAULT_CHECK_FOR_UPDATES,
         hotkeys = hotkey_template_lines(),
         manager_sort = manager_sort_name(DEFAULT_MANAGER_SORT),
     )
@@ -433,6 +448,7 @@ pub(crate) fn save_file(path: &Path, file: &FileConfig) -> Result<(), String> {
         "welcome_image_shuffle",
         file.welcome_image_shuffle,
     );
+    set_or_remove(&mut doc, "check_for_updates", file.check_for_updates);
     for action in HotkeyAction::all() {
         let hotkey = file.hotkey(action).map(|h| h.to_string());
         set_or_remove(&mut doc, &action.config_key(), hotkey);

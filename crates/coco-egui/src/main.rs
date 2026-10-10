@@ -37,6 +37,7 @@ mod machine_def;
 mod macos_menu;
 mod manager;
 mod media;
+mod menu_request;
 mod mpi;
 mod new_vm;
 mod orch90_meters;
@@ -54,6 +55,7 @@ mod save_state;
 mod startup;
 mod status_icons;
 mod typeahead;
+mod update;
 mod widgets;
 
 use std::collections::VecDeque;
