@@ -25,7 +25,9 @@ use std::io;
 use std::path::PathBuf;
 
 pub use access::{AccessMode, AccessRegistry, Lease, LeaseOwner};
-pub use session::{MAX_OPEN_HANDLES, ShareHandle, ShareImage, ShareOp, ShareSession, ShareStatus};
+pub use session::{
+    MAX_OPEN_HANDLES, ShareHandle, ShareImage, ShareOp, ShareReader, ShareSession, ShareStatus,
+};
 
 use super::DWServer;
 use super::host::{RequestId, SubmitError};
@@ -289,4 +291,4 @@ impl DWServer {
 
 #[cfg(test)]
 #[path = "share_test.rs"]
-mod tests;
+pub(super) mod tests;

@@ -7,6 +7,6 @@ mod banked_rompak;
 mod cart;
 mod cart_mpi;
 pub(crate) mod disk;
-mod drivewire;
+pub(crate) mod drivewire;
 mod printer;
 mod tape;

@@ -20,15 +20,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Working DriveWire virtual serial channels. NitrOS-9 paths to `/TERM`,
   `/N`, `/N1` to `/N13`, and `/MIDI` now carry bytes in both directions,
   and a channel closed by the host side reaches the guest as a hangup once
-  its queued bytes are read. No host service answers on the channels yet;
-  the `dw` commands are planned. Hover over a DriveWire status entry to see
+  its queued bytes are read. Hover over a DriveWire status entry to see
   open channels, queued bytes, and dropped bytes.
 - DriveWire host shares. The DriveWire tab's Host shares group names host
   folders, each read-only or read/write, and saves them as
   `[[drivewire.shares]]` in the machine definition. Guests cannot leave a
   share's folder through `..`, absolute paths, or symlinks, and each VM
-  keeps its own current directory and open files. No guest service uses
-  shares yet.
+  keeps its own current directory and open files.
+- DriveWire `dw` commands for NitrOS-9. The guest's `dw` utility can run
+  `dw server dir` to list a host share, `dw server list` to retrieve a
+  file byte for byte, and `dw disk show`, `dw disk insert`, and
+  `dw disk eject` to manage drives 0 to 3 with images from a share. An
+  image from a read-only share is write-protected. Guest inserts and ejects
+  last until the VM restarts; they never change the VM's settings, and the
+  DriveWire tab and status bar show which drives the guest changed.
 
 ### Changed
 - Two running VMs can no longer mount the same DriveWire disk image. The
