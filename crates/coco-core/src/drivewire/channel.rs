@@ -64,6 +64,18 @@ pub enum ChannelError {
     Closing,
 }
 
+impl std::fmt::Display for ChannelError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Stale => "the channel session was replaced or reset",
+            Self::NotOpen => "the guest closed the channel",
+            Self::Closing => "the channel is closing",
+        })
+    }
+}
+
+impl std::error::Error for ChannelError {}
+
 /// A snapshot of one channel's state for host services and diagnostics.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ChannelInfo {
@@ -182,7 +194,8 @@ impl Channels {
             return;
         };
         if slot.opens == 0 {
-            slot.session = slot.session.wrapping_add(1);
+            // Session 0 means "never opened"; skip it if the count wraps.
+            slot.session = slot.session.wrapping_add(1).max(1);
             slot.hangup = false;
             slot.to_guest.clear();
             slot.from_guest.clear();
