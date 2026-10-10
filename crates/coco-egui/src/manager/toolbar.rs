@@ -130,7 +130,7 @@ impl ManagerApp {
 
     /// Open the About window with freshly counted assets and machines, so
     /// it reflects downloads and definitions added since startup.
-    pub(super) fn open_about(&mut self) {
+    fn open_about(&mut self) {
         self.about_inventory = crate::startup::inventory(
             crate::startup::rom_count_in(self.roms_dir.as_deref()),
             crate::startup::cartridge_count_in(self.cartridges_dir.as_deref()),
