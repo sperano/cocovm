@@ -37,6 +37,8 @@ mod manager_sort;
 mod manager_window;
 mod quick_states_test;
 mod state_files_test;
+#[path = "ui_tests/toolbar_layout_test.rs"]
+mod toolbar_layout;
 mod vm_window_disks;
 mod vm_window_joysticks;
 mod vm_window_menus;

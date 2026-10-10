@@ -18,12 +18,16 @@ const EMBEDDED_FALLBACK_SIZE: egui::Vec2 = egui::vec2(320.0, 240.0);
 
 /// Window size of a launched VM's own native OS window, sized for the
 /// 4:3 image so it always fits.
-fn vm_window_inner_size() -> egui::Vec2 {
+fn vm_window_inner_size(icons_only: bool) -> egui::Vec2 {
     let img_h = coco_core::raster::CANVAS_H as f32 * crate::SCALE;
     let win_w = img_h * crate::TARGET_ASPECT;
-    let win_h = img_h + crate::TOOLBAR_H + crate::STATUS_BAR_H;
+    let win_h = img_h + crate::toolbar_height(icons_only) + crate::STATUS_BAR_H;
     egui::vec2(win_w, win_h)
 }
+
+#[cfg(test)]
+#[path = "vm_windows_test.rs"]
+mod tests;
 
 impl ManagerApp {
     /// One native OS window per running VM: an immediate viewport per
@@ -41,7 +45,7 @@ impl ManagerApp {
             let name = self.entries[i].def.name.clone();
             let window_session = self.entries[i].window_session;
             let viewport_id = egui::ViewportId::from_hash_of(("vm-window", window_session));
-            let inner_size = vm_window_inner_size();
+            let inner_size = vm_window_inner_size(self.toolbar_icons_only);
             let builder = crate::window_builder(name.clone()).with_inner_size(inner_size);
 
             // Taken out of the entry so the closure can mutate it without conflicting with `self`.

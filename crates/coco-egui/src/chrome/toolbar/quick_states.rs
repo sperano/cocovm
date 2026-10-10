@@ -7,7 +7,7 @@
 //! reach every state). The fit is measured from
 //! the available width and the tile dimensions, never a fixed breakpoint,
 //! and the toolbar never wraps: its height is part of the window-sizing math
-//! (`crate::TOOLBAR_H`).
+//! (`crate::toolbar_height`).
 
 use crate::hotkeys::{Hotkey, HotkeyAction};
 use crate::save_state::{QUICK_SLOTS, StateFile, empty_state_hover, saved_time, state_name};
