@@ -181,3 +181,23 @@ fn toolbar_icons_only_accepts_boolish_spellings() {
         assert_eq!(parse(value), Some(Some(false)), "{value}");
     }
 }
+
+#[test]
+fn check_for_updates_bare_flag_means_true_and_takes_an_explicit_value() {
+    use clap::Parser as _;
+
+    let parse = |args: &[&str]| {
+        Cli::try_parse_from(args)
+            .map(|cli| cli.check_for_updates)
+            .ok()
+    };
+    // Skipped when COCOVM_CHECK_FOR_UPDATES is set, like `log_level_comes_from_the_flag`.
+    if std::env::var_os("COCOVM_CHECK_FOR_UPDATES").is_none() {
+        assert_eq!(parse(&["cocovm"]), Some(None));
+    }
+    assert_eq!(parse(&["cocovm", "--check-for-updates"]), Some(Some(true)));
+    assert_eq!(
+        parse(&["cocovm", "--check-for-updates=off"]),
+        Some(Some(false))
+    );
+}

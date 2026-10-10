@@ -823,6 +823,7 @@ dependencies = [
  "png",
  "regex",
  "rfd",
+ "semver",
  "serde",
  "serde_json",
  "tar",

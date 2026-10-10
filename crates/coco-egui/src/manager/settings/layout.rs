@@ -21,6 +21,9 @@ const BUTTON_WIDTH: f32 = 80.0;
 const CONTROL_PORT_RANGE: std::ops::RangeInclusive<u16> = 1..=u16::MAX;
 /// The persisted interval is nonzero.
 const WELCOME_IMAGE_CYCLE_SECS_RANGE: std::ops::RangeInclusive<u32> = 1..=u32::MAX;
+const CHECK_FOR_UPDATES_LABEL: &str = "Check for updates at startup";
+const CHECK_FOR_UPDATES_HOVER: &str =
+    "Ask GitHub for the latest release when CoCoVM starts. Takes effect at the next launch.";
 
 pub(super) fn dialog_frame(ctx: &egui::Context) -> egui::Frame {
     egui::Frame::popup(&ctx.style()).inner_margin(DIALOG_INNER_MARGIN)
@@ -90,6 +93,10 @@ impl SettingsDialog {
                     ui.checkbox(&mut self.status_bar_icons_only, "Status bar icons only");
                 });
                 section(ui, "Welcome images", |ui| self.draw_welcome_images(ui));
+                section(ui, "Updates", |ui| {
+                    ui.checkbox(&mut self.check_for_updates, CHECK_FOR_UPDATES_LABEL)
+                        .on_hover_text(CHECK_FOR_UPDATES_HOVER);
+                });
             }
             SettingsTab::Hotkeys => self.hotkey_editor.draw(ui),
             SettingsTab::McpServer => self.draw_mcp_server(ui),

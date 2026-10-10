@@ -17,7 +17,7 @@
 //! click/hover/combo-select interaction helpers every other module builds
 //! on; the rest are one topic apiece (the VM window's own dialogs/menus, its
 //! status-bar disk, tape and joysticks entries/menus and icon-only mode, and the manager window's
-//! scaffold/peripherals/lifecycle/settings/Help menu).
+//! scaffold/peripherals/lifecycle/settings/Help menu/update check).
 
 mod cartridge_detection;
 mod harness;
@@ -34,6 +34,7 @@ mod manager_settings;
 mod manager_settings_layout_test;
 mod manager_settings_mcp_test;
 mod manager_sort;
+mod manager_update_test;
 mod manager_window;
 mod quick_states_test;
 mod state_files_test;
