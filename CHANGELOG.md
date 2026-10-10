@@ -7,16 +7,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.9] - 2026-10-09
+
 ### Added
-- The application icon now reaches every platform's launcher, not just the
-  macOS bundle. The Windows executable embeds the icon and a version block,
-  so Explorer shows them without an installer. The Linux archive carries a
+- A State selector with Save and Load tiles on each VM window's toolbar.
+  There are five quick states instead of three slots, and every one has
+  keyboard shortcuts: ⌘1 to ⌘5 (Ctrl+1 to Ctrl+5 on Windows and Linux) load
+  States 1 to 5 and ⇧⌘1 to ⇧⌘5 (Ctrl+Shift+1 to Ctrl+Shift+5) save them.
+  The shortcuts are editable in the Settings dialog's Hotkeys tab and are
+  stored as `hotkey_load_state_<n>` and `hotkey_save_state_<n>` in
+  `config.toml`. Existing quick saves in slots 1 to 3 still load. Load is
+  disabled while the selected state is empty.
+- Save to File… and Load from File… at the end of the State selector, and
+  of the States menu when the toolbar is narrow. They save the machine
+  state to, or load it from, a `.ccstate` file anywhere on disk, and leave
+  the selected state unchanged.
+- A dialog when you quit with machines running. Each machine gets its own
+  choice of Suspend and close (the default) or Shut down, and Cancel keeps
+  the app open. If a state save or a media write fails, the app stays open
+  with the error and a retry option.
+- Tabs in the Settings dialog: General, Hotkeys, MCP server, and Advanced.
+  The MCP server tab has an enable checkbox next to the port, and changes
+  apply without a restart.
+- A welcome message with the application version above the manager's
+  artwork when no machine is selected, pointing to New for a first machine.
+- A new application icon, the CoCo mascot, on every platform's launcher.
+  The Windows executable embeds the icon and a version block, so Explorer
+  shows them without an installer. The Linux archive carries a
   `cocovm.desktop` entry, the icon in the standard sizes, and an
   `install.sh` that places them under `~/.local` (or a prefix you choose);
   the window now also reports `cocovm` as its Wayland app id, so GNOME and
   KDE pair the running window with the launcher. The macOS bundle step is a
   script under `packaging/` that builds the same `cocovm.app` from a local
   build.
+- An optional slug argument to start a saved machine as the manager opens:
+  `cocovm <slug>` starts that machine without selecting its row in the list.
+- MCP `wait_for_text` tool. It waits until the screen shows a literal
+  string or a regular-expression match and returns the screen, video mode,
+  and cursor, so a client no longer polls `wait` and `screen_text`. On
+  timeout the error includes the last screen.
+- A `fast_forward` option on the MCP `wait` and `wait_for_text` tools. With
+  it, the VM runs as fast as the host allows until the call returns, with
+  audio dropped, instead of at real-time speed; a 3,600-field wait no longer
+  takes a minute. The run ends with the call, including on timeout or a
+  dropped connection, and a VM fast-forwards for one call at a time.
+- MCP `enter_basic` tool. It types a multi-line BASIC listing one line at a
+  time, without `type_text`'s 600-character limit, and can type `NEW` first.
+  It rejects the whole listing before typing when the listing is longer than
+  8,192 characters, a line is longer than BASIC's 249-character input line,
+  or a character has no CoCo key. It stops at the first line that BASIC
+  answers with an error and reports that line, the error, and the screen.
+- `stop_vm` and `suspend_vm` MCP tools, which work like the manager's Stop
+  and Suspend: both write modified floppies and tapes back to their files
+  first. If a write-back fails, `stop_vm` still powers the VM off and
+  returns an error naming the file, while `suspend_vm` leaves the VM
+  running.
+- A `physical` option on the MCP `peek` and `poke` tools. With it, the
+  address is a byte offset into installed RAM, so memory that isn't mapped
+  in, such as other MMU blocks on a 512K or 2 MB CoCo 3, is reachable. A
+  physical `poke` writes straight into RAM with no bus side effects.
+  `peek`'s hex dump also gains an ASCII column.
+- Structured MCP tool results. For clients on protocol 2025-06-18,
+  `list_vms`, `screen_text`, and `peek` declare an `outputSchema` and return
+  `structuredContent` next to the existing text: the VM list; the screen
+  lines, mode, and cursor; and the address and bytes. Older clients get the
+  text alone. Requests with an unsupported `MCP-Protocol-Version` header are
+  rejected with HTTP 400. Clients on protocol 2025-03-26 can send JSON-RPC
+  batches, and tools carry annotations on the 2025 revisions.
+
+### Changed
 - The machine list's right-click menu item "Show config" is now "Show
   config in Finder" (macOS), "Show config in File Explorer" (Windows), or
   "Show config in File Manager" (Linux), and it does what the name says:
@@ -24,57 +83,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   selected the row, which looked like nothing happened when the row was
   already selected. On Linux the containing folder opens, since desktops
   have no portable way to select a file.
-- A `fast_forward` option on the MCP `wait` and `wait_for_text` tools. With
-  it, the VM runs as fast as the host allows until the call returns, with
-  audio dropped, instead of at real-time speed; a 3,600-field wait no longer
-  takes a minute. `wait_for_text` stops on the first field whose screen
-  matches. The run ends with the call, including on timeout or a dropped
-  connection, and a VM fast-forwards for one call at a time.
-- An optional slug argument to start a saved machine as the manager opens:
-  `cocovm <slug>` starts that machine without selecting its row in the list.
-- `stop_vm` and `suspend_vm` MCP tools, which work like the manager's Stop
-  and Suspend: both write modified floppies and tapes back to their files
-  first. If a write-back fails, `stop_vm` still powers the VM off and
-  returns an error naming the file, while `suspend_vm` leaves the VM
-  running.
-- Structured MCP tool results. For clients on protocol 2025-06-18,
-  `list_vms`, `screen_text`, and `peek` declare an `outputSchema` and return
-  `structuredContent` next to the existing text: the VM list; the screen
-  lines, mode, and cursor; and the address and bytes. Older clients get the
-  text alone. Requests with an unsupported `MCP-Protocol-Version` header are
-  rejected with HTTP 400.
-- MCP `enter_basic` tool. It types a multi-line BASIC listing one line at a
-  time, without `type_text`'s 600-character limit, and can type `NEW` first.
-  It rejects the whole listing before typing when the listing is longer than
-  8,192 characters, a line is longer than BASIC's 249-character input line,
-  or a character has no CoCo key. It stops at the first line that BASIC
-  answers with an error and reports that line, the error, and the screen.
-- Save to File… and Load from File… at the end of the toolbar's State
-  selector, and of the States menu when the toolbar is narrow. They save
-  the machine state to, or load it from, a `.ccstate` file anywhere on
-  disk, and leave the selected state unchanged.
-
-### Fixed
-- An MCP session no longer expires while one of its requests is still
-  running. The 5-minute idle timeout now starts when the response is sent,
-  so a long `enter_basic` call doesn't end the client's session.
-- On macOS, the application menu's About item opens CoCoVM's own About
-  window instead of the system's generic panel, and reads "About CoCoVM".
-  It works from a VM window too: the manager comes to the front to show it.
-  The manager's Help tile, which held only that item, is gone on macOS; on
-  Linux and Windows its item is now also spelled "About CoCoVM".
-
-### Changed
-- Five quick states instead of ten, and every one of them has keyboard
-  shortcuts: ⌘1 to ⌘5 (Ctrl+1 to Ctrl+5 on Windows and Linux) load States
-  1 to 5 and ⇧⌘1 to ⇧⌘5 (Ctrl+Shift+1 to Ctrl+Shift+5) save them. Before,
-  only States 1 to 3 had shortcuts. The shortcuts are editable in the
-  Settings dialog's Hotkeys tab like the other hotkeys, and are stored as
-  `hotkey_load_state_<n>` and `hotkey_save_state_<n>` in `config.toml`.
-  States 6 to 10 are gone; their files, if any, stay in the `save-states`
-  folder but are no longer listed. A `config.toml` that already gives ⌘4,
-  ⌘5, ⇧⌘4, or ⇧⌘5 (or the Ctrl equivalents) to another hotkey is refused
-  at startup, naming both actions, until one of them is rebound.
+- Loading a state saved on another machine type, such as a CoCo 2 state
+  in a CoCo 3 window, asks first. Before, the window silently turned into
+  the other type. Loading never changes the machine's settings.
+- Start Print Capture, Stop Print Capture, and Translate CR to LF are in
+  the status bar's Printer menu, next to Open Print Capture.
+- Orchestra-90 Levels is in the status bar's Sound menu, shown while an
+  Orchestra-90 is inserted.
+- The About window has a new layout with the mascot icon, the license, and
+  a link to the GitHub repository. On macOS it opens from the application
+  menu's About CoCoVM item, from a VM window too. On Linux and Windows it
+  opens from About CoCoVM in the manager toolbar's Help tile.
+- The MCP `type_text` tool rejects the whole call, typing nothing, when the
+  text has a character with no CoCo key, and names each such character.
+  Before, it dropped those characters and still reported success.
 - The MCP server's `list_vms` tool also reports each VM's model, RAM size,
   CPU, cartridge, and mounted media.
 - A pending MCP `wait`, `wait_for_text`, `type_text`, or `press_keys` call
@@ -84,26 +106,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   lands, as a 0-based row and column, on the 32-column screen and the
   `WIDTH 40`/`WIDTH 80` screens. In PMODE graphics it now says there is no
   text buffer instead of decoding graphics bytes as characters.
-- Start Print Capture, Stop Print Capture, and Translate CR to LF are in
-  the status bar's Printer menu, next to Open Print Capture, now that the
-  Machine menu is gone.
-- Loading a state saved on another machine type, such as a CoCo 2 state
-  in a CoCo 3 window, asks first. Before, the window silently turned into
-  the other type. Loading never changes the machine's settings.
+
+### Fixed
+- An MCP session no longer expires while one of its requests is still
+  running. The 5-minute idle timeout now starts when the response is sent,
+  so a long call doesn't end the client's session.
+- Long lines in the terminal startup banner, such as a long GPU or driver
+  name on Windows, wrap inside the box instead of running past its right
+  edge.
 
 ### Removed
-- The `book/` course and its `tools/build-book.sh` EPUB/PDF builder. The
-  per-PR book-update gate is gone with it.
-- The Machine menu's Quick Save and Quick Load submenus. Save and load
-  quick states with the toolbar's State selector and its Save and Load
-  tiles, or with each state's keyboard shortcuts.
-- The Machine menu. Its Save State and Load State items are now Save to
-  File… and Load from File… in the toolbar's State selector, and print
-  capture moved to the Printer menu.
-- The VM window's menu bar. Its View menu's Orchestra-90 Levels item is
-  now in the status bar's Sound menu, shown while an Orchestra-90 is
-  inserted. Its Help menu's About item is now About cocovm, in the menu of
-  the manager toolbar's Help tile, which did nothing before.
+- The VM window's menu bar, with its Machine, View, and Help menus. Quick
+  Save and Quick Load became the toolbar's State selector and shortcuts,
+  Save State and Load State became Save to File… and Load from File… in
+  that selector, and the other items moved as listed under Changed.
+- The `book/` course and its `tools/build-book.sh` EPUB/PDF builder.
 
 ## [0.7.8] - 2026-10-03
 
