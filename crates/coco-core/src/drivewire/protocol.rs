@@ -8,9 +8,10 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::serial::{SerialOp, SerialRequest};
 use super::{
-    COMST_PAYLOAD_LEN, DW_PROTOCOL_VERSION, DWServer, HEADER_LEN, SS_COMST, STAT_PAYLOAD_LEN,
-    TIME_REPLY_YEAR_BASE, TRANSACTION_TIMEOUT_CYCLES, WRITE_BODY_LEN, error, opcode,
+    DW_PROTOCOL_VERSION, DWServer, HEADER_LEN, STAT_PAYLOAD_LEN, TIME_REPLY_YEAR_BASE,
+    TRANSACTION_TIMEOUT_CYCLES, WRITE_BODY_LEN, error, opcode,
 };
 
 /// One in-progress DriveWire transaction. An opcode byte is only ever
@@ -27,36 +28,22 @@ pub(super) enum State {
     /// [`opcode::DWINIT`] sent; awaiting the client's 1-byte driver version
     /// (ignored) before replying with [`DW_PROTOCOL_VERSION`].
     AwaitDwInitVersion,
-    /// A "consume `remaining` more bytes, then send no reply" transaction.
-    /// This wire shape is shared by several unrelated opcodes:
-    /// [`opcode::GETSTAT`]/[`opcode::SETSTAT`] (drive, statcode),
-    /// [`opcode::SERGETSTAT`] (channel, statcode),
-    /// [`opcode::SERWRITE`] (channel, data byte),
-    /// [`opcode::SERINIT`]/[`opcode::SERTERM`] (channel), the
-    /// [`opcode::FASTWRITE_BASE`]..=[`opcode::FASTWRITE_LAST`] family
-    /// (data byte), and the trailing [`COMST_PAYLOAD_LEN`]-byte option
-    /// table after an [`SS_COMST`] [`opcode::SERSETSTAT`] (see
-    /// [`State::AwaitSerSetStat`]) — hence one shared variant rather than
-    /// a sibling per opcode.
+    /// A "consume `remaining` more bytes, then send no reply" transaction:
+    /// the (drive, statcode) payload of [`opcode::GETSTAT`]/[`opcode::SETSTAT`],
+    /// and the [`COMST_PAYLOAD_LEN`](super::COMST_PAYLOAD_LEN)-byte SCF option
+    /// table after an [`SS_COMST`](super::SS_COMST) [`opcode::SERSETSTAT`].
     AwaitDiscard {
         remaining: u8,
     },
-    /// [`opcode::SERREADM`] sent; awaiting its 2-byte payload (channel,
-    /// count). Once both bytes arrive, replies with `count` zero bytes
-    /// (this server never has real virtual-serial data pending, and
-    /// [`opcode::SERREAD`] always reports "idle" first, so a real client
-    /// never actually reaches this opcode — but the wire shape is still
-    /// honored for one that does).
+    /// A virtual-serial request (`drivewire::serial`).
+    Serial(SerialRequest),
+    /// An [`opcode::SERREADM`] header from a snapshot saved before virtual
+    /// channels existed; continues as a [`State::Serial`] block read.
     AwaitSerReadM {
         buf: Vec<u8>,
     },
-    /// [`opcode::SERSETSTAT`] sent; awaiting its 2-byte payload (channel,
-    /// statcode). Once both bytes arrive, branches on the statcode: if it
-    /// is [`SS_COMST`], transitions to [`State::AwaitDiscard`] with
-    /// [`COMST_PAYLOAD_LEN`] more bytes to consume (the SCF
-    /// device-descriptor option table that always accompanies `SS.ComSt`
-    /// on the wire); otherwise the transaction is already complete (no
-    /// reply either way).
+    /// An [`opcode::SERSETSTAT`] header from a snapshot saved before virtual
+    /// channels existed; continues as a [`State::Serial`] setstat.
     AwaitSerSetStat {
         buf: Vec<u8>,
     },
@@ -119,8 +106,21 @@ impl DWServer {
                 self.reply.push_back(DW_PROTOCOL_VERSION);
             }
             State::AwaitDiscard { remaining } => self.feed_discard(remaining),
-            State::AwaitSerReadM { buf } => self.feed_ser_readm(buf, byte),
-            State::AwaitSerSetStat { buf } => self.feed_ser_setstat(buf, byte),
+            State::Serial(request) => self.feed_serial(request, byte),
+            State::AwaitSerReadM { buf } => self.feed_serial(
+                SerialRequest::Header {
+                    op: SerialOp::ReadBlock,
+                    buf,
+                },
+                byte,
+            ),
+            State::AwaitSerSetStat { buf } => self.feed_serial(
+                SerialRequest::Header {
+                    op: SerialOp::SetStat,
+                    buf,
+                },
+                byte,
+            ),
             State::AwaitReadHeader { ex, buf } => self.feed_read_header(ex, buf, byte),
             State::AwaitReadExChecksum {
                 expected,
@@ -143,35 +143,6 @@ impl DWServer {
             self.state = State::AwaitDiscard {
                 remaining: remaining - 1,
             };
-        }
-    }
-
-    /// [`State::AwaitSerReadM`]: accumulate the 2-byte (channel, count)
-    /// payload, then reply with `count` zero bytes.
-    fn feed_ser_readm(&mut self, mut buf: Vec<u8>, byte: u8) {
-        buf.push(byte);
-        if buf.len() == 2 {
-            let count = buf[1];
-            self.reply.extend(std::iter::repeat_n(0u8, count as usize));
-        } else {
-            self.state = State::AwaitSerReadM { buf };
-        }
-    }
-
-    /// [`State::AwaitSerSetStat`]: accumulate the 2-byte (channel, statcode)
-    /// payload, then branch on the statcode.
-    fn feed_ser_setstat(&mut self, mut buf: Vec<u8>, byte: u8) {
-        buf.push(byte);
-        if buf.len() == 2 {
-            let statcode = buf[1];
-            if statcode == SS_COMST {
-                self.state = State::AwaitDiscard {
-                    remaining: COMST_PAYLOAD_LEN as u8,
-                };
-            }
-            // Otherwise the transaction is complete: no reply (state stays Idle).
-        } else {
-            self.state = State::AwaitSerSetStat { buf };
         }
     }
 
@@ -239,12 +210,19 @@ impl DWServer {
                     remaining: STAT_PAYLOAD_LEN,
                 };
             }
-            opcode::SERREAD => self.handle_serread(),
-            opcode::SERREADM => self.handle_serreadm(),
-            opcode::SERWRITE | opcode::SERGETSTAT => self.handle_ser_discard(2),
-            opcode::SERSETSTAT => self.handle_sersetstat(),
-            opcode::SERINIT | opcode::SERTERM => self.handle_ser_discard(1),
-            opcode::FASTWRITE_BASE..=opcode::FASTWRITE_LAST => self.handle_ser_discard(1),
+            opcode::SERREAD => self.reply_poll(),
+            opcode::SERREADM => self.begin_serial(SerialOp::ReadBlock),
+            opcode::SERWRITE => self.begin_serial(SerialOp::Write),
+            opcode::SERWRITEM => self.begin_serial(SerialOp::WriteBlock),
+            opcode::SERGETSTAT => self.begin_serial(SerialOp::GetStat),
+            opcode::SERSETSTAT => self.begin_serial(SerialOp::SetStat),
+            opcode::SERINIT => self.begin_serial(SerialOp::Init),
+            opcode::SERTERM => self.begin_serial(SerialOp::Term),
+            opcode::FASTWRITE_BASE..=opcode::FASTWRITE_LAST => {
+                self.begin_serial(SerialOp::FastWrite {
+                    channel: op - opcode::FASTWRITE_BASE,
+                });
+            }
             opcode::READ | opcode::REREAD => self.handle_read_opcode(false),
             opcode::READEX | opcode::REREADEX => self.handle_read_opcode(true),
             opcode::WRITE | opcode::REWRITE => {
@@ -268,37 +246,6 @@ impl DWServer {
         self.reply.push_back(t.hour);
         self.reply.push_back(t.minute);
         self.reply.push_back(t.second);
-    }
-
-    /// [`opcode::SERREAD`]: always "idle, no data" — this server never has
-    /// real virtual-serial input pending.
-    fn handle_serread(&mut self) {
-        self.vserial_ops += 1;
-        self.reply.push_back(0x00);
-        self.reply.push_back(0x00);
-    }
-
-    /// [`opcode::SERREADM`]: await its 2-byte (channel, count) payload.
-    fn handle_serreadm(&mut self) {
-        self.vserial_ops += 1;
-        self.state = State::AwaitSerReadM {
-            buf: Vec::with_capacity(2),
-        };
-    }
-
-    /// [`opcode::SERSETSTAT`]: await its 2-byte (channel, statcode) payload.
-    fn handle_sersetstat(&mut self) {
-        self.vserial_ops += 1;
-        self.state = State::AwaitSerSetStat {
-            buf: Vec::with_capacity(2),
-        };
-    }
-
-    /// Discard `n` remaining payload bytes with no reply — shared by the serial-op
-    /// opcodes ([`opcode::SERWRITE`] etc.) and the FASTWRITE family.
-    fn handle_ser_discard(&mut self, n: u8) {
-        self.vserial_ops += 1;
-        self.state = State::AwaitDiscard { remaining: n };
     }
 
     /// [`opcode::READ`]/[`opcode::REREAD`]/[`opcode::READEX`]/

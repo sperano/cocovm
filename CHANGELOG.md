@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   dialog's General tab, set `check_for_updates = false` in `config.toml`,
   or launch with `--check-for-updates=false`. Nothing is downloaded or
   installed.
+- Working DriveWire virtual serial channels. NitrOS-9 paths to `/TERM`,
+  `/N`, `/N1` to `/N13`, and `/MIDI` now carry bytes in both directions,
+  and a channel closed by the host side reaches the guest as a hangup once
+  its queued bytes are read. No host service answers on the channels yet;
+  the `dw` commands are planned. Hover over a DriveWire status entry to see
+  open channels, queued bytes, and dropped bytes.
 
 ## [0.7.9] - 2026-10-09
 

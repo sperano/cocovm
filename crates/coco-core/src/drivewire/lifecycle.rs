@@ -138,11 +138,14 @@ impl DWServer {
         }
     }
 
-    /// Out-of-band machine reset cancels transactions, preserving mounted media.
+    /// Out-of-band machine reset cancels transactions and closes virtual
+    /// channels, preserving mounted media. `DWINIT` and protocol resets
+    /// start the same way, since each begins a new guest driver session.
     pub fn reset_session(&mut self) {
         self.host.cancel();
         self.pending_host = None;
         self.service_completions.clear();
+        self.channels.reset();
         self.state = State::Idle;
         self.reply.clear();
         self.last_byte_cycle = None;
@@ -155,6 +158,7 @@ impl DWServer {
         self.drive_ops.fill(0);
         self.vserial_ops = 0;
         self.unknown_opcodes = 0;
+        self.channels.clear_counters();
     }
 
     /// Suspend closes host services. Resume starts a fresh host generation.
@@ -173,15 +177,18 @@ impl DWServer {
         self.host.stop();
         self.pending_host = None;
         self.service_completions.clear();
+        self.channels.reset();
         self.state = State::Idle;
         self.reply.clear();
         self.last_byte_cycle = None;
     }
 
-    /// Reattached media survives restore; external requests are never replayed.
+    /// Reattached media survives restore; external requests are never
+    /// replayed, and open virtual channels hang up once drained.
     pub fn after_restore(&mut self) {
         self.host.cancel();
         self.service_completions.clear();
+        self.channels.after_restore();
         self.abort_host_transfer();
     }
 

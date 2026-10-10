@@ -315,27 +315,20 @@ fn hdbdos_save_writes_through_drivewire() {
 /// track and bootfile carry the Becker-transport drivers. Skips when any
 /// asset is absent.
 ///
-/// FORMERLY A KNOWN BLOCKER, now fixed: this stock disk's `STARTUP` launches
-/// an `inetd`-style daemon. The image contains `SYS/inetd.conf`, configured
-/// for `telnet ... login`, and `scdwv`-family virtual-serial descriptors
-/// `z1_scdwv`..`z7_scdwv` and `n1_scdwv`.. for DriveWire 4's standard
-/// telnet-over-virtual-serial feature. Its initialization sends `OP_SERREAD`
-/// (`'C'` = `$43`). The official NitrOS-9 source's `defs/drivewire.d` defines
-/// `OP_SERREAD equ 'C` as part of the `OP_SERINIT` ($45), `OP_SERTERM`,
-/// `OP_SERREAD`, `OP_SERREADM` (`'c'`), `OP_SERWRITE` (`'C'+128`),
-/// `OP_SERGETSTAT` (`'D'`), and `OP_SERSETSTAT` (`'D'+128`) virtual-serial
-/// family.
+/// This stock disk's `STARTUP` launches an `inetd`-style daemon. The image
+/// contains `SYS/inetd.conf`, configured for `telnet ... login`, and
+/// `scdwv`-family virtual-serial descriptors `n1_scdwv`.. and `z1_scdwv`..
+/// for DriveWire 4's virtual channels. Its initialization polls with
+/// `OP_SERREAD` (`'C'` = `$43`) and opens channels through the rest of the
+/// `OP_SER*` family defined in NitrOS-9's `defs/drivewire.d`.
 ///
-/// Previously, `crates/coco-core/src/drivewire.rs` didn't implement this
-/// family. The `handle_opcode` catch-all arm incremented `unknown_opcodes`
-/// without pushing a reply, so the daemon waited indefinitely and the boot
-/// didn't reach a shell prompt. The boot reliably reached the full NitrOS-9
-/// banner and auto-printed date, then stopped byte-for-byte with
-/// `sectors_read() == 306` and `unknown_opcodes() == 1`. The implemented
-/// `opcode::SERREAD`, `SERREADM`, `SERWRITE`, `SERGETSTAT`, `SERSETSTAT`,
-/// `SERINIT`, `SERTERM`, and `FASTWRITE_*` handlers consume each command.
-/// `SERREAD` also replies "idle, no data", which lets the daemon initialize
-/// and the boot reach Shell+'s prompt.
+/// Before the server implemented that family, the catch-all opcode arm
+/// pushed no reply, so the daemon waited indefinitely and the boot stopped
+/// after the banner and date with `sectors_read() == 306` and
+/// `unknown_opcodes() == 1`. The functional channels in
+/// `drivewire::serial` keep the boot moving; no channel is left open once
+/// the shell prompt appears. `drivewire_channels.rs` exercises the channels
+/// with real guest commands.
 #[test]
 fn nitros9_l2_boots_over_drivewire_to_shell_prompt() {
     /// A full OS-9 kernel-and-modules load over Becker takes much longer than
