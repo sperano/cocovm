@@ -118,7 +118,7 @@ impl CocoApp {
         for path in &mut self.vhd_paths {
             remap_optional_path(path, old_dir, new_dir);
         }
-        for path in &mut self.dw_paths {
+        for path in self.dw_paths.iter_mut().chain(&mut self.dw_startup) {
             remap_optional_path(path, old_dir, new_dir);
         }
         self.remap_drivewire_shares(old_dir, new_dir);

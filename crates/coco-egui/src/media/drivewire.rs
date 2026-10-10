@@ -1,5 +1,6 @@
 //! The DriveWire virtual serial link and the disk images it serves.
 
+use coco_core::drivewire::MediaOrigin;
 use coco_core::drivewire::share::{AccessMode, AccessRegistry, ShareError, ShareTable};
 
 use crate::app::DriveWireLaunch;
@@ -33,9 +34,11 @@ impl CocoApp {
 
     /// Mount the DriveWire image at `path` in `drive`. Like VHD, writes hit the
     /// backing file directly. Failures land in [`Self::cart_error`].
+    /// Records `path` as the drive's applied startup path (see [`Self::dw_startup`]).
     pub(crate) fn insert_dw_disk(&mut self, drive: usize, path: PathBuf) {
-        if let Err(e) = self.mount_dw_disk(drive, path) {
-            self.cart_error = Some(e);
+        match self.mount_dw_disk(drive, path.clone()) {
+            Ok(()) => self.dw_startup[drive] = Some(path),
+            Err(e) => self.cart_error = Some(e),
         }
     }
 
@@ -49,6 +52,7 @@ impl CocoApp {
             self.machine.bus.disable_drivewire();
             self.dw_paths = Default::default();
             self.dw_leases = Default::default();
+            self.dw_startup = Default::default();
             return Ok(());
         };
         if self.machine.bus.cart.contains_games_master() {
@@ -68,20 +72,27 @@ impl CocoApp {
         }
     }
 
-    /// Make `drive` serve `path`, leaving an already matching mount untouched.
+    /// Make `drive` serve the startup `path` when it differs from the one last
+    /// applied, so an unchanged setting leaves a guest's `dw disk` mount alone.
     fn set_dw_disk(&mut self, drive: usize, path: Option<PathBuf>) -> Result<(), String> {
-        if self.dw_paths[drive] == path {
+        if self.dw_startup[drive] == path {
             return Ok(());
         }
-        let Some(path) = path else {
-            if let Some(ref mut dw) = self.machine.bus.drivewire {
-                dw.eject(drive);
+        let result = match path.clone() {
+            Some(path) => self.mount_dw_disk(drive, path),
+            None => {
+                if let Some(ref mut dw) = self.machine.bus.drivewire {
+                    dw.eject(drive);
+                }
+                self.dw_paths[drive] = None;
+                self.dw_leases[drive] = None;
+                Ok(())
             }
-            self.dw_paths[drive] = None;
-            self.dw_leases[drive] = None;
-            return Ok(());
         };
-        self.mount_dw_disk(drive, path)
+        if result.is_ok() {
+            self.dw_startup[drive] = path;
+        }
+        result
     }
 
     fn mount_dw_disk(&mut self, drive: usize, path: PathBuf) -> Result<(), String> {
@@ -97,25 +108,43 @@ impl CocoApp {
             .acquire(&file, &path, self.lease_owner, AccessMode::Write)
             .map_err(|e| image_lease_error(&path, e))?;
         dw.mount(drive, DWImage::File(file));
+        if let Some(name) = path.file_name() {
+            dw.set_drive_name(drive, name.to_string_lossy());
+        }
         self.dw_paths[drive] = Some(path);
         self.dw_leases[drive] = Some(lease);
         Ok(())
     }
 
+    /// Follow the guest's `dw disk insert`/`eject` in the session media. The
+    /// server holds a guest image's lease; the replaced image's lease ends here.
+    /// Settings and `dw_startup` stay as they are.
+    pub(crate) fn sync_guest_dw_media(&mut self) {
+        let Some(ref mut dw) = self.machine.bus.drivewire else {
+            return;
+        };
+        for change in dw.take_guest_media_changes() {
+            self.dw_paths[change.drive] = change.host_path;
+            self.dw_leases[change.drive] = None;
+        }
+    }
+
     /// Lease the images a snapshot restore mounted. An image another running
-    /// VM holds is ejected and reported in `notes`, like a missing one.
+    /// VM holds is ejected and reported in `notes`, like a missing one. The
+    /// restored mounts become the applied startup paths, so the next settings
+    /// change brings each differing drive back in line with the definition.
     pub(crate) fn lease_restored_dw_images(&mut self, notes: &mut Vec<String>) {
+        self.dw_startup = self.dw_paths.clone();
         let registry = AccessRegistry::global();
         for drive in 0..drivewire::DRIVE_COUNT {
             let Some(path) = self.dw_paths[drive].clone() else {
                 self.dw_leases[drive] = None;
                 continue;
             };
+            let mode = restored_lease_mode(self.machine.bus.drivewire.as_ref(), drive);
             let lease = std::fs::File::open(&path)
                 .map_err(ShareError::from)
-                .and_then(|file| {
-                    registry.acquire(&file, &path, self.lease_owner, AccessMode::Write)
-                });
+                .and_then(|file| registry.acquire(&file, &path, self.lease_owner, mode));
             match lease {
                 Ok(lease) => self.dw_leases[drive] = Some(lease),
                 Err(error) => {
@@ -128,6 +157,28 @@ impl CocoApp {
                 }
             }
         }
+    }
+}
+
+/// A hover line for a drive the guest mounted with `dw disk insert`, or "".
+pub(crate) fn guest_media_note(dw: &drivewire::DWServer, drive: usize) -> &'static str {
+    match dw.drive_media(drive) {
+        Some(media) if media.origin != MediaOrigin::Guest => "",
+        Some(media) if media.write_protected => "\nInserted by the guest, read-only",
+        Some(_) => "\nInserted by the guest",
+        None => "",
+    }
+}
+
+/// A write-protected guest mount (from a read-only share) needs only a read lease.
+fn restored_lease_mode(dw: Option<&drivewire::DWServer>, drive: usize) -> AccessMode {
+    let protected = dw
+        .and_then(|dw| dw.drive_media(drive))
+        .is_some_and(|media| media.write_protected);
+    if protected {
+        AccessMode::Read
+    } else {
+        AccessMode::Write
     }
 }
 

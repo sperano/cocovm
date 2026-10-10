@@ -10,10 +10,10 @@ const QUEUE_CAPACITY: usize = 4;
 static NEXT_SCRATCH: AtomicUsize = AtomicUsize::new(0);
 
 /// A temporary folder removed on drop, shared by the share test modules.
-pub(in crate::drivewire::share) struct ScratchDir(PathBuf);
+pub(in crate::drivewire) struct ScratchDir(PathBuf);
 
 impl ScratchDir {
-    pub(in crate::drivewire::share) fn new(name: &str) -> Self {
+    pub(in crate::drivewire) fn new(name: &str) -> Self {
         let id = NEXT_SCRATCH.fetch_add(1, Ordering::Relaxed);
         let path =
             std::env::temp_dir().join(format!("cocovm-share-{name}-{}-{id}", std::process::id()));
@@ -22,19 +22,19 @@ impl ScratchDir {
         Self(path)
     }
 
-    pub(in crate::drivewire::share) fn path(&self) -> &Path {
+    pub(in crate::drivewire) fn path(&self) -> &Path {
         &self.0
     }
 
     /// Creates `relative` (and its parents) holding `bytes`.
-    pub(in crate::drivewire::share) fn file(&self, relative: &str, bytes: &[u8]) -> PathBuf {
+    pub(in crate::drivewire) fn file(&self, relative: &str, bytes: &[u8]) -> PathBuf {
         let path = self.0.join(relative);
         fs::create_dir_all(path.parent().expect("file has a parent")).expect("create parents");
         fs::write(&path, bytes).expect("write scratch file");
         path
     }
 
-    pub(in crate::drivewire::share) fn dir(&self, relative: &str) -> PathBuf {
+    pub(in crate::drivewire) fn dir(&self, relative: &str) -> PathBuf {
         let path = self.0.join(relative);
         fs::create_dir_all(&path).expect("create scratch subfolder");
         path
@@ -48,7 +48,7 @@ impl Drop for ScratchDir {
 }
 
 /// A table of `(name, root, access)` shares.
-pub(in crate::drivewire::share) fn table(shares: &[(&str, &Path, ShareAccess)]) -> ShareTable {
+pub(in crate::drivewire) fn table(shares: &[(&str, &Path, ShareAccess)]) -> ShareTable {
     ShareTable::new(
         shares
             .iter()

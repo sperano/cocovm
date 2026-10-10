@@ -159,6 +159,10 @@ pub(super) struct Channels {
     dropped_bytes: u64,
     unknown_channel_ops: u64,
     short_reads: u64,
+    /// Counts guest-side events (open, close, write, read, hangup reported,
+    /// reset), so a host service can skip its scan while nothing changed.
+    #[serde(skip)]
+    activity: u64,
 }
 
 impl Default for Channels {
@@ -170,13 +174,16 @@ impl Default for Channels {
             dropped_bytes: 0,
             unknown_channel_ops: 0,
             short_reads: 0,
+            activity: 0,
         }
     }
 }
 
 impl Channels {
-    /// The slot for a wire channel number, counting an unknown one.
+    /// The slot for a wire channel number, counting an unknown one. Every
+    /// guest operation goes through here, so it also counts the activity.
     fn slot_mut(&mut self, channel: u8) -> Option<&mut Channel> {
+        self.activity = self.activity.wrapping_add(1);
         let slot = self.slots.get_mut(usize::from(channel));
         if slot.is_none() {
             self.unknown_channel_ops += 1;
@@ -269,6 +276,7 @@ impl Channels {
         for offset in 0..CHANNEL_COUNT {
             let index = (start + offset) % CHANNEL_COUNT;
             if let Some(reply) = self.poll_slot(index) {
+                self.activity = self.activity.wrapping_add(1);
                 self.poll_cursor = ((index + 1) % CHANNEL_COUNT) as u8;
                 return reply;
             }
@@ -302,6 +310,7 @@ impl Channels {
         }
         self.poll_cursor = 0;
         self.epoch = next_epoch();
+        self.activity = self.activity.wrapping_add(1);
     }
 
     pub(super) fn clear_counters(&mut self) {
@@ -319,6 +328,19 @@ impl Channels {
             slot.hangup = slot.is_open();
         }
         self.epoch = next_epoch();
+        self.activity = self.activity.wrapping_add(1);
+    }
+
+    /// Changes whenever the guest side of any channel may have changed.
+    pub(super) fn activity(&self) -> u64 {
+        self.activity
+    }
+
+    /// Guest output not yet received, without taking it.
+    pub(super) fn peek(&self, handle: ChannelHandle) -> Option<&VecDeque<u8>> {
+        let slot = self.slots.get(usize::from(handle.channel))?;
+        let current = handle.epoch == self.epoch && handle.session == slot.session;
+        current.then_some(&slot.from_guest)
     }
 
     pub(super) fn info(&self, channel: u8) -> Option<ChannelInfo> {
