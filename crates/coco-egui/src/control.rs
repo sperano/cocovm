@@ -25,8 +25,8 @@ pub mod tool_defs;
 pub mod tools;
 
 pub use protocol::{
-    Action, ControlError, Cpu, MemAddr, Reply, Request, Response, ScreenSnapshot, Stick,
-    TextMatcher, VmInfo, VmMedia, VmStatus,
+    Action, ControlError, Cpu, MemAddr, Reply, Request, Response, ScreenSnapshot, StateTarget,
+    Stick, TextMatcher, VmInfo, VmMedia, VmStatus,
 };
 pub use server::ControlServer;
 

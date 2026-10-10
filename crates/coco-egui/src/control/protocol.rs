@@ -154,6 +154,22 @@ pub enum Action {
         segments: Vec<DecbSegment>,
         exec_address: Option<u16>,
     },
+    /// Save the complete machine state to a host path or quick-state slot.
+    SaveState {
+        target: StateTarget,
+    },
+    /// Replace the machine with the state from a host path or quick-state slot.
+    LoadState {
+        target: StateTarget,
+    },
+}
+
+/// Where a save-state action reads or writes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StateTarget {
+    Path(PathBuf),
+    /// A quick-state index, 0-based after MCP argument validation.
+    Slot(usize),
 }
 
 /// Where an [`Action::Peek`]/[`Action::Poke`] address points.

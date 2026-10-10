@@ -146,6 +146,12 @@ impl ManagerApp {
                 });
                 reply.reply(response(result));
             }
+            Action::SaveState { target } => {
+                reply.reply(response(self.save_state_action(&vm, target)));
+            }
+            Action::LoadState { target } => {
+                reply.reply(response(self.load_state_action(&vm, target)));
+            }
         }
     }
 

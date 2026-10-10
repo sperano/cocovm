@@ -14,6 +14,7 @@ use super::{
 };
 
 mod load_binary;
+mod state;
 mod vms;
 
 /// Highest floppy drive index a tool call may name — [`crate::UI_DRIVES`] is
@@ -488,6 +489,8 @@ pub fn definitions(include_annotations: bool) -> Vec<Value> {
         peek(include_annotations),
         poke(include_annotations),
         load_binary::definition(include_annotations),
+        state::save_state(include_annotations),
+        state::load_state(include_annotations),
     ]
 }
 

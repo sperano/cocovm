@@ -12,6 +12,7 @@ use super::tool_defs;
 
 mod load_binary;
 mod memory;
+mod state;
 mod vms;
 
 /// Tool-definition key for the result schema (protocol 2025-06-18 on).
@@ -96,6 +97,8 @@ fn dispatch(backend: &mut dyn Backend, params: Value) -> Result<Value, RpcError>
         "peek" => memory::dispatch_peek(backend, args),
         "poke" => memory::dispatch_poke(backend, args),
         "load_binary" => load_binary::dispatch(backend, args),
+        "save_state" => state::dispatch_save(backend, args),
+        "load_state" => state::dispatch_load(backend, args),
         other => Err(RpcError::new(
             INVALID_PARAMS,
             format!("unknown tool: {other}"),
