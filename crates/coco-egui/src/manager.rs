@@ -365,9 +365,11 @@ pub struct ManagerApp {
     sort_error: Option<String>,
     /// The Settings dialog (`manager/settings.rs`), open while `Some`.
     pub(crate) settings: Option<settings::SettingsDialog>,
-    /// The About window ([`crate::about::window`]), opened from the
-    /// toolbar's Help menu. `pub(crate)` for `ui_tests`, like `settings`.
+    /// The About window ([`crate::about::window`]), opened from the toolbar's
+    /// Help menu or [`Self::about_request`]. `pub(crate)` for `ui_tests`.
     pub(crate) show_about: bool,
+    /// Opens the About window from the macOS application menu.
+    pub(crate) about_request: crate::about::AboutRequest,
     /// Monotonic clock for saved-preview LRU stamps.
     thumbnail_use_clock: u64,
     /// Synchronous preview decodes still available in this manager update.
@@ -448,6 +450,7 @@ impl ManagerApp {
             sort_error: None,
             settings: None,
             show_about: false,
+            about_request: crate::about::AboutRequest::default(),
             thumbnail_use_clock: 0,
             thumbnail_loads_remaining: thumbnails::THUMBNAIL_LOADS_PER_UPDATE,
             scroll_to_row: None,
@@ -488,11 +491,14 @@ impl eframe::App for ManagerApp {
         // window's only content — the manager UI appears after a successful
         // download (Cancel quits the app, `manager/assets.rs`).
         if self.asset_dialog.is_some() {
+            // The dialog-sized window has no room for About; drop the request.
+            self.about_request.take();
             self.draw_asset_dialog(ctx);
             self.draw_exit_confirmation(ctx);
             return;
         }
 
+        self.poll_about_request(ctx);
         self.welcome_image.service(ctx, self.selection.is_empty());
         self.thumbnail_loads_remaining = thumbnails::THUMBNAIL_LOADS_PER_UPDATE;
 
