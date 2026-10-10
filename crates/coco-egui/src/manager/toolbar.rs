@@ -126,9 +126,20 @@ impl ManagerApp {
     /// The Help tile's menu.
     fn help_menu_ui(&mut self, ui: &mut egui::Ui) {
         if ui.button(crate::about::MENU_LABEL).clicked() {
-            self.show_about = true;
+            self.open_about();
             ui.close();
         }
+    }
+
+    /// Open the About window with freshly counted assets and machines, so
+    /// it reflects downloads and definitions added since startup.
+    fn open_about(&mut self) {
+        self.about_inventory = crate::startup::inventory(
+            crate::startup::rom_count_in(self.roms_dir.as_deref()),
+            crate::startup::cartridge_count_in(self.cartridges_dir.as_deref()),
+            self.entries.len(),
+        );
+        self.show_about = true;
     }
 
     /// Open the About window on the manager, brought to the front, when the
@@ -137,7 +148,7 @@ impl ManagerApp {
         if !self.about_request.take() {
             return;
         }
-        self.show_about = true;
+        self.open_about();
         let manager = egui::ViewportId::ROOT;
         ctx.send_viewport_cmd_to(manager, egui::ViewportCommand::Minimized(false));
         ctx.send_viewport_cmd_to(manager, egui::ViewportCommand::Focus);

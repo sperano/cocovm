@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use owo_colors::colors::xterm;
 use owo_colors::{OwoColorize, Stream};
@@ -80,12 +80,18 @@ pub(crate) struct StartupInfo {
 }
 
 impl StartupInfo {
-    /// `"8 ROMs, 126 cartridges and 7 machine configurations found."`
+    /// The banner's [`inventory`] line.
     fn inventory(&self) -> String {
-        let assets = asset_inventory(self.roms, self.cartridges);
-        let machines = pluralize("machine configuration", to_isize(self.machines), true);
-        format!("{assets} and {machines} found.")
+        inventory(self.roms, self.cartridges, self.machines)
     }
+}
+
+/// `"8 ROMs, 126 cartridges and 7 machine configurations found."` — the
+/// banner's last line, also shown in the About window.
+pub(crate) fn inventory(roms: usize, cartridges: usize, machines: usize) -> String {
+    let assets = asset_inventory(roms, cartridges);
+    let machines = pluralize("machine configuration", to_isize(machines), true);
+    format!("{assets} and {machines} found.")
 }
 
 /// `"8 ROMs, 126 cartridges"` — the installed-asset half of [`StartupInfo::inventory`],
@@ -127,7 +133,7 @@ fn is_cartridge_file(name: &str) -> bool {
 
 /// How many entries of `dir` satisfy `is_asset`. A missing or unreadable
 /// directory counts as zero.
-fn asset_count(dir: Option<PathBuf>, is_asset: fn(&str) -> bool) -> usize {
+fn asset_count(dir: Option<&Path>, is_asset: fn(&str) -> bool) -> usize {
     let Some(dir) = dir else {
         return 0;
     };
@@ -142,12 +148,22 @@ fn asset_count(dir: Option<PathBuf>, is_asset: fn(&str) -> bool) -> usize {
 
 /// How many ROM images are installed in [`paths::roms_dir`].
 pub(crate) fn rom_count() -> usize {
-    asset_count(paths::roms_dir(), is_rom_file)
+    rom_count_in(paths::roms_dir().as_deref())
 }
 
 /// How many cartridge images are installed in [`paths::cartridges_dir`].
 pub(crate) fn cartridge_count() -> usize {
-    asset_count(paths::cartridges_dir(), is_cartridge_file)
+    cartridge_count_in(paths::cartridges_dir().as_deref())
+}
+
+/// How many ROM images `dir` holds; `None` counts as zero.
+pub(crate) fn rom_count_in(dir: Option<&Path>) -> usize {
+    asset_count(dir, is_rom_file)
+}
+
+/// How many cartridge images `dir` holds; `None` counts as zero.
+pub(crate) fn cartridge_count_in(dir: Option<&Path>) -> usize {
+    asset_count(dir, is_cartridge_file)
 }
 
 /// `s` without its ANSI control sequences (`ESC [ … final`, all that

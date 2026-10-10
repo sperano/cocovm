@@ -274,6 +274,9 @@ pub struct ManagerApp {
     /// ROMs group resolves stock images under; `None` when no home
     /// directory exists, and in tests, which must never read the real one.
     pub(crate) roms_dir: Option<PathBuf>,
+    /// Installed cartridge directory (`paths::cartridges_dir()`) the About
+    /// window counts images in; `None` like [`Self::roms_dir`], and in tests.
+    pub(crate) cartridges_dir: Option<PathBuf>,
     /// Root of the per-machine artifact directories
     /// (`machine_def::artifacts_root()`), where each entry's
     /// [`THUMBNAIL_FILE`] and [`SUSPEND_STATE_FILE`] live under
@@ -368,6 +371,9 @@ pub struct ManagerApp {
     /// The About window ([`crate::about::window`]), opened from the toolbar's
     /// Help menu or [`Self::about_request`]. `pub(crate)` for `ui_tests`.
     pub(crate) show_about: bool,
+    /// The About window's inventory line ([`crate::startup::inventory`]),
+    /// counted when the window opens rather than every frame.
+    about_inventory: String,
     /// Opens the About window from the macOS application menu.
     pub(crate) about_request: crate::about::AboutRequest,
     /// Monotonic clock for saved-preview LRU stamps.
@@ -424,6 +430,7 @@ impl ManagerApp {
             welcome_image: welcome_image::WelcomeImage::new(photo),
             machines_dir,
             roms_dir: None,
+            cartridges_dir: None,
             artifacts_root,
             entries,
             selection: Selection::default(),
@@ -450,6 +457,7 @@ impl ManagerApp {
             sort_error: None,
             settings: None,
             show_about: false,
+            about_inventory: String::new(),
             about_request: crate::about::AboutRequest::default(),
             thumbnail_use_clock: 0,
             thumbnail_loads_remaining: thumbnails::THUMBNAIL_LOADS_PER_UPDATE,
@@ -549,7 +557,7 @@ impl eframe::App for ManagerApp {
             self.draw_delete_confirmation(ctx);
             self.draw_settings_dialog(ctx);
             if self.show_about {
-                crate::about::window(ctx, &mut self.show_about);
+                crate::about::window(ctx, &mut self.show_about, &self.about_inventory);
             }
         }
         self.drain_control();

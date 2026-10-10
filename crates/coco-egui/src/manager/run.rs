@@ -113,6 +113,7 @@ pub fn run(
             #[cfg(target_os = "macos")]
             crate::macos_menu::install_about(&creation.egui_ctx, app.about_request.clone());
             app.roms_dir = crate::paths::roms_dir();
+            app.cartridges_dir = crate::paths::cartridges_dir();
             app.log_reload = Some(log_reload);
             app.log_level_overridden = log_level_overridden;
             if !missing.is_empty() {
