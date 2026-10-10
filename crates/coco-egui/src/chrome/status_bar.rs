@@ -407,6 +407,16 @@ fn drivewire_hover(dw: &coco_core::drivewire::DWServer, drive: Option<usize>) ->
         Some(error) => hover.push_str(&format!("\nLast error: {error:?}")),
         None => {}
     }
+    let channels = dw.channel_diagnostics();
+    hover.push_str(&format!(
+        "\nVirtual channels: {} open, {} bytes to guest, {} from guest\nDropped: {}, unknown channel: {}, short reads: {}",
+        channels.open,
+        channels.to_guest,
+        channels.from_guest,
+        channels.dropped_bytes,
+        channels.unknown_channel_ops,
+        channels.short_reads,
+    ));
     hover
 }
 

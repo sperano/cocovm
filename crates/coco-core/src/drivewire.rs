@@ -15,19 +15,29 @@
 //!
 //! The byte-level protocol state machine ([`data_write`](DWServer::data_write)
 //! down to opcode dispatch) lives in the [`protocol`] submodule; the
-//! READ/WRITE family's actual sector I/O lives in [`transfer`].
+//! READ/WRITE family's actual sector I/O lives in [`transfer`]; virtual
+//! serial channels live in [`channel`] (state and queues) and [`serial`]
+//! (wire requests and the host-side `channel_*` API).
 
 use std::collections::VecDeque;
 
 use serde::{Deserialize, Serialize};
 
+mod channel;
 pub mod host;
 mod image;
 mod lifecycle;
 mod protocol;
+mod serial;
+pub use channel::{
+    CHANNEL_BUFFER_BYTES, CHANNEL_COUNT, ChannelDiagnostics, ChannelError, ChannelHandle,
+    ChannelInfo,
+};
 pub use image::DWImage;
 pub mod share;
 mod transfer;
+
+use channel::Channels;
 
 use host::HostCompletion;
 use host::HostExecutor;
@@ -104,50 +114,44 @@ pub mod opcode {
     /// Same wire behaviour as [`WRITE`]; sent by the client to retry.
     pub const REWRITE: u8 = 0x77;
 
-    /// Virtual-serial-port family (`OP_SER*`): NitrOS-9's `scdwv`/`dwio`
-    /// drivers use these to run DriveWire 4's telnet-over-virtual-serial
-    /// feature. Wire values and payload shapes are from NitrOS-9's
-    /// `defs/drivewire.d` (`OP_SERINIT`/`OP_SERTERM`/`OP_SERREAD`
-    /// (`'C'` = $43)/`OP_SERREADM` (`'c'` = $63)/`OP_SERWRITE`
-    /// (`'C'+128` = $C3)/`OP_SERGETSTAT` (`'D'` = $44)/`OP_SERSETSTAT`
-    /// (`'D'+128` = $C4)), as quoted in
-    /// `crates/coco-core/tests/drivewire_boot.rs`'s
-    /// `nitros9_l2_boots_over_drivewire_to_shell_prompt` doc comment;
-    /// reply shapes cross-checked against `scdwv.asm` and the DW4 Java
-    /// server.
+    /// Virtual-serial family (`OP_SER*`), used by NitrOS-9's `scdwv`/`dwio`
+    /// drivers for `/TERM`, `/N1`–`/N13`, and `/MIDI`. Wire values are from
+    /// NitrOS-9's `defs/drivewire.d` and the Java server's `DWDefs.java`;
+    /// request and reply shapes from the DriveWire specification's
+    /// "Virtual Serial Channels" section. `drivewire::serial` implements
+    /// them over the channels in `drivewire::channel`.
     ///
-    /// Poll for pending virtual-serial input: no payload. The server here
-    /// never has any (no real serial/telnet backing), so the reply is
-    /// always exactly 2 bytes `0x00 0x00` ("idle, no data").
+    /// Poll for channel input or a channel close: no payload, 2-byte reply
+    /// (idle, a block of waiting bytes, or a close status).
     pub const SERREAD: u8 = 0x43;
-    /// Read multiple virtual-serial bytes: 2-byte payload (channel,
-    /// count). Reply is `count` raw data bytes; unreachable from a real
-    /// client here since [`SERREAD`] always reports idle, but still
-    /// implemented so a client that sends it anyway stays in sync.
+    /// Read waiting channel bytes: 2-byte payload (channel, count). Reply is
+    /// exactly `count` bytes.
     pub const SERREADM: u8 = 0x63;
-    /// Write to a virtual-serial channel: 2-byte payload (channel, data
-    /// byte), no reply.
+    /// Write one byte to a channel: 2-byte payload (channel, data byte), no
+    /// reply.
     pub const SERWRITE: u8 = 0xC3;
-    /// Get virtual-serial channel status: 2-byte payload (channel,
-    /// statcode), no reply.
+    /// Write a block to a channel: 2-byte header (channel, count), then
+    /// `count` data bytes, no reply. Not sent by the pinned `scdwv`.
+    pub const SERWRITEM: u8 = 0x64;
+    /// Channel getstat notification: 2-byte payload (channel, statcode), no
+    /// reply.
     pub const SERGETSTAT: u8 = 0x44;
-    /// Set virtual-serial channel status: 2-byte payload (channel,
-    /// statcode), no reply — except when statcode is
-    /// [`super::SS_COMST`], which is followed by
-    /// [`super::COMST_PAYLOAD_LEN`] more raw bytes that must also be
-    /// consumed (still no reply).
+    /// Channel setstat: 2-byte payload (channel, statcode), no reply. An
+    /// [`super::SS_COMST`] statcode is followed by
+    /// [`super::COMST_PAYLOAD_LEN`] more bytes; [`super::SS_OPEN`] and
+    /// [`super::SS_CLOSE`] open and close the channel.
     pub const SERSETSTAT: u8 = 0xC4;
-    /// Initialize a virtual-serial channel: 1-byte payload (channel), no
-    /// reply.
+    /// Channel descriptor attached: 1-byte payload (channel), no reply.
     pub const SERINIT: u8 = 0x45;
-    /// Terminate a virtual-serial channel: 1-byte payload (channel), no
-    /// reply.
+    /// Channel descriptor detached: 1-byte payload (channel), no reply.
     pub const SERTERM: u8 = 0xC5;
-    /// Fast-write to a virtual-serial channel, one opcode value per
-    /// channel (channel number = opcode byte minus [`FASTWRITE_BASE`]):
-    /// 1-byte payload (data byte), no reply.
+    /// Fast write, one opcode per channel (channel = opcode minus
+    /// [`FASTWRITE_BASE`]): 1-byte payload (data byte), no reply. The Java
+    /// server accepts its 16 N and 16 window channels here (`$80`–`$9F`);
+    /// bytes for channels beyond [`super::CHANNEL_COUNT`] are consumed and
+    /// counted as unknown-channel operations.
     pub const FASTWRITE_BASE: u8 = 0x80;
-    pub const FASTWRITE_LAST: u8 = 0x8F;
+    pub const FASTWRITE_LAST: u8 = 0x9F;
 }
 
 /// [`opcode::DWINIT`]'s reply byte: the DriveWire protocol version this
@@ -172,6 +176,14 @@ const SS_COMST: u8 = 0x28;
 /// after an [`SS_COMST`] statcode, per `scdwv.asm`'s `OPTCNT` and DW4's
 /// `comRead(26)`.
 const COMST_PAYLOAD_LEN: usize = 26;
+
+/// [`opcode::SERSETSTAT`]'s `SS.Open` statcode: SCF opened a path on the
+/// channel (`scf.asm` `InvokeDriverOpen`; Java `DoOP_SERSETSTAT` `0x29`).
+const SS_OPEN: u8 = 0x29;
+
+/// [`opcode::SERSETSTAT`]'s `SS.Close` statcode: SCF closed a path on the
+/// channel (`scf.asm` `CloseLastPath`; Java `DoOP_SERSETSTAT` `0x2A`).
+const SS_CLOSE: u8 = 0x2A;
 
 /// Byte length of a WRITE/REWRITE request body after the opcode: header +
 /// 256 sector data bytes + 2-byte checksum.
@@ -298,6 +310,11 @@ pub struct DWServer {
     /// `OP_SER*`/[`opcode::FASTWRITE_BASE`] family), incremented once per
     /// top-level operation dispatched — not per byte consumed.
     vserial_ops: u64,
+    /// Virtual serial channels. Restored channels hang up after the guest
+    /// drains them (see `Channels::after_restore`); `#[serde(default)]`
+    /// loads older save states with every channel closed.
+    #[serde(default)]
+    channels: Channels,
     /// Cycle stamp of the last byte fed through [`DWServer::data_write`], for
     /// the transaction timeout. `None` before the first byte ever arrives.
     last_byte_cycle: Option<u64>,
@@ -331,6 +348,7 @@ impl DWServer {
             sectors_written: 0,
             unknown_opcodes: 0,
             vserial_ops: 0,
+            channels: Channels::default(),
             last_byte_cycle: None,
             drive_ops: [0; DRIVE_COUNT],
         }

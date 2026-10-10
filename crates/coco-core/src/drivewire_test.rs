@@ -304,7 +304,7 @@ fn getstat_setstat_consume_exactly_two_bytes() {
 }
 
 #[test]
-fn serread_always_reports_idle() {
+fn serread_reports_idle_without_open_channels() {
     let mut server = DWServer::new();
     for i in 0..3u64 {
         let reply = feed_and_drain(&mut server, &[opcode::SERREAD]);
@@ -388,7 +388,7 @@ fn fastwrite_and_serwrite_consume_bytes_with_no_reply() {
             opcode::FASTWRITE_BASE,
             0xAB, // data byte, channel 0
             opcode::FASTWRITE_LAST,
-            0xCD, // data byte, channel 15
+            0xCD, // data byte, window channel 15 (unsupported)
             opcode::SERWRITE,
             0x00, // channel
             0xEF, // data byte
@@ -402,10 +402,11 @@ fn fastwrite_and_serwrite_consume_bytes_with_no_reply() {
 }
 
 #[test]
-fn serreadm_replies_with_count_zero_bytes() {
+fn serreadm_on_an_empty_channel_still_replies_count_bytes() {
     let mut server = DWServer::new();
     let reply = feed_and_drain(&mut server, &[opcode::SERREADM, 0x00, 0x05]);
     assert_eq!(reply, vec![0u8; 5]);
+    assert_eq!(server.channel_diagnostics().short_reads, 1);
     assert_eq!(server.vserial_ops(), 1);
     assert_eq!(server.unknown_opcodes(), 0);
 }
