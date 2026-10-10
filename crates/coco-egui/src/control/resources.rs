@@ -127,12 +127,13 @@ impl ScreenResource {
     }
 }
 
-/// How a VM's state reads in a resource description: a powered-off or
-/// suspended VM's resources exist but reading them fails until it runs.
+/// How a VM's state reads in a resource description. The resources exist
+/// for every VM, but a read follows the `screen_text` rules: a powered-off
+/// VM, or a suspended one whose window is closed, fails until `start_vm`.
 fn status_text(status: VmStatus) -> &'static str {
     match status {
         VmStatus::Running => "running; readable now",
-        VmStatus::Suspended => "suspended",
+        VmStatus::Suspended => "suspended; readable while its window is open",
         VmStatus::PoweredOff => "powered off; start_vm makes it readable",
     }
 }

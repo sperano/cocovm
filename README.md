@@ -180,7 +180,8 @@ The server also publishes each VM's screen as MCP resources, so a client can
 attach the screen to a prompt without a tool call. `resources/list` reports two
 resources per VM: `cocovm://vm/<slug>/screen.txt` is the decoded text screen as
 `text/plain`, and `cocovm://vm/<slug>/screen.png` is the framebuffer as
-`image/png`. Reading a resource of a VM that isn't running fails until the VM
+`image/png`. Reading a resource follows the `screen_text` rules: it fails while
+the VM is powered off, or suspended with its window closed, until the VM
 starts. The server doesn't offer resource subscriptions or list-change
 notifications, because it sends no server-to-client stream.
 
