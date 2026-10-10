@@ -40,13 +40,14 @@ impl CocoApp {
     /// running; Stop always.
     pub(crate) fn toolbar_ui(&mut self, ctx: &egui::Context) {
         let controllable = !self.suspended;
-        // Explicit margin, not the default: keeps this in sync with `crate::TOOLBAR_H`'s
+        // Explicit margin, kept in sync with `crate::toolbar_height`'s
         // window-sizing math.
         let frame = egui::Frame::side_top_panel(&ctx.style()).inner_margin(
             egui::Margin::symmetric(TOOLBAR_PANEL_MARGIN_X, TOOLBAR_PANEL_MARGIN_Y),
         );
         egui::TopBottomPanel::top("toolbar")
             .frame(frame)
+            .exact_height(toolbar_height(self.toolbar_icons_only))
             .show(ctx, |ui| {
                 let icons_only = self.toolbar_icons_only;
                 ui.horizontal(|ui| {

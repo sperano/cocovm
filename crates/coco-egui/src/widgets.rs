@@ -83,15 +83,16 @@ pub(crate) const UI_DRIVES: usize = 2;
 /// toolbar convention the tile widget reproduces.
 pub(crate) const BUTTON_SIZE: egui::Vec2 = egui::vec2(64.0, 52.0);
 
-/// Tile footprint used when the caption is hidden (`toolbar_button`'s
-/// `icons_only`) — square-ish rather than [`BUTTON_SIZE`]'s caption-width
-/// footprint. Same height as `BUTTON_SIZE` so the toolbar's reserved height
-/// (`crate::TOOLBAR_H`) doesn't need to vary with a runtime toggle.
-pub(crate) const ICON_ONLY_BUTTON_SIZE: egui::Vec2 = egui::vec2(BUTTON_SIZE.y, BUTTON_SIZE.y);
+/// Tile footprint when the caption is hidden: the glyph with equal padding.
+pub(crate) const ICON_ONLY_BUTTON_SIZE: egui::Vec2 = egui::vec2(
+    ICON_FONT_SIZE + 2.0 * ICON_ONLY_PAD,
+    ICON_FONT_SIZE + 2.0 * ICON_ONLY_PAD,
+);
 
 /// Icon glyph size. Deliberately much larger than the caption — the icon is
 /// the button's identity, the caption is the reminder.
 const ICON_FONT_SIZE: f32 = 20.0;
+const ICON_ONLY_PAD: f32 = 6.0;
 const LABEL_FONT_SIZE: f32 = 11.0;
 
 /// Gap from the button's top edge to the icon's top, and from the caption's
@@ -166,7 +167,7 @@ pub(crate) fn toolbar_button_width(ui: &egui::Ui, icons_only: bool) -> f32 {
 }
 
 /// [`BUTTON_SIZE`], or [`ICON_ONLY_BUTTON_SIZE`] when the caption is hidden.
-fn tile_size(icons_only: bool) -> egui::Vec2 {
+pub(crate) fn tile_size(icons_only: bool) -> egui::Vec2 {
     if icons_only {
         ICON_ONLY_BUTTON_SIZE
     } else {

@@ -103,8 +103,8 @@ pub(crate) use status_icons::{
 };
 pub(crate) use typeahead::{KbMode, TypeAhead};
 pub(crate) use widgets::{
-    BUTTON_GAP, BUTTON_SIZE, PLAY_GLYPH, RESET_GLYPH, RESET_LABEL, START_LABEL, STOP_GLYPH,
-    STOP_LABEL, SUSPEND_GLYPH, SUSPEND_HOVER, SUSPEND_LABEL, UI_DRIVES, titled_group,
+    BUTTON_GAP, PLAY_GLYPH, RESET_GLYPH, RESET_LABEL, START_LABEL, STOP_GLYPH, STOP_LABEL,
+    SUSPEND_GLYPH, SUSPEND_HOVER, SUSPEND_LABEL, UI_DRIVES, tile_size, titled_group,
     toolbar_button, toolbar_button_width, toolbar_separator, toolbar_separator_width, toolbar_tile,
     window_title,
 };
@@ -154,10 +154,10 @@ pub(crate) const TOOLBAR_PANEL_MARGIN_X: i8 = 8;
 /// exactly the frame's overhead. `i8`, cast to `f32` later for the window-
 /// sizing formula.
 pub(crate) const TOOLBAR_PANEL_MARGIN_Y: i8 = 2;
-/// Height reserved for the toolbar row when sizing the window: the toolbar
-/// tiles' own height ([`BUTTON_SIZE`].y) plus the panel frame's vertical
-/// margin on both edges ([`TOOLBAR_PANEL_MARGIN_Y`]).
-pub(crate) const TOOLBAR_H: f32 = BUTTON_SIZE.y + 2.0 * TOOLBAR_PANEL_MARGIN_Y as f32;
+/// Panel height for the selected toolbar mode, including its vertical margins.
+pub(crate) fn toolbar_height(icons_only: bool) -> f32 {
+    tile_size(icons_only).y + 2.0 * TOOLBAR_PANEL_MARGIN_Y as f32
+}
 /// Height of the bottom status bar row: both what the window-sizing math
 /// reserves for it and the panel's own exact height
 /// (`chrome::status_bar`'s `status_bar_ui`), so the two can't drift apart.

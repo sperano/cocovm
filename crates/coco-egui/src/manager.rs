@@ -524,9 +524,15 @@ impl eframe::App for ManagerApp {
             self.handle_list_shortcuts(ctx);
         }
 
-        egui::TopBottomPanel::top("manager_toolbar").show(ctx, |ui| {
-            self.draw_toolbar(ui);
-        });
+        let toolbar_frame = egui::Frame::side_top_panel(&ctx.style()).inner_margin(
+            egui::Margin::symmetric(crate::TOOLBAR_PANEL_MARGIN_X, crate::TOOLBAR_PANEL_MARGIN_Y),
+        );
+        egui::TopBottomPanel::top("manager_toolbar")
+            .frame(toolbar_frame)
+            .exact_height(crate::toolbar_height(self.toolbar_icons_only))
+            .show(ctx, |ui| {
+                self.draw_toolbar(ui);
+            });
 
         egui::SidePanel::left("manager_machine_list")
             .resizable(true)
