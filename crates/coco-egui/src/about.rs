@@ -1,6 +1,12 @@
 //! "About" overlay window.
 
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use eframe::egui;
+
+/// Label of every menu item that opens the About window.
+pub(crate) const MENU_LABEL: &str = "About CoCoVM";
 
 const WINDOW_WIDTH: f32 = 360.0;
 const CONTENT_MARGIN: i8 = 20;
@@ -13,11 +19,28 @@ const ICON_BYTES: &[u8] = include_bytes!("../assets/cocovm-icon.png");
 const ICON_CACHE_ID: &str = "about_cocovm_icon";
 const GITHUB_URL: &str = "https://github.com/sperano/cocovm";
 
+/// A request to open the About window, raised from outside the UI.
+#[derive(Clone, Default)]
+pub(crate) struct AboutRequest(Arc<AtomicBool>);
+
+impl AboutRequest {
+    /// Ask for the About window; the manager opens it on its next update.
+    #[cfg(any(target_os = "macos", test))]
+    pub(crate) fn raise(&self) {
+        self.0.store(true, Ordering::Relaxed);
+    }
+
+    /// Whether a request was pending; clears it.
+    pub(crate) fn take(&self) -> bool {
+        self.0.swap(false, Ordering::Relaxed)
+    }
+}
+
 /// Draw the About window. `open` is toggled by the window's close box;
 /// `inventory` is the installed-asset and machine count line
 /// ([`crate::startup::inventory`]).
 pub fn window(ctx: &egui::Context, open: &mut bool, inventory: &str) {
-    egui::Window::new(crate::window_title(ctx, "About CoCoVM"))
+    egui::Window::new(crate::window_title(ctx, MENU_LABEL))
         .open(open)
         .resizable(false)
         .collapsible(false)

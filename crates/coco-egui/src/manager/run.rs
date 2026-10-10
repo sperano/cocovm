@@ -36,6 +36,9 @@ pub fn run(
         manager_sort,
         ..
     } = config;
+    #[cfg(target_os = "macos")]
+    const ICON_BYTES: &[u8] = include_bytes!("../../assets/cocovm-icon-macos.png");
+    #[cfg(not(target_os = "macos"))]
     const ICON_BYTES: &[u8] = include_bytes!("../../assets/cocovm-icon.png");
     let icon = eframe::icon_data::from_png_bytes(ICON_BYTES).expect("embedded icon PNG is valid");
     let assets_dir = crate::require_data_dir().join(crate::paths::ASSETS_DIR_NAME);
@@ -107,6 +110,8 @@ pub fn run(
             welcome.shuffle_overridden = welcome_image_shuffle_overridden;
             welcome.load_random();
             app.config_path = config_path;
+            #[cfg(target_os = "macos")]
+            crate::macos_menu::install_about(&creation.egui_ctx, app.about_request.clone());
             app.roms_dir = crate::paths::roms_dir();
             app.cartridges_dir = crate::paths::cartridges_dir();
             app.log_reload = Some(log_reload);

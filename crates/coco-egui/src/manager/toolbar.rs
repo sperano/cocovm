@@ -3,7 +3,8 @@
 //! VM window's own toolbar, `chrome::toolbar`). Layout is New – Start –
 //! Suspend – Stop – Reset – separator – Settings – separator – Help.
 //! Settings opens the global `config.toml` editor (`manager/settings.rs`);
-//! Help pops up a menu holding "About cocovm".
+//! Help pops up a menu holding "About CoCoVM" (no Help tile on macOS, where
+//! the application menu carries that item).
 //! The four transport tiles act on the current selection through the same
 //! [`super::bulk::BulkAction`]/[`ManagerApp::apply_bulk`] dispatch used by the
 //! bulk context menu — one code path, three surfaces.
@@ -41,8 +42,8 @@ const START_DISABLED_HOVER: &str = "The selected machines are already running";
 const STOP_HOVER: &str = "Shut down the selected machines that are running or suspended";
 const STOP_DISABLED_HOVER: &str = "None of the selected machines are running or suspended";
 const RESET_HOVER: &str = "Press the reset button on the selected running machines";
-/// The Help menu's one item, opening the About window ([`ManagerApp::show_about`]).
-const ABOUT_LABEL: &str = "About cocovm";
+/// macOS keeps About in the application menu, which would leave the Help tile empty.
+const HELP_TILE: bool = !cfg!(target_os = "macos");
 
 impl ManagerApp {
     /// The manager actions row. The four transport tiles dispatch through
@@ -112,17 +113,19 @@ impl ManagerApp {
             if toolbar_button(ui, SETTINGS_ICON, "Settings", true, icons_only).clicked() {
                 self.open_settings_dialog();
             }
-            toolbar_separator(ui);
-            let help = toolbar_button(ui, HELP_ICON, "Help", true, icons_only);
-            egui::Popup::menu(&help)
-                .id(ui.id().with("help_menu"))
-                .show(|ui| self.help_menu_ui(ui));
+            if HELP_TILE {
+                toolbar_separator(ui);
+                let help = toolbar_button(ui, HELP_ICON, "Help", true, icons_only);
+                egui::Popup::menu(&help)
+                    .id(ui.id().with("help_menu"))
+                    .show(|ui| self.help_menu_ui(ui));
+            }
         });
     }
 
     /// The Help tile's menu.
     fn help_menu_ui(&mut self, ui: &mut egui::Ui) {
-        if ui.button(ABOUT_LABEL).clicked() {
+        if ui.button(crate::about::MENU_LABEL).clicked() {
             self.open_about();
             ui.close();
         }
@@ -137,5 +140,17 @@ impl ManagerApp {
             self.entries.len(),
         );
         self.show_about = true;
+    }
+
+    /// Open the About window on the manager, brought to the front, when the
+    /// application menu asked for it.
+    pub(super) fn poll_about_request(&mut self, ctx: &egui::Context) {
+        if !self.about_request.take() {
+            return;
+        }
+        self.open_about();
+        let manager = egui::ViewportId::ROOT;
+        ctx.send_viewport_cmd_to(manager, egui::ViewportCommand::Minimized(false));
+        ctx.send_viewport_cmd_to(manager, egui::ViewportCommand::Focus);
     }
 }
