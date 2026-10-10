@@ -9,6 +9,7 @@
 use std::sync::mpsc;
 
 use crate::control::{Action, Incoming, Reply, ReplyHandle, Request, Response};
+use coco_core::decb::DecbSegment;
 
 use super::*;
 use crate::machine_def;
@@ -211,6 +212,51 @@ fn wait_rejects_a_paused_vm_up_front() {
         Response::Err(crate::app::PAUSED_ERROR.into())
     );
     assert!(app.pending.is_empty());
+}
+
+#[test]
+fn load_binary_dispatches_to_a_running_vm_and_sets_pc_last() {
+    let mut app = manager(vec![running_entry("live")]);
+    let rx = dispatch(
+        &mut app,
+        "live",
+        Action::LoadBinary {
+            segments: vec![DecbSegment {
+                address: 0x0400,
+                bytes: vec![0x12, 0x34],
+            }],
+            exec_address: Some(0x0400),
+        },
+    );
+
+    assert_eq!(
+        rx.try_recv().expect("immediate reply"),
+        Response::Ok(Reply::Done)
+    );
+    let vm = app.entries[0].vm.as_ref().unwrap();
+    assert_eq!(vm.peek_bytes(0x0400, 2), [0x12, 0x34]);
+    assert_eq!(vm.machine.cpu.pc, 0x0400);
+}
+
+#[test]
+fn load_binary_rejects_a_suspended_vm_before_mutation() {
+    let mut entry = running_entry("frozen");
+    entry.suspended = true;
+    entry.vm = None;
+    let mut app = manager(vec![entry]);
+    let rx = dispatch(
+        &mut app,
+        "frozen",
+        Action::LoadBinary {
+            segments: vec![],
+            exec_address: None,
+        },
+    );
+
+    let Response::Err(error) = rx.try_recv().expect("immediate reply") else {
+        panic!("expected suspended VM error");
+    };
+    assert!(error.message.contains("not running"));
 }
 
 #[test]

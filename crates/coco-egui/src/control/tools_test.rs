@@ -150,6 +150,11 @@ fn every_listed_tool_round_trips_through_the_mock() {
             json!({"addr": 0, "bytes": [1, 2, 3]}),
             vec![Reply::Done],
         ),
+        (
+            "load_binary",
+            json!({"bytes": "AQID", "address": 0x1000}),
+            vec![Reply::Done],
+        ),
     ];
     assert_eq!(
         cases.len(),

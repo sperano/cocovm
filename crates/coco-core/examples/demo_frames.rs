@@ -11,8 +11,8 @@
 
 use std::path::PathBuf;
 
+use coco_core::decb::DecbBinary;
 use coco_core::{Machine, MachineConfig, MemorySize};
-use mc6809::Bus;
 use test_assets::rom;
 
 /// Fields to run before injecting — enough to reach the idle BASIC prompt.
@@ -41,6 +41,7 @@ fn main() {
         .expect("coco3.rom in the cocovm XDG data directory")
         .into_boxed_slice();
     let bin = std::fs::read(&bin_path).unwrap_or_else(|e| panic!("{}: {e}", bin_path.display()));
+    let binary = DecbBinary::parse(&bin).unwrap_or_else(|e| panic!("{}: {e}", bin_path.display()));
 
     let config = MachineConfig {
         memory,
@@ -51,23 +52,12 @@ fn main() {
         m.run_field();
     }
 
-    // DECB LOADM segment format: $00,len16,addr16,data... repeated; $FF,0,exec16.
-    let mut i = 0;
-    let exec_addr = loop {
-        match bin[i] {
-            0x00 => {
-                let len = usize::from(bin[i + 1]) << 8 | usize::from(bin[i + 2]);
-                let addr = u16::from(bin[i + 3]) << 8 | u16::from(bin[i + 4]);
-                for (k, &b) in bin[i + 5..i + 5 + len].iter().enumerate() {
-                    m.bus.write(addr.wrapping_add(k as u16), b);
-                }
-                i += 5 + len;
-            }
-            0xFF => break u16::from(bin[i + 3]) << 8 | u16::from(bin[i + 4]),
-            tag => panic!("unexpected LOADM tag {tag:02X} at offset {i}"),
+    for segment in &binary.segments {
+        for (offset, &byte) in segment.bytes.iter().enumerate() {
+            m.poke(segment.address.wrapping_add(offset as u16), byte);
         }
-    };
-    m.cpu.pc = exec_addr;
+    }
+    m.cpu.pc = binary.exec_address;
 
     std::fs::create_dir_all(&out).unwrap();
     for field in 1..=RUN_FIELDS {

@@ -20,6 +20,7 @@ const EXPECTED_NAMES: &[&str] = &[
     "wait_for_text",
     "peek",
     "poke",
+    "load_binary",
 ];
 
 #[test]
@@ -123,6 +124,7 @@ fn annotations_classify_read_only_and_mutating_tools() {
         ("wait_for_text", false, true, false),
         ("peek", true, false, true),
         ("poke", false, true, false),
+        ("load_binary", false, true, false),
     ];
     for (name, read_only, destructive, idempotent) in expected {
         let annotations = &defs
@@ -220,4 +222,17 @@ fn wait_tools_offer_an_optional_fast_forward_flag() {
         let required = def["inputSchema"]["required"].as_array().unwrap();
         assert!(!required.contains(&json!("fast_forward")), "{name}");
     }
+}
+
+#[test]
+fn load_binary_schema_requires_exactly_one_source_and_bounds_address() {
+    let defs = definitions(true);
+    let load = defs
+        .iter()
+        .find(|definition| definition["name"] == "load_binary")
+        .unwrap();
+    let schema = &load["inputSchema"];
+    assert_eq!(schema["oneOf"].as_array().unwrap().len(), 2);
+    assert_eq!(schema["properties"]["address"]["maximum"], json!(u16::MAX));
+    assert_eq!(schema["properties"]["exec"]["default"], json!(false));
 }

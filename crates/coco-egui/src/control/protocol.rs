@@ -5,6 +5,7 @@
 
 use std::path::PathBuf;
 
+use coco_core::decb::DecbSegment;
 use coco_core::{MachineVariant, MemorySize};
 use serde::Deserialize;
 
@@ -146,6 +147,12 @@ pub enum Action {
     Poke {
         addr: MemAddr,
         bytes: Vec<u8>,
+    },
+    /// Write fully validated binary segments through the logical bus, in
+    /// order, then optionally set the MC6809 program counter.
+    LoadBinary {
+        segments: Vec<DecbSegment>,
+        exec_address: Option<u16>,
     },
 }
 
