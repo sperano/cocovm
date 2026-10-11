@@ -22,6 +22,9 @@ mod vms;
 /// the manager's own exposed drive count (not `coco_core::fdc::DRIVE_COUNT`,
 /// the FDC's larger addressable maximum).
 const MAX_DRIVE: u8 = (crate::UI_DRIVES - 1) as u8;
+/// The number tools use for the first MultiPak slot, as the front panel and
+/// a definition's `switch` do.
+pub(in crate::control) const FIRST_MPI_SLOT: usize = 1;
 
 #[derive(Clone, Copy)]
 struct ToolAnnotations {

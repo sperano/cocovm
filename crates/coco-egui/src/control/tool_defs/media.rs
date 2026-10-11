@@ -4,12 +4,12 @@
 use serde_json::{Value, json};
 
 use super::vms::{CARTRIDGE_KINDS, SLOT_KINDS, cartridge_object_schema};
-use super::{DESTRUCTIVE, DESTRUCTIVE_IDEMPOTENT, MAX_DRIVE, object_schema, tool, vm_property};
+use super::{
+    DESTRUCTIVE, DESTRUCTIVE_IDEMPOTENT, FIRST_MPI_SLOT, MAX_DRIVE, object_schema, tool,
+    vm_property,
+};
 use crate::MPI_SLOT_COUNT;
 
-/// The number tools use for the first MultiPak slot, as the front panel and
-/// a definition's `switch` do.
-const FIRST_MPI_SLOT: usize = 1;
 /// Highest DriveWire drive index a tool call may name.
 const MAX_DRIVEWIRE_DRIVE: usize = coco_core::drivewire::DRIVE_COUNT - 1;
 
@@ -97,7 +97,9 @@ pub(super) fn insert_cartridge(include_annotations: bool) -> Value {
          The old cartridge comes out first: modified floppies in an FD-502 being removed are \
          saved first, and if that save fails, nothing changes. If the new cartridge then fails \
          to load (for example, an unreadable ROM file), the error says so and the port or slot \
-         stays empty. Session only: the VM's definition is unchanged.",
+         stays empty. A Deluxe RS-232 Pak whose TCP endpoint cannot listen goes in on the \
+         loopback endpoint, and the call returns an error saying so. Session only: the VM's \
+         definition is unchanged.",
         object_schema(
             json!({
                 "vm": vm_property(),

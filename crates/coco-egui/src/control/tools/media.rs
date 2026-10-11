@@ -13,11 +13,8 @@ use super::{Backend, VmOnly, done, finish, parse_args};
 use crate::MPI_SLOT_COUNT;
 use crate::control::jsonrpc::{INVALID_PARAMS, RpcError};
 use crate::control::protocol::{Action, CartridgeTarget, Request};
+use crate::control::tool_defs::FIRST_MPI_SLOT;
 use crate::machine_def::{CartridgeDTO, SlotDTO};
-
-/// The number tools use for the first MultiPak slot, as the front panel and
-/// a definition's `switch` do.
-const FIRST_MPI_SLOT: usize = 1;
 
 const CARTRIDGE_INSERTED: &str = "Inserted the cartridge and power-cycled the VM.";
 const CARTRIDGE_REMOVED: &str = "Removed the cartridge and power-cycled the VM.";

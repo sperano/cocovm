@@ -180,6 +180,29 @@ fn a_failed_insert_leaves_the_port_empty_and_says_so() {
     assert_eq!(listed_cartridge(&manager), CartridgeDTO::None);
 }
 
+#[test]
+fn an_rs232_endpoint_that_cannot_listen_is_reported() {
+    let blocker = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let listen = blocker.local_addr().unwrap().to_string();
+    let mut manager = manager();
+    let rs232 = |endpoint| CartridgeDTO::RS232 { endpoint };
+
+    let error = manager
+        .insert_cartridge_action(
+            &vm(),
+            CartridgeTarget::Port(rs232(RS232EndpointDTO::TCP {
+                listen: listen.clone(),
+            })),
+        )
+        .unwrap_err();
+    assert!(error.contains(&listen), "{error}");
+    assert!(error.ends_with(ENDPOINT_FELL_BACK), "{error}");
+    assert_eq!(
+        listed_cartridge(&manager),
+        rs232(RS232EndpointDTO::Loopback)
+    );
+}
+
 fn fd502() -> CartridgeDTO {
     CartridgeDTO::FD502 {
         dos_rom: DosRom::DiskBasic,

@@ -17,6 +17,9 @@ use super::dispatch::{check_drive, with_cart_error};
 /// Appended when a new cartridge failed after the old one came out.
 const OLD_CARTRIDGE_REMOVED: &str =
     "The previous cartridge was removed; call list_vms to see what is installed now.";
+/// Appended when a Deluxe RS-232 Pak went in but its endpoint did not.
+const ENDPOINT_FELL_BACK: &str =
+    "The cartridge is installed, with its serial line on the loopback endpoint.";
 const NO_MULTIPAK: &str =
     "no MultiPak is in the cartridge port; insert one with insert_cartridge, kind \"mpi\"";
 const NO_TAPE: &str = "no tape is mounted; call insert_tape first";
@@ -72,16 +75,19 @@ impl ManagerApp {
             CartridgeTarget::Port(cartridge) => {
                 check_fits(app, &port_needs(&cartridge))?;
                 with_cart_error(app, CocoApp::eject_cartridge)?;
-                with_cart_error(app, |app| launch::mount_cartridge(app, &cartridge, &slug))
+                mount_replacement(app, |app| {
+                    launch::mount_cartridge(app, &cartridge, &slug);
+                })
             }
             CartridgeTarget::Slot { slot, occupant } => {
                 require_multipak(app)?;
                 check_fits(app, &slot_needs(&occupant))?;
                 with_cart_error(app, |app| app.mpi_eject_slot(slot))?;
-                with_cart_error(app, |app| launch::mount_slot(app, slot, &occupant, &slug))
+                mount_replacement(app, |app| {
+                    launch::mount_slot(app, slot, &occupant, &slug);
+                })
             }
         }
-        .map_err(|error| format!("{error}\n{OLD_CARTRIDGE_REMOVED}"))
     }
 
     /// `remove_cartridge`: empty the port ([`CocoApp::eject_cartridge`]) or
@@ -183,6 +189,24 @@ fn wav_outcome(wav_error: Option<String>, done: &str) -> Result<Reply, String> {
         Some(error) => Err(format!(
             "{error}\nThe tape was {done}; only the .wav copy of the previous recording failed."
         )),
+    }
+}
+
+/// Mount a cartridge into the port or slot just emptied. A failure says the
+/// old cartridge is gone. A mount that leaves a new notice in
+/// `CocoApp::toast` fails too: a Deluxe RS-232 Pak whose TCP endpoint cannot
+/// listen falls back to loopback with only that notice, which the window
+/// shows but an MCP caller would never see.
+fn mount_replacement(app: &mut CocoApp, mount: impl FnOnce(&mut CocoApp)) -> Result<Reply, String> {
+    let prior_toast = app.toast.take();
+    let result =
+        with_cart_error(app, mount).map_err(|error| format!("{error}\n{OLD_CARTRIDGE_REMOVED}"))?;
+    match &app.toast {
+        Some((notice, _)) => Err(format!("{notice}\n{ENDPOINT_FELL_BACK}")),
+        None => {
+            app.toast = prior_toast;
+            Ok(result)
+        }
     }
 }
 
