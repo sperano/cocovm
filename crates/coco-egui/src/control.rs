@@ -3,11 +3,11 @@
 //! rather than a separate proxy process. An accept thread ([`ControlServer`])
 //! hands each connection to its own thread, which parses HTTP and JSON-RPC
 //! and answers `initialize`/`ping`/`tools/list`/notifications itself
-//! (`control::http`, `control::jsonrpc`, `control::mcp`); a `tools/call`
-//! becomes a [`Request`] queued for the frame loop
-//! (`manager::control::drain_control`). The connection thread blocks on the
-//! [`ReplyHandle`] channel for that request's [`Response`], then
-//! [`control::tools`] formats it into MCP content.
+//! (`control::http`, `control::jsonrpc`, `control::mcp`); a `tools/call` or
+//! `resources/read` (`control::resources`) becomes a [`Request`] queued for
+//! the frame loop (`manager::control::drain_control`). The connection thread
+//! blocks on the [`ReplyHandle`] channel for that request's [`Response`],
+//! then [`control::tools`] formats it into MCP content.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, mpsc};
@@ -19,6 +19,7 @@ pub mod jsonrpc;
 pub mod key_names;
 pub mod mcp;
 pub mod protocol;
+pub mod resources;
 mod server;
 mod session;
 pub mod tool_defs;

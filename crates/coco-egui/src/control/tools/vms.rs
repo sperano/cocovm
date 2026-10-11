@@ -191,4 +191,4 @@ fn media_json(media: &VmMedia) -> Value {
 
 #[cfg(test)]
 #[path = "vms_test.rs"]
-pub(super) mod tests;
+pub(in crate::control) mod tests;

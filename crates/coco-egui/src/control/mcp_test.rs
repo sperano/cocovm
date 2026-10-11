@@ -141,8 +141,72 @@ fn structured_output_starts_at_protocol_2025_06_18() {
 #[test]
 fn unrecognized_method_is_method_not_found() {
     let mut mcp = mcp_with(vec![]);
-    let err = mcp.handle("resources/list", Value::Null).unwrap_err();
+    let err = mcp.handle("prompts/list", Value::Null).unwrap_err();
     assert_eq!(err.code, METHOD_NOT_FOUND);
+}
+
+#[test]
+fn initialize_offers_resources_without_subscriptions() {
+    let mut mcp = mcp_with(vec![]);
+    let result = mcp
+        .handle("initialize", json!({"protocolVersion": "2025-06-18"}))
+        .unwrap();
+    assert_eq!(
+        result["capabilities"]["resources"],
+        json!({"subscribe": false, "listChanged": false})
+    );
+    assert!(
+        result["instructions"]
+            .as_str()
+            .unwrap()
+            .contains("cocovm://vm/<slug>/screen.txt")
+    );
+}
+
+#[test]
+fn resource_methods_dispatch_through_the_backend() {
+    let mut mcp = mcp_with(vec![Ok(Reply::Vms(vec![]))]);
+    let listed = mcp.handle("resources/list", Value::Null).unwrap();
+    assert_eq!(listed["resources"], json!([]));
+
+    let templates = mcp.handle("resources/templates/list", Value::Null).unwrap();
+    assert_eq!(templates["resourceTemplates"].as_array().unwrap().len(), 2);
+
+    let err = mcp
+        .handle("resources/read", json!({"uri": "file:///etc/passwd"}))
+        .unwrap_err();
+    assert_eq!(err.code, resources::RESOURCE_NOT_FOUND);
+}
+
+/// Subscriptions aren't offered, so the subscribe methods stay unknown.
+#[test]
+fn resource_subscriptions_are_method_not_found() {
+    let mut mcp = mcp_with(vec![]);
+    for method in ["resources/subscribe", "resources/unsubscribe"] {
+        let err = mcp
+            .handle(method, json!({"uri": "cocovm://vm/vm0/screen.txt"}))
+            .unwrap_err();
+        assert_eq!(err.code, METHOD_NOT_FOUND, "{method}");
+    }
+}
+
+#[test]
+fn resource_titles_start_at_protocol_2025_06_18() {
+    for (version, titled) in [
+        (ProtocolVersion::November2024, false),
+        (ProtocolVersion::March2025, false),
+        (ProtocolVersion::June2025, true),
+    ] {
+        let mut mcp = mcp_with(vec![]);
+        mcp.set_protocol_version(version);
+        let templates = mcp.handle("resources/templates/list", Value::Null).unwrap();
+        let has_title = templates["resourceTemplates"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|t| t.get("title").is_some());
+        assert_eq!(has_title, titled, "{version:?}");
+    }
 }
 
 #[test]

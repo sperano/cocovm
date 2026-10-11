@@ -14,7 +14,7 @@ mod load_binary;
 mod media;
 mod memory;
 mod state;
-mod vms;
+pub(super) mod vms;
 
 /// Tool-definition key for the result schema (protocol 2025-06-18 on).
 const OUTPUT_SCHEMA: &str = "outputSchema";
