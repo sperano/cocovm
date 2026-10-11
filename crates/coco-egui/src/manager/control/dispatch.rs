@@ -11,7 +11,7 @@ use crate::{CocoApp, UI_DRIVES};
 
 use super::{ManagerApp, PendingCondition, PendingControl};
 
-fn check_drive(drive: usize) -> Result<(), String> {
+pub(super) fn check_drive(drive: usize) -> Result<(), String> {
     if drive >= UI_DRIVES {
         return Err(format!("drive must be 0..{UI_DRIVES}"));
     }
@@ -21,7 +21,10 @@ fn check_drive(drive: usize) -> Result<(), String> {
 /// Run a media action that reports failure through `CocoApp::cart_error`
 /// and turn only the error *this* call raised into `Err`; a stale error
 /// from an earlier UI action is set aside first, then put back.
-fn with_cart_error(app: &mut CocoApp, action: impl FnOnce(&mut CocoApp)) -> Result<Reply, String> {
+pub(super) fn with_cart_error(
+    app: &mut CocoApp,
+    action: impl FnOnce(&mut CocoApp),
+) -> Result<Reply, String> {
     let prior = app.cart_error.take();
     action(app);
     match app.cart_error.take() {
@@ -99,6 +102,34 @@ impl ManagerApp {
             Action::EjectDisk { drive } => {
                 reply.reply(response(self.eject_disk_action(&vm, drive)));
             }
+            Action::InsertTape { path } => {
+                reply.reply(response(self.insert_tape_action(&vm, path)));
+            }
+            Action::EjectTape => reply.reply(response(self.eject_tape_action(&vm))),
+            Action::RewindTape => reply.reply(response(self.rewind_tape_action(&vm))),
+            Action::InsertCartridge { target } => {
+                reply.reply(response(self.insert_cartridge_action(&vm, target)));
+            }
+            Action::RemoveCartridge { slot } => {
+                reply.reply(response(self.remove_cartridge_action(&vm, slot)));
+            }
+            Action::SetMPISwitch { slot } => {
+                reply.reply(response(self.set_mpi_switch_action(&vm, slot)));
+            }
+            Action::InsertVHD { drive, path } => {
+                reply.reply(response(self.insert_vhd_action(&vm, drive, path)));
+            }
+            Action::EjectVHD { drive } => reply.reply(response(self.eject_vhd_action(&vm, drive))),
+            Action::InsertDriveWireDisk { drive, path } => {
+                reply.reply(response(self.set_drivewire_disk_action(
+                    &vm,
+                    drive,
+                    Some(path),
+                )));
+            }
+            Action::EjectDriveWireDisk { drive } => {
+                reply.reply(response(self.set_drivewire_disk_action(&vm, drive, None)));
+            }
             Action::Reset { hard } => {
                 let result = self.resolve_vm(&vm, true).map(|idx| {
                     self.vm_mut(idx).remote_reset(hard);
@@ -158,7 +189,7 @@ impl ManagerApp {
     /// `entries[idx]`'s VM. Panics if absent — every call site resolves
     /// through [`Self::resolve_vm`]/[`Self::resolve_alive`] first, which
     /// guarantee it.
-    fn vm_mut(&mut self, idx: usize) -> &mut CocoApp {
+    pub(super) fn vm_mut(&mut self, idx: usize) -> &mut CocoApp {
         self.entries[idx]
             .vm
             .as_mut()

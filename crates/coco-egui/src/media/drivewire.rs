@@ -78,7 +78,24 @@ impl CocoApp {
         if self.dw_startup[drive] == path {
             return Ok(());
         }
-        let result = match path.clone() {
+        let result = self.set_session_dw_disk(drive, path.clone());
+        if result.is_ok() {
+            self.dw_startup[drive] = path;
+        }
+        result
+    }
+
+    /// Mount `path` in `drive`, or empty it with `None`, for this session
+    /// only. [`Self::dw_startup`] keeps the path settings last applied, so,
+    /// as for a guest's `dw disk insert`, the next settings change leaves the
+    /// drive alone unless its own setting changed. A path that fails to open
+    /// or lease keeps the drive's current image.
+    pub(crate) fn set_session_dw_disk(
+        &mut self,
+        drive: usize,
+        path: Option<PathBuf>,
+    ) -> Result<(), String> {
+        match path {
             Some(path) => self.mount_dw_disk(drive, path),
             None => {
                 if let Some(ref mut dw) = self.machine.bus.drivewire {
@@ -88,11 +105,7 @@ impl CocoApp {
                 self.dw_leases[drive] = None;
                 Ok(())
             }
-        };
-        if result.is_ok() {
-            self.dw_startup[drive] = path;
         }
-        result
     }
 
     fn mount_dw_disk(&mut self, drive: usize, path: PathBuf) -> Result<(), String> {

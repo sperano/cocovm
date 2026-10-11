@@ -148,9 +148,18 @@ claude mcp add --transport http cocovm http://127.0.0.1:6809/mcp
 
 The server provides tools to list, start, stop, and suspend virtual machines,
 read text or a PNG from the display, type text, enter a BASIC listing, press
-keys, move joysticks, manage disks, reset or pause a machine, wait for video
+keys, move joysticks, manage media, reset or pause a machine, wait for video
 fields or matching screen text, and read or write memory. The VM list includes
-each machine's model, RAM size, CPU, cartridge, and mounted media. Like the
+each machine's model, RAM size, CPU, cartridge, and mounted media.
+
+The media tools insert and eject floppies, cassette tapes, virtual hard disks
+(VHDs), and DriveWire disks, and rewind the tape. They also swap the cartridge
+in the port or in a Multi-Pak Interface (MPI) slot, and move the MPI's slot
+switch. A cartridge uses the same format as the `[peripherals].cartridge`
+table of a machine definition, which is also how the VM list reports it.
+Inserting or removing a cartridge power-cycles the machine. Media changes last
+for the current session only: the machine definition keeps its own settings.
+DriveWire disks need DriveWire turned on in the machine's settings. Like the
 manager's Stop and Suspend buttons, `stop_vm` and `suspend_vm` write modified
 floppies and tapes back to their files first. Screen matching accepts a literal
 string or regular expression. Memory tools address the CPU's current memory map

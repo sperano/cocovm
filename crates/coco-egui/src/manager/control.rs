@@ -15,6 +15,7 @@ use super::{MachineEntry, ManagerApp};
 
 mod dispatch;
 mod lifecycle;
+mod media;
 mod pending;
 mod state;
 mod vm_info;

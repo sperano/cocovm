@@ -14,6 +14,7 @@ use super::{
 };
 
 mod load_binary;
+mod media;
 mod state;
 mod vms;
 
@@ -21,6 +22,9 @@ mod vms;
 /// the manager's own exposed drive count (not `coco_core::fdc::DRIVE_COUNT`,
 /// the FDC's larger addressable maximum).
 const MAX_DRIVE: u8 = (crate::UI_DRIVES - 1) as u8;
+/// The number tools use for the first MultiPak slot, as the front panel and
+/// a definition's `switch` do.
+pub(in crate::control) const FIRST_MPI_SLOT: usize = 1;
 
 #[derive(Clone, Copy)]
 struct ToolAnnotations {
@@ -482,6 +486,16 @@ pub fn definitions(include_annotations: bool) -> Vec<Value> {
         joystick(include_annotations),
         insert_disk(include_annotations),
         eject_disk(include_annotations),
+        media::insert_tape(include_annotations),
+        media::eject_tape(include_annotations),
+        media::rewind_tape(include_annotations),
+        media::insert_cartridge(include_annotations),
+        media::remove_cartridge(include_annotations),
+        media::set_mpi_switch(include_annotations),
+        media::insert_vhd(include_annotations),
+        media::eject_vhd(include_annotations),
+        media::insert_drivewire_disk(include_annotations),
+        media::eject_drivewire_disk(include_annotations),
         reset(include_annotations),
         set_running(include_annotations),
         wait(include_annotations),

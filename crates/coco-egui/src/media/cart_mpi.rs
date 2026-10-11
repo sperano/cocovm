@@ -28,6 +28,26 @@ impl CocoApp {
         true
     }
 
+    /// Empties MPI `slot` (0-3) and power-cycles like every slot swap. Only a
+    /// dirty floppy in `slot` itself can abort this — see
+    /// [`Self::mpi_flush_before_replacing_slot`].
+    pub(crate) fn mpi_eject_slot(&mut self, slot: usize) {
+        if !self.mpi_flush_before_replacing_slot(slot) {
+            return;
+        }
+        if let Some(mp) = self.machine.bus.cart.as_multipak() {
+            mp.eject(slot);
+        }
+        if let Some(mpi) = &mut self.mpi {
+            let removed = std::mem::replace(&mut mpi.slots[slot], MPISlot::Empty);
+            if matches!(removed, MPISlot::DeluxeRS232(_)) {
+                self.rs232 = None;
+                self.rs232_configured = None;
+            }
+        }
+        self.power_cycle();
+    }
+
     /// Loads a ROM pak into MPI `slot` (0-3). Only a dirty floppy in `slot` itself
     /// (that is, `slot` holds the FD-502) can abort this — see
     /// [`Self::mpi_flush_before_replacing_slot`].

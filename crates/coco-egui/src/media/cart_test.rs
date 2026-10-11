@@ -230,6 +230,52 @@ fn mpi_insert_rtc_aborts_when_the_fd502s_own_slot_disk_write_back_fails() {
     assert_eq!(app.disk_paths[0].as_deref(), Some(disk_path.as_path()));
 }
 
+/// `eject_cartridge` and `mpi_eject_slot` change nothing while a dirty disk
+/// in the FD-502 they would remove can't be saved, then succeed once it can.
+#[test]
+fn ejects_abort_while_the_fd502s_dirty_disk_cannot_be_saved() {
+    let dir = scratch_dir("eject-write-back-failure");
+    let disk_path = dir.join("dirty.dsk");
+    ensure_writable(&disk_path);
+    write_one_track_disk(&disk_path);
+
+    let mut app = boot_app();
+    app.insert_multipak();
+    app.mpi_insert_fd502(FD502_SLOT, Default::default());
+    mount_and_dirty(&mut app, 0, &disk_path);
+
+    {
+        let _ro = ReadOnly::new(&disk_path);
+        app.mpi_eject_slot(FD502_SLOT);
+        assert!(app.cart_error.take().is_some(), "the slot eject must fail");
+        app.eject_cartridge();
+        assert!(app.cart_error.take().is_some(), "the port eject must fail");
+        assert!(
+            matches!(app.mpi.as_ref().unwrap().slots[FD502_SLOT], MPISlot::FD502),
+            "the FD-502 must stay in its slot"
+        );
+        assert!(is_dirty(&mut app, 0), "the disk must stay dirty");
+    }
+
+    app.mpi_eject_slot(FD502_SLOT);
+    assert_eq!(app.cart_error, None);
+    assert!(matches!(
+        app.mpi.as_ref().unwrap().slots[FD502_SLOT],
+        MPISlot::Empty
+    ));
+    assert!(app.machine.bus.cart.as_disk_cart().is_none());
+    assert_eq!(app.disk_paths, [None, None]);
+    assert_eq!(std::fs::read(&disk_path).unwrap()[0], DIRTY_BYTE);
+
+    app.eject_cartridge();
+    assert_eq!(app.cart_error, None);
+    assert!(app.mpi.is_none());
+    assert!(matches!(
+        app.machine.bus.cart,
+        coco_core::cart::Cart::Empty(_)
+    ));
+}
+
 /// Both SSC images at the given sizes; zero-filled pairs of the right size load fine.
 fn write_ssc_roms(dir: &Path, firmware_len: usize, speech_len: usize) {
     std::fs::write(dir.join(rom_load::SSC_FIRMWARE_ROM), vec![0; firmware_len]).unwrap();

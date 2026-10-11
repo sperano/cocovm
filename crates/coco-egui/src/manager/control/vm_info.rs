@@ -1,16 +1,20 @@
 //! One manager entry as `list_vms` reports it ([`crate::control::VmInfo`]):
 //! lifecycle status plus model, RAM, CPU, cartridge, and mounted media.
 
-use crate::CocoApp;
+use std::path::Path;
+
+use coco_core::cart::Cart;
+
 use crate::control::{Cpu, VmInfo, VmMedia};
-use crate::machine_def::{self, CartridgeDTO, MachineDef, SlotDTO};
+use crate::machine_def::{self, CartridgeDTO, DosRom, MachineDef, RS232EndpointDTO, SlotDTO};
+use crate::{CocoApp, MPISlot, RS232Endpoint};
 
 use super::{MachineEntry, control_status};
 
-/// `entry`'s [`VmInfo`]. Hardware and media come from the live VM when one
-/// exists, since media can change while it runs; otherwise from the
-/// definition, except a suspended entry's media, which only its saved state
-/// records.
+/// `entry`'s [`VmInfo`]. Hardware, cartridge, and media come from the live
+/// VM when one exists, since the cartridge and media can change while it
+/// runs; otherwise from the definition, except a suspended entry's media,
+/// which only its saved state records.
 pub(super) fn vm_info(entry: &MachineEntry) -> VmInfo {
     let live = entry.vm.as_deref();
     let (model, ram) = match live {
@@ -32,7 +36,10 @@ pub(super) fn vm_info(entry: &MachineEntry) -> VmInfo {
         model,
         ram,
         cpu: Cpu::MC6809,
-        cartridge: resolved_cartridge(&entry.def.peripherals.cartridge, &entry.slug),
+        cartridge: match live {
+            Some(vm) => live_cartridge(vm),
+            None => resolved_cartridge(&entry.def.peripherals.cartridge, &entry.slug),
+        },
         media,
     }
 }
@@ -101,6 +108,83 @@ fn resolved_cartridge(cartridge: &CartridgeDTO, slug: &str) -> CartridgeDTO {
         | CartridgeDTO::CoCoMax => {}
     }
     cartridge
+}
+
+/// `vm`'s cartridge-port occupant as a definition names it, read from the
+/// frontend's record of what each insert installed (`cart_path`, `mpi`,
+/// `rs232`, `disk_rom_path`).
+fn live_cartridge(vm: &CocoApp) -> CartridgeDTO {
+    if let Some(mpi) = &vm.mpi {
+        return CartridgeDTO::MPI {
+            slots: std::array::from_fn(|i| live_slot(vm, &mpi.slots[i])),
+            switch: mpi.switch + 1,
+        };
+    }
+    let path = || path_text(vm.cart_path.as_deref());
+    match &vm.machine.bus.cart {
+        Cart::ROMPak(_) => CartridgeDTO::ROMPak { path: path() },
+        Cart::BankedROMPak(_) => CartridgeDTO::BankedROMPak { path: path() },
+        Cart::GamesMasterCartridge(_) => CartridgeDTO::GamesMaster { path: path() },
+        Cart::DiskCart(_) => CartridgeDTO::FD502 {
+            dos_rom: live_dos_rom(vm),
+        },
+        Cart::DistoRTC(_) => CartridgeDTO::RTC,
+        Cart::DeluxeRS232(_) => CartridgeDTO::RS232 {
+            endpoint: live_endpoint(vm),
+        },
+        Cart::Orch90(_) => CartridgeDTO::Orch90,
+        Cart::SoundSpeechCartridge(_) => CartridgeDTO::SoundSpeech,
+        Cart::CoCoMaxModule(_) => CartridgeDTO::CoCoMax,
+        // An empty port; a MultiPak, which always comes with its `mpi`
+        // record (an insert or a restore sets it); or a test double, which
+        // has no definition form.
+        _ => CartridgeDTO::None,
+    }
+}
+
+fn live_slot(vm: &CocoApp, slot: &MPISlot) -> SlotDTO {
+    let path = |path: &Path| path_text(Some(path));
+    match slot {
+        MPISlot::Empty => SlotDTO::Empty,
+        MPISlot::ROMPak(p) => SlotDTO::ROMPak { path: path(p) },
+        MPISlot::BankedROMPak(p) => SlotDTO::BankedROMPak { path: path(p) },
+        MPISlot::FD502 => SlotDTO::FD502 {
+            dos_rom: live_dos_rom(vm),
+        },
+        MPISlot::DistoRTC => SlotDTO::RTC,
+        MPISlot::DeluxeRS232(_) => SlotDTO::RS232 {
+            endpoint: live_endpoint(vm),
+        },
+        MPISlot::GamesMasterCartridge(p) => SlotDTO::GamesMaster { path: path(p) },
+        MPISlot::Orch90 => SlotDTO::Orch90,
+        MPISlot::SoundSpeechCartridge => SlotDTO::SoundSpeech,
+        MPISlot::CoCoMax => SlotDTO::CoCoMax,
+    }
+}
+
+fn path_text(path: Option<&Path>) -> String {
+    path.map(|p| p.display().to_string()).unwrap_or_default()
+}
+
+/// The FD-502's DOS, told apart by the installed ROM's file name
+/// ([`DosRom::filename`]).
+fn live_dos_rom(vm: &CocoApp) -> DosRom {
+    let file_name = vm.disk_rom_path.as_deref().and_then(Path::file_name);
+    [DosRom::DiskBasic, DosRom::HdbDosDw3]
+        .into_iter()
+        .find(|rom| file_name.is_some_and(|name| name == rom.filename()))
+        .unwrap_or_default()
+}
+
+fn live_endpoint(vm: &CocoApp) -> RS232EndpointDTO {
+    match &vm.rs232 {
+        None | Some(RS232Endpoint::Loopback) => RS232EndpointDTO::Loopback,
+        Some(RS232Endpoint::TCP(listen)) => RS232EndpointDTO::TCP {
+            listen: listen.clone(),
+        },
+        #[cfg(unix)]
+        Some(RS232Endpoint::PTY(_)) => RS232EndpointDTO::PTY,
+    }
 }
 
 #[cfg(test)]
