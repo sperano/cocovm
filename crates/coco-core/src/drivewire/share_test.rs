@@ -19,7 +19,9 @@ impl ScratchDir {
             std::env::temp_dir().join(format!("cocovm-share-{name}-{}-{id}", std::process::id()));
         let _ = fs::remove_dir_all(&path);
         fs::create_dir_all(&path).expect("create scratch folder");
-        Self(path)
+        // Canonical, like the host paths share resolution reports (macOS
+        // mounts the temp dir through a /var -> /private/var symlink).
+        Self(fs::canonicalize(&path).expect("canonicalize scratch folder"))
     }
 
     pub(in crate::drivewire) fn path(&self) -> &Path {

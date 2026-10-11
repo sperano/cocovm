@@ -24,7 +24,9 @@ impl TempDir {
             std::process::id()
         ));
         fs::create_dir_all(&dir).expect("create temp dir");
-        Self(dir)
+        // Canonical, like the host paths DriveWire share resolution reports
+        // (macOS reaches the temp dir through a /var -> /private/var symlink).
+        Self(fs::canonicalize(&dir).expect("canonicalize temp dir"))
     }
 
     pub(crate) fn path(&self) -> &Path {

@@ -283,7 +283,13 @@ mod symlinks {
         scratch.file("café.txt", b"x");
         scratch.file("colon:name", b"x");
         let raw = OsStr::from_bytes(b"latin1-\xE9.txt");
-        fs::write(scratch.path().join(raw), b"x").unwrap();
+        match fs::write(scratch.path().join(raw), b"x") {
+            Ok(()) => {}
+            // APFS and UTF-8-only mounts refuse the name; the two other
+            // names still exercise the filter there.
+            Err(error) if error.raw_os_error() == Some(libc::EILSEQ) => {}
+            Err(error) => panic!("cannot create the latin1 name: {error}"),
+        }
         let table = games_table(&scratch);
         let guest = GuestPath::parse(b"games", &GuestPath::top(), &table).unwrap();
         assert_eq!(
