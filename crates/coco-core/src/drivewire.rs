@@ -17,16 +17,20 @@
 //! down to opcode dispatch) lives in the [`protocol`] submodule; the
 //! READ/WRITE family's actual sector I/O lives in [`transfer`]; virtual
 //! serial channels live in [`channel`] (state and queues) and [`serial`]
-//! (wire requests and the host-side `channel_*` API).
+//! (wire requests and the host-side `channel_*` API); the NitrOS-9 `dw`
+//! command service on those channels lives in [`command`], and per-drive
+//! media descriptions in [`media`].
 
 use std::collections::VecDeque;
 
 use serde::{Deserialize, Serialize};
 
 mod channel;
+mod command;
 pub mod host;
 mod image;
 mod lifecycle;
+mod media;
 mod protocol;
 mod serial;
 pub use channel::{
@@ -34,10 +38,13 @@ pub use channel::{
     ChannelInfo,
 };
 pub use image::DWImage;
+pub use media::{DriveMedia, GuestMediaChange, MediaOrigin};
 pub mod share;
 mod transfer;
 
 use channel::Channels;
+use command::Commands;
+use media::MediaTable;
 
 use host::HostCompletion;
 use host::HostExecutor;
@@ -292,6 +299,15 @@ pub struct DWServer {
     /// frontend reinstalls the share table through [`DWServer::set_shares`].
     #[serde(skip)]
     shares: ShareSession,
+    /// Skipped: a command in progress belongs to the running host. Restored
+    /// channels hang up instead (see `Channels::after_restore`).
+    #[serde(skip)]
+    commands: Commands,
+    /// Who mounted each drive and whether it is write-protected.
+    /// `#[serde(default)]` loads older save states with no descriptions;
+    /// [`DWServer::reattach`] fills them in.
+    #[serde(default)]
+    media: MediaTable,
     /// Set on a successful [`opcode::WRITE`]/[`opcode::REWRITE`]; cleared by
     /// [`DWServer::mount`]/[`DWServer::eject`].
     dirty: [bool; DRIVE_COUNT],
@@ -339,6 +355,8 @@ impl DWServer {
             pending_host: None,
             service_completions: VecDeque::new(),
             shares: ShareSession::default(),
+            commands: Commands::default(),
+            media: MediaTable::default(),
             dirty: [false; DRIVE_COUNT],
             reply: VecDeque::new(),
             state: State::Idle,
@@ -360,6 +378,7 @@ impl DWServer {
         self.invalidate_drive_request(drive);
         self.drives[drive] = Some(image.into_async());
         self.dirty[drive] = false;
+        self.record_host_mount(drive);
     }
 
     /// Unmount `drive`'s image, if any, and clear its dirty flag.
@@ -367,6 +386,7 @@ impl DWServer {
         self.invalidate_drive_request(drive);
         self.drives[drive] = None;
         self.dirty[drive] = false;
+        self.record_host_eject(drive);
     }
 
     /// Re-inject a mounted image after a snapshot restore without clearing `dirty[drive]`
@@ -374,6 +394,7 @@ impl DWServer {
     pub fn reattach(&mut self, drive: usize, image: DWImage) {
         self.invalidate_drive_request(drive);
         self.drives[drive] = Some(image.into_async());
+        self.record_reattach(drive);
     }
 
     pub fn is_mounted(&self, drive: usize) -> bool {

@@ -15,6 +15,7 @@
 
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use super::access::{AccessMode, AccessRegistry, Lease, LeaseOwner};
@@ -82,6 +83,19 @@ pub struct ShareImage {
     pub file: File,
     pub writable: bool,
     /// Keep for as long as the image is mounted.
+    pub lease: Lease,
+    /// Normalized guest path, safe to show the guest.
+    pub guest_path: String,
+    /// Host file, for the frontend's session media; never shown to the guest.
+    pub host_path: PathBuf,
+}
+
+/// A file opened through a share for reading outside the session's handle
+/// table, for a guest service that streams it.
+#[derive(Debug)]
+pub struct ShareReader {
+    pub file: File,
+    /// Keep for as long as the file is read.
     pub lease: Lease,
 }
 
@@ -184,6 +198,23 @@ impl ShareSession {
         result
     }
 
+    /// Opens a file for reading, read-leased like [`ShareOp::OpenRead`],
+    /// without taking a handle slot. Blocks like [`Self::open_image`].
+    pub fn open_reader(&self, path: &[u8]) -> Result<ShareReader, ShareError> {
+        let state = lock(&self.state);
+        let result = self.open_reader_in(&state, path);
+        self.record(&state, result.as_ref().err().copied());
+        result
+    }
+
+    /// `path` normalized against the current directory, without touching
+    /// the host (for example `/games/disks`). Waits for the session lock, so
+    /// call it from a host job.
+    pub fn display_path(&self, path: &[u8]) -> Result<String, ShareError> {
+        let state = lock(&self.state);
+        GuestPath::parse(path, &state.cwd, &self.table).map(|guest| guest.to_string())
+    }
+
     fn execute_with(
         &self,
         op: ShareOp,
@@ -234,6 +265,11 @@ impl ShareSession {
 
     fn open_read(&self, state: &mut State, path: &[u8]) -> Result<Vec<u8>, ShareError> {
         let slot = free_slot(state)?;
+        let reader = self.open_reader_in(state, path)?;
+        Ok(store(state, slot, reader.file, false, reader.lease))
+    }
+
+    fn open_reader_in(&self, state: &State, path: &[u8]) -> Result<ShareReader, ShareError> {
         let guest = self.file_path(state, path)?;
         let resolved = path::resolve_existing(&guest, &self.table)?;
         let file = File::open(&resolved.host)?;
@@ -241,7 +277,7 @@ impl ShareSession {
         let lease = self
             .registry
             .acquire(&file, &resolved.host, self.owner, AccessMode::Read)?;
-        Ok(store(state, slot, file, false, lease))
+        Ok(ShareReader { file, lease })
     }
 
     fn create(&self, state: &mut State, path: &[u8]) -> Result<Vec<u8>, ShareError> {
@@ -285,6 +321,8 @@ impl ShareSession {
             file,
             writable,
             lease,
+            guest_path: guest.to_string(),
+            host_path: resolved.host,
         })
     }
 

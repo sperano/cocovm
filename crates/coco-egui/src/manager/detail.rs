@@ -329,8 +329,8 @@ impl ManagerApp {
             DetailTab::Devices => draw_devices_tab(ui, &slug, &mut edit.form),
             DetailTab::Input => draw_input_tab(ui, &mut edit.form),
             DetailTab::DriveWire => {
-                let session = self.entries[index].share_status();
-                live_drivewire::draw_drivewire_tab(ui, &mut edit.form, &slug, session);
+                let entry = &self.entries[index];
+                live_drivewire::draw_drivewire_tab(ui, &mut edit.form, &slug, entry);
             }
         }
         // Constraints cross tab boundaries: a General-tab model change, for
