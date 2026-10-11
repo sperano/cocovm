@@ -364,7 +364,7 @@ fn restore_reopens_objects_by_name_and_drops_those_that_are_gone() {
         [NamedRestoreFailure {
             drive: drive_b,
             name: "b.bin".to_string(),
-            error: ShareError::NotFound,
+            error: NamedRestoreError::Share(ShareError::NotFound),
         }]
     );
     assert_eq!(read(&mut restored, drive_a, 0).unwrap(), a);
@@ -429,4 +429,36 @@ fn objects_survive_resets_and_close_when_the_host_stops() {
     vm_a.server.stop_host();
     assert!(vm_a.server.named_objects().is_empty());
     assert_eq!(mount(&mut vm_b, "a.bin"), u8::MAX);
+}
+
+#[test]
+fn restore_drops_objects_whose_name_now_resolves_in_another_share() {
+    let (games, work) = (
+        ScratchDir::new("named-games"),
+        ScratchDir::new("named-work"),
+    );
+    games.file("os9.dsk", &object_bytes(1, SECTOR_SIZE));
+    work.file("os9.dsk", &object_bytes(2, SECTOR_SIZE));
+    let mut guest = guest(games.path(), ShareAccess::ReadWrite);
+    let drive = mount(&mut guest, "os9.dsk");
+    let mut cbor = Vec::new();
+    ciborium::into_writer(&guest.server, &mut cbor).unwrap();
+    guest.server.stop_host();
+
+    let mut server: DWServer = ciborium::from_reader(cbor.as_slice()).unwrap();
+    std::mem::swap(&mut server.host, &mut guest.server.host);
+    guest.server = server;
+    guest.server.after_restore();
+    let shares = table(&[
+        (SHARE, games.path(), ShareAccess::ReadWrite),
+        ("work", work.path(), ShareAccess::ReadWrite),
+    ])
+    .with_named_objects(Some("work".to_string()));
+    guest.server.set_shares(shares, LeaseOwner::new());
+
+    let failures = guest.server.reattach_named_objects();
+    assert_eq!(failures.len(), 1);
+    assert_eq!(failures[0].error, NamedRestoreError::OtherShare);
+    assert_eq!(read(&mut guest, drive, 0), Err(error::NOT_READY));
+    assert!(guest.server.named_objects().is_empty());
 }

@@ -41,7 +41,8 @@ pub use channel::{
 pub use image::DWImage;
 pub use media::{DriveMedia, GuestMediaChange, MediaOrigin};
 pub use named::{
-    MAX_NAMED_OBJECTS, NAMED_DRIVE_FIRST, NAMED_FAILURE, NamedObjectInfo, NamedRestoreFailure,
+    MAX_NAMED_OBJECTS, NAMED_DRIVE_FIRST, NAMED_FAILURE, NamedObjectInfo, NamedRestoreError,
+    NamedRestoreFailure,
 };
 pub mod share;
 mod transfer;

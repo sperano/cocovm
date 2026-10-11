@@ -28,10 +28,20 @@
 //! `_isNamedObjDrive`); HDB-DOS itself sends wire drive 0.
 //!
 //! Objects survive machine and protocol resets, like configured media.
-//! Snapshots record each object's name, drive, and write protection, never
-//! its handle: [`DWServer::reattach_named_objects`] reopens them by name
-//! after a restore, and an object that cannot be reopened is dropped, so
-//! its drive answers "not ready" rather than another object's sectors.
+//! Snapshots record each object's name, share path, drive, and write
+//! protection, never its handle: [`DWServer::reattach_named_objects`]
+//! reopens them by name after a restore. An object that cannot be reopened,
+//! or whose name now resolves in another share, is dropped, so its drive
+//! answers "not ready" rather than another object's sectors. Files are
+//! not compared beyond their share path, the way configured images are
+//! reopened by path.
+//!
+//! A call the guest abandons (an early opcode, or a suspend that answers
+//! it with [`NAMED_FAILURE`]) cannot stop host work already running: a
+//! create the worker has started still makes its empty file, and a later
+//! create of that name then fails as existing.
+
+use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
@@ -74,7 +84,26 @@ pub struct NamedObjectInfo {
 pub struct NamedRestoreFailure {
     pub drive: u8,
     pub name: String,
-    pub error: ShareError,
+    pub error: NamedRestoreError,
+}
+
+/// Why a restored object was not reopened.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NamedRestoreError {
+    /// The name no longer resolves, or the file cannot be opened.
+    Share(ShareError),
+    /// The name now resolves in another share than when the snapshot was
+    /// saved, so it would reach a different file.
+    OtherShare,
+}
+
+impl fmt::Display for NamedRestoreError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Share(error) => error.fmt(formatter),
+            Self::OtherShare => formatter.write_str("named objects come from another share now"),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -258,8 +287,9 @@ impl DWServer {
 
     /// Reopens restored objects by name through the current shares. Call it
     /// after a snapshot restore, once [`Self::set_shares`] has installed the
-    /// VM's shares; it blocks on the host filesystem. Objects that cannot be
-    /// reopened are dropped and returned.
+    /// VM's shares; it blocks on the host filesystem. An object must resolve
+    /// to the same share path it had when the snapshot was saved; objects
+    /// that cannot be reopened are dropped and returned.
     pub fn reattach_named_objects(&mut self) -> Vec<NamedRestoreFailure> {
         let mut failures = Vec::new();
         let shares = self.shares.clone();
@@ -267,7 +297,17 @@ impl DWServer {
             if object.image.is_some() {
                 return true;
             }
-            match shares.open_named(object.name.as_bytes()) {
+            let reopened = shares
+                .open_named(object.name.as_bytes())
+                .map_err(NamedRestoreError::Share)
+                .and_then(|image| {
+                    if image.guest_path.eq_ignore_ascii_case(&object.guest_path) {
+                        Ok(image)
+                    } else {
+                        Err(NamedRestoreError::OtherShare)
+                    }
+                });
+            match reopened {
                 Ok(image) => {
                     object.write_protected = !image.writable;
                     object.image = Some(DWImage::File(image.file).into_async());
