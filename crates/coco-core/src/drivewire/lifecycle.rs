@@ -1,17 +1,27 @@
 //! Host work and session boundaries. Host handles and jobs never enter snapshots.
 
+use super::command::Outcome;
 use super::host::{
     HostCompletion, HostDiagnostics, HostError, HostExecutor, HostJob, RequestId, SubmitError,
 };
 use super::protocol::State;
-use super::{DWServer, SECTOR_SIZE, error};
+use super::share::ShareImage;
+use super::{DWServer, NAMED_FAILURE, SECTOR_SIZE, error};
 
 const SERVICE_COMPLETION_CAPACITY: usize = 16;
 
 pub(super) struct PendingHost {
-    drive: usize,
+    target: Target,
     job: Option<HostJob>,
     id: Option<RequestId>,
+}
+
+/// What a pending request's completion feeds.
+enum Target {
+    /// A sector read or write on this drive.
+    Drive(usize),
+    /// A named-object call; the job leaves the resolved name and image here.
+    Named(Outcome<(String, ShareImage)>),
 }
 
 impl DWServer {
@@ -48,8 +58,20 @@ impl DWServer {
     }
 
     pub(super) fn begin_host_request(&mut self, drive: usize, job: HostJob) {
+        self.begin_pending(Target::Drive(drive), job);
+    }
+
+    pub(super) fn begin_named_request(
+        &mut self,
+        job: HostJob,
+        outcome: Outcome<(String, ShareImage)>,
+    ) {
+        self.begin_pending(Target::Named(outcome), job);
+    }
+
+    fn begin_pending(&mut self, target: Target, job: HostJob) {
         self.pending_host = Some(PendingHost {
-            drive,
+            target,
             job: Some(job),
             id: None,
         });
@@ -105,22 +127,28 @@ impl DWServer {
         // Host latency is not an incomplete guest payload timeout. Start timing
         // again at the first checksum byte after an extended-read response.
         self.last_byte_cycle = None;
-        match std::mem::replace(&mut self.state, State::Idle) {
-            State::AwaitHostRead { ex } => {
+        match (
+            std::mem::replace(&mut self.state, State::Idle),
+            pending.target,
+        ) {
+            (State::AwaitHostRead { ex }, Target::Drive(drive)) => {
                 let sector: Result<[u8; SECTOR_SIZE], u8> = result
                     .map_err(|_| error::READ)
                     .and_then(|bytes| bytes.try_into().map_err(|_| error::READ));
-                self.finish_read(ex, pending.drive, sector);
+                self.finish_read(ex, drive, sector);
             }
-            State::AwaitHostWrite => {
+            (State::AwaitHostWrite, Target::Drive(drive)) => {
                 let status = if result.is_ok() {
                     error::OK
                 } else {
                     error::WRITE
                 };
-                self.finish_write(pending.drive, status);
+                self.finish_write(drive, status);
             }
-            state => self.state = state,
+            (State::AwaitHostNamed, Target::Named(outcome)) => {
+                self.finish_named(result, &outcome);
+            }
+            (state, _) => self.state = state,
         }
     }
 
@@ -134,7 +162,7 @@ impl DWServer {
         if self
             .pending_host
             .as_ref()
-            .is_some_and(|pending| pending.drive == drive)
+            .is_some_and(|pending| matches!(pending.target, Target::Drive(d) if d == drive))
         {
             // Disk operations are request/reply transactions. Reject the old
             // operation before changing media, while retaining reply framing.
@@ -146,10 +174,10 @@ impl DWServer {
     }
 
     /// Out-of-band machine reset cancels transactions and closes virtual
-    /// channels, preserving mounted media. The share session starts over:
-    /// handles close, the directory returns to the top, and running `dw`
-    /// commands end. `DWINIT` and protocol resets start the same way, since
-    /// each begins a new guest driver session.
+    /// channels, preserving mounted media and named objects. The share
+    /// session starts over: handles close, the directory returns to the
+    /// top, and running `dw` commands end. `DWINIT` and protocol resets
+    /// start the same way, since each begins a new guest driver session.
     pub fn reset_session(&mut self) {
         self.host.cancel();
         self.pending_host = None;
@@ -186,9 +214,11 @@ impl DWServer {
         self.host.resume();
     }
 
-    /// Cancels queued work without joining a possibly blocked worker.
+    /// Cancels queued work without joining a possibly blocked worker, and
+    /// closes the named objects.
     pub fn stop_host(&mut self) {
         self.host.stop();
+        self.named.clear();
         self.pending_host = None;
         self.service_completions.clear();
         self.channels.reset();
@@ -201,7 +231,9 @@ impl DWServer {
 
     /// Reattached media survives restore; external requests are never
     /// replayed, open virtual channels hang up once drained (ending any `dw`
-    /// command), and the share session starts over.
+    /// command), and the share session starts over. Named objects wait for
+    /// [`Self::reattach_named_objects`]; until then their drives are not
+    /// ready.
     pub fn after_restore(&mut self) {
         self.host.cancel();
         self.service_completions.clear();
@@ -221,6 +253,10 @@ impl DWServer {
             State::AwaitHostWrite => {
                 self.last_byte_cycle = None;
                 self.reply.push_back(error::WRITE);
+            }
+            State::AwaitHostNamed => {
+                self.last_byte_cycle = None;
+                self.reply.push_back(NAMED_FAILURE);
             }
             state => self.state = state,
         }

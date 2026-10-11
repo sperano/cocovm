@@ -26,7 +26,8 @@ use super::channel::{CHANNEL_COUNT, ChannelHandle};
 use super::host::{HostError, HostJob, RequestId, SubmitError};
 use super::share::{ShareError, ShareImage, ShareReader, ShareSession};
 use super::{DRIVE_COUNT, DWServer};
-use jobs::{DirPage, Outcome, SharedReader};
+use jobs::{DirPage, SharedReader};
+pub(super) use jobs::{Outcome, take as take_outcome, typed as typed_job};
 use line::Line;
 use parse::{Command, Failure, code};
 

@@ -118,3 +118,65 @@ fn a_restored_guest_image_survives_an_unrelated_settings_save() {
     .unwrap();
     assert_eq!(app.dw_paths[0], Some(pristine));
 }
+
+/// Longest wait for the DriveWire host worker in these tests.
+const NAMED_WORKER_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Mounts the named object `name` as the guest would; returns the reply.
+fn named_mount(app: &mut CocoApp, name: &str) -> u8 {
+    let dw = app.machine.bus.drivewire.as_mut().unwrap();
+    let mut request = vec![drivewire::opcode::NAMEOBJ_MOUNT, name.len() as u8];
+    request.extend(name.bytes());
+    for byte in request {
+        dw.data_write(byte, 0);
+    }
+    let started = std::time::Instant::now();
+    while dw.status_read() == 0 {
+        assert!(started.elapsed() < NAMED_WORKER_TIMEOUT, "no reply");
+        dw.poll_host();
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    dw.data_read()
+}
+
+fn app_with_named_objects(dir: &Path) -> CocoApp {
+    let mut app = app_with_image(&write_disk(dir));
+    let shares = ShareTable::new(vec![ShareSpec {
+        name: "objects".to_string(),
+        root: dir.to_path_buf(),
+        access: ShareAccess::ReadOnly,
+    }])
+    .unwrap()
+    .with_named_objects(Some("objects".to_string()));
+    app.set_drivewire_shares(shares);
+    app
+}
+
+#[test]
+fn restoring_reopens_named_objects_and_notes_the_missing_ones() {
+    let dir = TempDir::new("restore-dw-named");
+    fs::write(dir.path().join("kept.bin"), b"kept").unwrap();
+    let gone = dir.path().join("gone.bin");
+    fs::write(&gone, b"gone").unwrap();
+    let state = dir.path().join("named.ccstate");
+    let mut app = app_with_named_objects(dir.path());
+    let kept = named_mount(&mut app, "kept.bin");
+    let removed = named_mount(&mut app, "gone.bin");
+    assert_ne!(kept, drivewire::NAMED_FAILURE);
+    assert_ne!(removed, drivewire::NAMED_FAILURE);
+    app.save_state_to(&state).unwrap();
+    fs::remove_file(&gone).unwrap();
+
+    let notes = app.restore_state_from(&state).unwrap();
+    assert_eq!(
+        notes,
+        [format!(
+            "DriveWire named object \"gone.bin\" (DW{removed}) not reopened: not found"
+        )]
+    );
+    let objects = app.machine.bus.drivewire.as_ref().unwrap().named_objects();
+    assert_eq!(objects.len(), 1);
+    assert_eq!(objects[0].drive, kept);
+    assert!(objects[0].attached && objects[0].write_protected);
+    assert!(!objects[0].leased, "the lease was on the dropped object");
+}

@@ -34,6 +34,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   image from a read-only share is write-protected. Guest inserts and ejects
   last until the VM restarts; they never change the VM's settings, and the
   DriveWire tab and status bar show which drives the guest changed.
+- DriveWire named objects. Select a host share under "Named objects from"
+  in the DriveWire tab (`named_objects` in `[drivewire]`), and guest
+  software that sends `OP_NAMEOBJ_MOUNT` or `OP_NAMEOBJ_CREATE`, such as
+  DWLOAD-style loaders, can open or create a file in that share by name and
+  read or write it by sector through the drive number it gets back. Objects
+  use drives 4 to 255, never drives 0 to 3, also in HDB-DOS mode. Save
+  states record objects by name and reopen them on restore.
 - MCP resources for the screen. The server now offers the `resources`
   capability: `resources/list` reports `cocovm://vm/<slug>/screen.txt`
   (the text screen as `text/plain`) and `cocovm://vm/<slug>/screen.png`

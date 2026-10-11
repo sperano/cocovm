@@ -95,3 +95,31 @@ fn bad_or_duplicate_names_fail_validation_even_without_a_folder() {
     assert!(def.validate_drivewire().unwrap_err().contains("has space"));
     assert!(def.to_machine_config().is_err());
 }
+
+#[test]
+fn named_objects_select_a_defined_share_and_reach_the_table() {
+    let mut def = parsed();
+    def.drivewire.named_objects = Some("GAMES".into());
+    def.validate_drivewire().unwrap();
+    let table = def.drivewire.share_table("shares").unwrap();
+    assert_eq!(table.named_objects(), Some("GAMES"));
+
+    let written = toml::to_string(&def).unwrap();
+    assert!(written.contains("named_objects = \"GAMES\""), "{written}");
+    assert_eq!(toml::from_str::<MachineDef>(&written).unwrap(), def);
+
+    // A share without a folder may be selected; its objects fail until it has one.
+    def.drivewire.named_objects = Some("pending".into());
+    def.validate_drivewire().unwrap();
+
+    def.drivewire.named_objects = Some("missing".into());
+    let error = def.validate_drivewire().unwrap_err();
+    assert!(error.contains("\"missing\""), "{error}");
+    assert!(def.to_machine_config().is_err());
+}
+
+#[test]
+fn named_objects_are_omitted_when_unset() {
+    let written = toml::to_string(&parsed()).unwrap();
+    assert!(!written.contains("named_objects"), "{written}");
+}

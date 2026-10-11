@@ -35,6 +35,7 @@ const DRIVEWIRE_KEYS: &[&str] = &[
     "disk2",
     "disk3",
     "shares",
+    "named_objects",
 ];
 // `mpi`/`rtc`/`fd502`/`rs232` (schema-1's booleans) are deliberately absent: a
 // schema-1 file's leftover `[peripherals]` must report them as unknown, not

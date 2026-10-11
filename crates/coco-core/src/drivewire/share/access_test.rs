@@ -110,3 +110,17 @@ fn separate_registries_do_not_coordinate() {
     let _a = lease(&first, &path, LeaseOwner::new(), AccessMode::Write).unwrap();
     assert!(lease(&second, &path, LeaseOwner::new(), AccessMode::Write).is_ok());
 }
+
+#[test]
+fn same_file_compares_identity_not_holder() {
+    let scratch = ScratchDir::new("access-same");
+    let path = scratch.file("a.bin", b"a");
+    let other = scratch.file("b.bin", b"b");
+    let registry = Arc::new(AccessRegistry::new());
+    let owner = LeaseOwner::new();
+    let first = lease(&registry, &path, owner, AccessMode::Read).unwrap();
+    let again = lease(&registry, &path, owner, AccessMode::Write).unwrap();
+    let different = lease(&registry, &other, owner, AccessMode::Read).unwrap();
+    assert!(first.same_file(&again));
+    assert!(!first.same_file(&different));
+}

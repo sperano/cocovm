@@ -124,6 +124,7 @@ impl ManagerApp {
             // Shares are configuration, not session media, so they carry over.
             def.drivewire = machine_def::DriveWireDTO {
                 shares: std::mem::take(&mut def.drivewire.shares),
+                named_objects: def.drivewire.named_objects.take(),
                 ..machine_def::DriveWireDTO::default()
             };
         }

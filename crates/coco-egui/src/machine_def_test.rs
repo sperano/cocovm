@@ -72,6 +72,7 @@ fn full_def() -> MachineDef {
                 path: "/shared/games".to_string(),
                 access: ShareAccessDTO::ReadWrite,
             }],
+            named_objects: Some("games".to_string()),
         },
         peripherals: PeripheralsDTO {
             cartridge: CartridgeDTO::MPI {

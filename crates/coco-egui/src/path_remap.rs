@@ -142,8 +142,9 @@ impl CocoApp {
         for spec in &mut specs {
             remap_path(&mut spec.root, old_dir, new_dir);
         }
+        let named_objects = self.dw_shares.named_objects().map(str::to_string);
         if let Ok(table) = coco_core::drivewire::share::ShareTable::new(specs) {
-            self.set_drivewire_shares(table);
+            self.set_drivewire_shares(table.with_named_objects(named_objects));
         }
     }
 }

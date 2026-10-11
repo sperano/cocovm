@@ -91,6 +91,7 @@ fn cold_resume_keeps_the_saved_shares() {
         path: dir.path().display().to_string(),
         access: machine_def::ShareAccessDTO::ReadOnly,
     }];
+    manager.entries[0].def.drivewire.named_objects = Some("games".to_string());
     manager.start_vm(0);
     manager.suspend_vm(0);
     manager.entries[0].vm = None;
@@ -109,4 +110,5 @@ fn cold_resume_keeps_the_saved_shares() {
         .as_ref()
         .unwrap();
     assert!(dw.share_session().table().get("games").is_some());
+    assert_eq!(dw.share_session().table().named_objects(), Some("games"));
 }

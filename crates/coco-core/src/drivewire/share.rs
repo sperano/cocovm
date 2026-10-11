@@ -71,6 +71,9 @@ pub struct ShareSpec {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ShareTable {
     shares: Vec<ShareSpec>,
+    /// The share whose folder serves DriveWire named objects; see
+    /// [`Self::with_named_objects`].
+    named_objects: Option<String>,
 }
 
 impl ShareTable {
@@ -83,7 +86,25 @@ impl ShareTable {
         {
             return Err(ShareConfigError::EmptyRoot(share.name.clone()));
         }
-        Ok(Self { shares })
+        Ok(Self {
+            shares,
+            named_objects: None,
+        })
+    }
+
+    /// Serves named objects from the share called `share` (see
+    /// `drivewire::named`), or from no share. The name is not checked
+    /// against the table: a share without a folder is left out of the
+    /// table but stays selectable, and its objects fail to resolve until
+    /// it has one.
+    pub fn with_named_objects(mut self, share: Option<String>) -> Self {
+        self.named_objects = share;
+        self
+    }
+
+    /// The share named-object requests resolve in, if one is selected.
+    pub fn named_objects(&self) -> Option<&str> {
+        self.named_objects.as_deref()
     }
 
     /// The share named `name`, ignoring ASCII case.
@@ -178,6 +199,8 @@ pub enum ShareError {
     /// The share's folder is missing, renamed, or not a folder.
     RootUnavailable,
     NotFound,
+    /// A file to create already exists.
+    Exists,
     NotADirectory,
     IsADirectory,
     /// A write to a read-only share, or through a read-only handle.
@@ -206,6 +229,7 @@ impl ShareError {
             | Self::Escape
             | Self::RootUnavailable
             | Self::NotFound
+            | Self::Exists
             | Self::NotADirectory
             | Self::IsADirectory
             | Self::ReadOnly
@@ -227,6 +251,7 @@ impl ShareError {
             Self::Escape => "path leaves the share",
             Self::RootUnavailable => "share folder unavailable",
             Self::NotFound => "not found",
+            Self::Exists => "already exists",
             Self::NotADirectory => "not a directory",
             Self::IsADirectory => "is a directory",
             Self::ReadOnly => "read-only",
@@ -246,6 +271,7 @@ impl From<io::Error> for ShareError {
     fn from(error: io::Error) -> Self {
         match error.kind() {
             io::ErrorKind::NotFound => Self::NotFound,
+            io::ErrorKind::AlreadyExists => Self::Exists,
             io::ErrorKind::NotADirectory => Self::NotADirectory,
             io::ErrorKind::IsADirectory => Self::IsADirectory,
             io::ErrorKind::PermissionDenied => Self::PermissionDenied,

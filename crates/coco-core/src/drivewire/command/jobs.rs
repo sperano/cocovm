@@ -10,7 +10,7 @@ use super::super::host::{HostError, HostJob, MAX_HOST_RESPONSE_BYTES};
 use super::super::share::{ShareError, ShareImage, ShareOp, ShareReader, ShareSession};
 
 /// Where a job leaves a result that is not bytes.
-pub(super) type Outcome<T> = Arc<Mutex<Option<T>>>;
+pub(in crate::drivewire) type Outcome<T> = Arc<Mutex<Option<T>>>;
 
 /// One page of a directory listing.
 pub(super) struct DirPage {
@@ -24,7 +24,7 @@ pub(super) struct DirPage {
 /// closes it and ends its lease.
 pub(super) type SharedReader = Arc<Mutex<ShareReader>>;
 
-pub(super) fn take<T>(outcome: &Outcome<T>) -> Option<T> {
+pub(in crate::drivewire) fn take<T>(outcome: &Outcome<T>) -> Option<T> {
     lock(outcome).take()
 }
 
@@ -73,7 +73,7 @@ pub(super) fn read_chunk(reader: &SharedReader) -> HostJob {
     })
 }
 
-fn typed<T: Send + 'static>(
+pub(in crate::drivewire) fn typed<T: Send + 'static>(
     work: impl FnOnce() -> Result<T, ShareError> + Send + 'static,
 ) -> (HostJob, Outcome<T>) {
     let outcome: Outcome<T> = Arc::default();

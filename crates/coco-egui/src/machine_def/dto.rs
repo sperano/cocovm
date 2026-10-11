@@ -338,6 +338,9 @@ pub struct DriveWireDTO {
     /// `[[drivewire.shares]]`; see `share_dto`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub shares: Vec<super::DriveWireShareDTO>,
+    /// The share named objects resolve in; see `share_dto`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub named_objects: Option<String>,
 }
 
 impl DriveWireDTO {
