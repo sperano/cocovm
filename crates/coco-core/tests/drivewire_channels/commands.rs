@@ -31,7 +31,9 @@ impl Scratch {
             std::env::temp_dir().join(format!("cocovm-dw-cmd-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&path);
         fs::create_dir_all(&path).unwrap();
-        Self(path)
+        // Canonical, like the host paths the server reports (macOS reaches
+        // the temp dir through a /var -> /private/var symlink).
+        Self(fs::canonicalize(&path).unwrap())
     }
 
     fn path(&self) -> &Path {
@@ -162,7 +164,11 @@ fn nitros9_dw_inserts_reads_and_ejects_an_image() {
     // Retrieve a file onto the inserted disk, then read it back through
     // the disk driver.
     let before = dw(&mut m).drive_ops(DRIVE);
-    type_line(&mut m, "dw server list share/hello.txt >/x1/hello.txt");
+    let retrieve = "dw server list share/hello.txt >/x1/hello.txt";
+    type_line(&mut m, retrieve);
+    // Wait for the shell before typing again: while a slow host keeps the
+    // DriveWire driver waiting with IRQs masked, a tapped key is lost.
+    run_until_prompt_after(&mut m, retrieve);
     type_line(&mut m, "list /x1/hello.txt");
     run_until_prompt_after(&mut m, HELLO_LINES[1]);
     let text = screen(&mut m);
