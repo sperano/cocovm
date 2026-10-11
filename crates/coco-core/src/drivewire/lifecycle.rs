@@ -56,22 +56,29 @@ impl DWServer {
         self.poll_host();
     }
 
-    /// Makes bounded progress without waiting for a worker or a host handle.
+    /// Makes bounded progress without waiting for a worker or a host handle,
+    /// including the `dw` command service on the virtual channels.
     pub fn poll_host(&mut self) {
-        if self.service_completions.len() >= SERVICE_COMPLETION_CAPACITY {
-            return;
-        }
-        self.submit_pending();
-        if let Some(completion) = self.host.poll() {
-            let matches = self
-                .pending_host
-                .as_ref()
-                .is_some_and(|pending| pending.id == Some(completion.id));
-            if matches {
-                self.finish_host_request(completion.result);
-            } else {
-                self.service_completions.push_back(completion);
+        if self.service_completions.len() < SERVICE_COMPLETION_CAPACITY {
+            self.submit_pending();
+            if let Some(completion) = self.host.poll() {
+                self.route_completion(completion);
             }
+        }
+        self.step_commands();
+    }
+
+    fn route_completion(&mut self, completion: HostCompletion) {
+        let matches = self
+            .pending_host
+            .as_ref()
+            .is_some_and(|pending| pending.id == Some(completion.id));
+        if matches {
+            self.finish_host_request(completion.result);
+        } else if let Some(channel) = self.commands.owner(completion.id) {
+            self.finish_command_job(channel, completion.result);
+        } else {
+            self.service_completions.push_back(completion);
         }
     }
 
@@ -138,12 +145,17 @@ impl DWServer {
         }
     }
 
-    /// Out-of-band machine reset cancels transactions, preserving mounted media.
-    /// The share session starts over: handles close, the directory returns to the top.
+    /// Out-of-band machine reset cancels transactions and closes virtual
+    /// channels, preserving mounted media. The share session starts over:
+    /// handles close, the directory returns to the top, and running `dw`
+    /// commands end. `DWINIT` and protocol resets start the same way, since
+    /// each begins a new guest driver session.
     pub fn reset_session(&mut self) {
         self.host.cancel();
         self.pending_host = None;
         self.service_completions.clear();
+        self.channels.reset();
+        self.reset_commands();
         self.shares.reset();
         self.state = State::Idle;
         self.reply.clear();
@@ -157,10 +169,13 @@ impl DWServer {
         self.drive_ops.fill(0);
         self.vserial_ops = 0;
         self.unknown_opcodes = 0;
+        self.channels.clear_counters();
     }
 
-    /// Suspend closes host services. Resume starts a fresh host generation.
+    /// Suspend closes host services: running `dw` commands hang up. Resume
+    /// starts a fresh host generation.
     pub fn suspend_host(&mut self) {
+        self.abort_commands();
         self.host.suspend();
         self.service_completions.clear();
         self.shares.reset();
@@ -176,16 +191,22 @@ impl DWServer {
         self.host.stop();
         self.pending_host = None;
         self.service_completions.clear();
+        self.channels.reset();
+        self.reset_commands();
         self.shares.reset();
         self.state = State::Idle;
         self.reply.clear();
         self.last_byte_cycle = None;
     }
 
-    /// Reattached media survives restore; external requests are never replayed.
+    /// Reattached media survives restore; external requests are never
+    /// replayed, open virtual channels hang up once drained (ending any `dw`
+    /// command), and the share session starts over.
     pub fn after_restore(&mut self) {
         self.host.cancel();
         self.service_completions.clear();
+        self.channels.after_restore();
+        self.reset_commands();
         self.shares.reset();
         self.abort_host_transfer();
     }

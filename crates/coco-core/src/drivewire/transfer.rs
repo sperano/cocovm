@@ -117,6 +117,10 @@ impl DWServer {
             return;
         }
         let (drive, lsn) = self.decode_header(header);
+        if self.media.write_protected(drive) {
+            self.finish_write(drive, error::WRITE);
+            return;
+        }
         let job = self
             .drives
             .get(drive)

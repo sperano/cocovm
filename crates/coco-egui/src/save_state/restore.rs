@@ -21,7 +21,7 @@ use crate::{
 
 use super::media_ref::{
     direct_port_rom_path, is_rom_db_pseudo_path, mpi_slot_from_cart, open_if_present,
-    read_if_present, resolve_cart_roms, resolve_system_rom,
+    open_read_only_if_present, read_if_present, resolve_cart_roms, resolve_system_rom,
 };
 
 /// Read and decode the `.ccstate` at `path`, without touching the machine.
@@ -69,7 +69,9 @@ impl CocoApp {
             .filter(|(_, cart)| matches!(cart, Cart::SoundSpeechCartridge(_)))
             .map(|(slot, _)| slot)
             .collect();
-        let (sources, mut notes) = self.resolve_media_sources(&payload.media, &ssc_slots)?;
+        let dw_protected = dw_write_protection(&payload);
+        let (sources, mut notes) =
+            self.resolve_media_sources(&payload.media, &ssc_slots, &dw_protected)?;
         let restored = snapshot::restore(payload, sources).map_err(|e| e.to_string())?;
         self.apply_restored_machine(restored, &media, &mut notes);
         Ok(notes)
@@ -91,6 +93,7 @@ impl CocoApp {
         &self,
         media: &MediaRefs,
         ssc_slots: &[Option<u8>],
+        dw_protected: &[bool; drivewire::DRIVE_COUNT],
     ) -> Result<(MediaSources, Vec<String>), String> {
         let mut warnings = Vec::new();
         let system_rom = resolve_system_rom(media, &mut warnings);
@@ -118,8 +121,12 @@ impl CocoApp {
             .take(drivewire::DRIVE_COUNT)
         {
             if let Some(mr) = mr {
-                drivewire[i] =
-                    open_if_present(mr, "DriveWire image", &mut warnings).map(DWImage::File);
+                let open = if dw_protected[i] {
+                    open_read_only_if_present
+                } else {
+                    open_if_present
+                };
+                drivewire[i] = open(mr, "DriveWire image", &mut warnings).map(DWImage::File);
             }
         }
         let tape = match &media.tape {
@@ -364,6 +371,13 @@ impl CocoApp {
             self.rs232_set_endpoint(kind);
         }
     }
+}
+
+/// Which DriveWire drives the snapshot's server write-protects: images the
+/// guest mounted from a read-only share, reopened read-only.
+fn dw_write_protection(payload: &SnapshotPayload) -> [bool; drivewire::DRIVE_COUNT] {
+    let dw = payload.machine.bus.drivewire.as_ref();
+    std::array::from_fn(|drive| dw.is_some_and(|dw| dw.drive_write_protected(drive)))
 }
 
 #[cfg(test)]

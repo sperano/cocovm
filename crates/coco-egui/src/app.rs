@@ -90,7 +90,12 @@ pub(crate) struct CocoApp {
     /// hit the backing file directly.
     pub(crate) dw_paths: [Option<PathBuf>; drivewire::DRIVE_COUNT],
     /// Write leases on the `dw_paths` images: no other running VM may open them.
+    /// Images the guest mounts with `dw disk insert` keep their lease in the server.
     pub(crate) dw_leases: [Option<drivewire::share::Lease>; drivewire::DRIVE_COUNT],
+    /// The startup paths last applied from settings. A settings change reaches a
+    /// drive only when its path differs from this, so `dw_paths` can follow guest
+    /// mounts without the next unrelated save undoing them.
+    pub(crate) dw_startup: [Option<PathBuf>; drivewire::DRIVE_COUNT],
     /// Host shares, installed whenever the DriveWire server exists.
     pub(crate) dw_shares: drivewire::share::ShareTable,
     /// This VM's identity in cross-VM file leases.
@@ -343,6 +348,7 @@ impl CocoApp {
             vhd_paths: [None, None],
             dw_paths: std::array::from_fn(|_| None),
             dw_leases: std::array::from_fn(|_| None),
+            dw_startup: std::array::from_fn(|_| None),
             dw_shares: drivewire::share::ShareTable::default(),
             lease_owner: drivewire::share::LeaseOwner::new(),
             tape_path: None,
@@ -408,11 +414,13 @@ impl CocoApp {
         }
     }
 
-    /// Poll completed DriveWire host work without blocking the UI thread.
+    /// Poll completed DriveWire host work without blocking the UI thread, and
+    /// mirror the guest's `dw disk` mounts into the session media.
     pub(crate) fn poll_drivewire_host(&mut self) {
         if let Some(dw) = self.machine.bus.drivewire.as_mut() {
             dw.poll_host();
         }
+        self.sync_guest_dw_media();
     }
 
     /// Stop DriveWire host work before this VM is dropped or replaced.

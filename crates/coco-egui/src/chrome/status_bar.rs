@@ -385,11 +385,17 @@ impl CocoApp {
 }
 
 fn drivewire_hover(dw: &coco_core::drivewire::DWServer, drive: Option<usize>) -> String {
+    use crate::media::drivewire::guest_media_note;
     use coco_core::drivewire::host::HostError;
     let diagnostics = dw.host_diagnostics();
     let heading = drive.map_or_else(
         || "DriveWire host services".to_string(),
-        |drive| format!("DriveWire drive {drive} — sector I/O"),
+        |drive| {
+            format!(
+                "DriveWire drive {drive} — sector I/O{}",
+                guest_media_note(dw, drive)
+            )
+        },
     );
     let mut hover = format!(
         "{heading}\nHost: {:?}, pending: {}, outstanding: {}\nCompleted: {}, errors: {}, cancelled: {}, stale: {}, backpressure: {}",
@@ -407,6 +413,16 @@ fn drivewire_hover(dw: &coco_core::drivewire::DWServer, drive: Option<usize>) ->
         Some(error) => hover.push_str(&format!("\nLast error: {error:?}")),
         None => {}
     }
+    let channels = dw.channel_diagnostics();
+    hover.push_str(&format!(
+        "\nVirtual channels: {} open, {} bytes to guest, {} from guest\nDropped: {}, unknown channel: {}, short reads: {}",
+        channels.open,
+        channels.to_guest,
+        channels.from_guest,
+        channels.dropped_bytes,
+        channels.unknown_channel_ops,
+        channels.short_reads,
+    ));
     hover
 }
 
