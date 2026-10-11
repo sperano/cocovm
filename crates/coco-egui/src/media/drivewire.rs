@@ -174,6 +174,23 @@ impl CocoApp {
     }
 }
 
+impl CocoApp {
+    /// Reopens the restored server's named objects through this VM's
+    /// shares, which must already be installed. Each object that cannot be
+    /// reopened leaves an empty drive and a restore note.
+    pub(crate) fn reattach_dw_named_objects(&mut self, notes: &mut Vec<String>) {
+        let Some(ref mut dw) = self.machine.bus.drivewire else {
+            return;
+        };
+        for failure in dw.reattach_named_objects() {
+            notes.push(format!(
+                "DriveWire named object \"{}\" (DW{}) not reopened: {}",
+                failure.name, failure.drive, failure.error
+            ));
+        }
+    }
+}
+
 /// A hover line for a drive the guest mounted with `dw disk insert`, or "".
 pub(crate) fn guest_media_note(dw: &drivewire::DWServer, drive: usize) -> &'static str {
     match dw.drive_media(drive) {

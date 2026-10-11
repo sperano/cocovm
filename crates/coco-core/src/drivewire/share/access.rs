@@ -147,6 +147,14 @@ pub struct Lease {
     id: u64,
 }
 
+impl Lease {
+    /// Whether `other` leases the same host file (see the module doc for
+    /// how files are identified).
+    pub fn same_file(&self, other: &Lease) -> bool {
+        self.key == other.key
+    }
+}
+
 impl std::fmt::Debug for Lease {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter

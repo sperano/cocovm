@@ -409,3 +409,36 @@ fn host_share_controls_follow_the_drivewire_switch() {
             .is_some()
     );
 }
+
+#[test]
+fn the_named_object_share_is_picked_and_follows_renames_and_removal() {
+    let (dir, mut entry, file) = seed_manager("ui-drivewire-named");
+    entry.def.drivewire.enabled = true;
+    entry.def.drivewire.shares = vec![machine_def::DriveWireShareDTO {
+        name: "games".to_string(),
+        path: dir.path().display().to_string(),
+        access: machine_def::ShareAccessDTO::ReadWrite,
+    }];
+    let mut harness = manager_harness(Some(dir.path().to_path_buf()), vec![entry]);
+    select_drivewire(&mut harness);
+
+    click(&mut harness, "Named objects share");
+    click(&mut harness, "games");
+    assert_eq!(
+        saved_def(&file).drivewire.named_objects.as_deref(),
+        Some("games")
+    );
+
+    harness.get_by_label("Share 1 name").focus();
+    harness.step();
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    harness.get_by_label("Share 1 name").type_text("disks");
+    harness.step();
+    harness.step();
+    let saved = saved_def(&file).drivewire;
+    assert_eq!(saved.shares[0].name, "disks");
+    assert_eq!(saved.named_objects.as_deref(), Some("disks"));
+
+    click(&mut harness, "Remove share 1");
+    assert_eq!(saved_def(&file).drivewire.named_objects, None);
+}

@@ -216,6 +216,7 @@ impl CocoApp {
         self.reapply_configured_rs232();
         self.rebuild_media_path_mirrors(media);
         self.lease_restored_dw_images(notes);
+        self.reattach_dw_named_objects(notes);
 
         // Drop time owed to the wall clock (like a pause) and reset the frontend's audio ring
         // buffer/filter history.

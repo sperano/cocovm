@@ -18,8 +18,8 @@
 //! READ/WRITE family's actual sector I/O lives in [`transfer`]; virtual
 //! serial channels live in [`channel`] (state and queues) and [`serial`]
 //! (wire requests and the host-side `channel_*` API); the NitrOS-9 `dw`
-//! command service on those channels lives in [`command`], and per-drive
-//! media descriptions in [`media`].
+//! command service on those channels lives in [`command`], per-drive
+//! media descriptions in [`media`], and named objects in [`named`].
 
 use std::collections::VecDeque;
 
@@ -31,6 +31,7 @@ pub mod host;
 mod image;
 mod lifecycle;
 mod media;
+mod named;
 mod protocol;
 mod serial;
 pub use channel::{
@@ -39,6 +40,9 @@ pub use channel::{
 };
 pub use image::DWImage;
 pub use media::{DriveMedia, GuestMediaChange, MediaOrigin};
+pub use named::{
+    MAX_NAMED_OBJECTS, NAMED_DRIVE_FIRST, NAMED_FAILURE, NamedObjectInfo, NamedRestoreFailure,
+};
 pub mod share;
 mod transfer;
 
@@ -49,6 +53,7 @@ use media::MediaTable;
 use host::HostCompletion;
 use host::HostExecutor;
 use lifecycle::PendingHost;
+use named::NamedObjects;
 use protocol::State;
 use share::ShareSession;
 
@@ -58,7 +63,8 @@ use share::ShareSession;
 pub const SECTOR_SIZE: usize = 256;
 
 /// Number of mount slots exposed to the UI. The wire protocol's drive byte
-/// is a full 8 bits, but only this many slots are backed by an image here.
+/// is a full 8 bits; the drives above these serve named objects only
+/// ([`NAMED_DRIVE_FIRST`]).
 pub const DRIVE_COUNT: usize = 4;
 
 /// DriveWire status/error codes, wire values from `DWProtocolHandler.java`.
@@ -83,6 +89,14 @@ pub mod error {
 pub mod opcode {
     /// No-op: single byte, no reply.
     pub const NOP: u8 = 0x00;
+    /// Mount a named object: a length byte and that many name bytes; the
+    /// 1-byte reply is the drive holding the object, or
+    /// [`super::NAMED_FAILURE`]. DriveWire specification "Named Objects";
+    /// see `drivewire::named`.
+    pub const NAMEOBJ_MOUNT: u8 = 0x01;
+    /// Create a named object, which must not exist yet: same request and
+    /// reply as [`NAMEOBJ_MOUNT`].
+    pub const NAMEOBJ_CREATE: u8 = 0x02;
     /// Legacy client init handshake (distinct from [`DWINIT`]): single
     /// byte, no reply.
     pub const INIT: u8 = 0x49;
@@ -308,6 +322,10 @@ pub struct DWServer {
     /// [`DWServer::reattach`] fills them in.
     #[serde(default)]
     media: MediaTable,
+    /// Named objects in drives [`NAMED_DRIVE_FIRST`]–255. Their handles are
+    /// skipped; [`DWServer::reattach_named_objects`] reopens them.
+    #[serde(default)]
+    named: NamedObjects,
     /// Set on a successful [`opcode::WRITE`]/[`opcode::REWRITE`]; cleared by
     /// [`DWServer::mount`]/[`DWServer::eject`].
     dirty: [bool; DRIVE_COUNT],
@@ -357,6 +375,7 @@ impl DWServer {
             shares: ShareSession::default(),
             commands: Commands::default(),
             media: MediaTable::default(),
+            named: NamedObjects::default(),
             dirty: [false; DRIVE_COUNT],
             reply: VecDeque::new(),
             state: State::Idle,
