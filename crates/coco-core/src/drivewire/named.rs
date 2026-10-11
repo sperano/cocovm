@@ -97,7 +97,7 @@ struct NamedObject {
 pub(super) struct NamedObjects {
     objects: Vec<NamedObject>,
     /// The drive the latest successful call returned, until the next call.
-    lease: Option<u8>,
+    leased_drive: Option<u8>,
     /// Completed calls, for least-recently-returned replacement.
     calls: u64,
     /// The next drive number to try; counts down and wraps.
@@ -108,7 +108,7 @@ impl Default for NamedObjects {
     fn default() -> Self {
         Self {
             objects: Vec::new(),
-            lease: None,
+            leased_drive: None,
             calls: 0,
             cursor: u8::MAX,
         }
@@ -126,11 +126,7 @@ impl NamedObjects {
     }
 
     pub(super) fn image_mut(&mut self, drive: usize) -> Option<&mut DWImage> {
-        self.objects
-            .iter_mut()
-            .find(|object| usize::from(object.drive) == drive)?
-            .image
-            .as_mut()
+        self.find_mut(drive)?.image.as_mut()
     }
 
     pub(super) fn write_protected(&self, drive: usize) -> bool {
@@ -141,7 +137,7 @@ impl NamedObjects {
     /// Closes every object and ends the lease.
     pub(super) fn clear(&mut self) {
         self.objects.clear();
-        self.lease = None;
+        self.leased_drive = None;
     }
 
     fn find(&self, drive: usize) -> Option<&NamedObject> {
@@ -150,9 +146,15 @@ impl NamedObjects {
             .find(|object| usize::from(object.drive) == drive)
     }
 
+    fn find_mut(&mut self, drive: usize) -> Option<&mut NamedObject> {
+        self.objects
+            .iter_mut()
+            .find(|object| usize::from(object.drive) == drive)
+    }
+
     /// Starts a call: the previous lease ends whatever the outcome.
     fn begin_call(&mut self) {
-        self.lease = None;
+        self.leased_drive = None;
         self.calls += 1;
     }
 
@@ -190,7 +192,7 @@ impl NamedObjects {
         object.last_used = calls;
         object.image = Some(DWImage::File(image.file).into_async());
         object.lease = Some(image.lease);
-        self.lease = Some(object.drive);
+        self.leased_drive = Some(object.drive);
         object.drive
     }
 
@@ -233,7 +235,7 @@ impl NamedObjects {
                 name: object.name.clone(),
                 guest_path: object.guest_path.clone(),
                 write_protected: object.write_protected,
-                leased: self.lease == Some(object.drive),
+                leased: self.leased_drive == Some(object.drive),
                 attached: object.image.is_some(),
             })
             .collect()
@@ -284,10 +286,10 @@ impl DWServer {
         });
         if self
             .named
-            .lease
+            .leased_drive
             .is_some_and(|drive| !self.named.holds(drive))
         {
-            self.named.lease = None;
+            self.named.leased_drive = None;
         }
         failures
     }
