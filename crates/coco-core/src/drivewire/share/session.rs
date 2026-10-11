@@ -23,6 +23,8 @@ use super::path::{self, Entry, GuestPath};
 use super::{ShareAccess, ShareError, ShareTable};
 use crate::drivewire::host::{HostError, HostJob, MAX_HOST_RESPONSE_BYTES};
 
+mod named;
+
 /// Handles one session can hold open at once.
 pub const MAX_OPEN_HANDLES: usize = 8;
 
@@ -302,6 +304,11 @@ impl ShareSession {
 
     fn open_image_in(&self, state: &State, path: &[u8]) -> Result<ShareImage, ShareError> {
         let guest = self.file_path(state, path)?;
+        self.open_guest_image(guest)
+    }
+
+    /// Opens the existing file `guest` names as a mountable image.
+    fn open_guest_image(&self, guest: GuestPath) -> Result<ShareImage, ShareError> {
         let resolved = path::resolve_existing(&guest, &self.table)?;
         let writable = resolved.access == ShareAccess::ReadWrite;
         let file = OpenOptions::new()

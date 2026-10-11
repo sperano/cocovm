@@ -36,7 +36,10 @@ impl DWImage {
         }
     }
 
-    pub(super) fn read_job(&self, offset: u64) -> Option<HostJob> {
+    /// A host job reading the sector at `offset`. With `pad_final`, a
+    /// sector the file only partly covers reads zero-padded; a sector
+    /// wholly past the end fails either way.
+    pub(super) fn read_job(&self, offset: u64, pad_final: bool) -> Option<HostJob> {
         let Self::AsyncFile(file) = self else {
             return None;
         };
@@ -54,8 +57,12 @@ impl DWImage {
             let mut bytes = vec![0; SECTOR_SIZE];
             file.seek(SeekFrom::Start(offset))
                 .map_err(|e| HostError::Io(e.kind()))?;
-            file.read_exact(&mut bytes)
-                .map_err(|e| HostError::Io(e.kind()))?;
+            if pad_final {
+                read_padded(&mut file, &mut bytes)?;
+            } else {
+                file.read_exact(&mut bytes)
+                    .map_err(|e| HostError::Io(e.kind()))?;
+            }
             Ok(bytes)
         }))
     }
@@ -148,4 +155,22 @@ impl DWImage {
             DWImage::File(_) | DWImage::AsyncFile(_) => None,
         }
     }
+}
+
+/// Fills `sector` from `file`, leaving zeros after a final partial read.
+/// Fails when the file has no byte at all at this position.
+fn read_padded(file: &mut File, sector: &mut [u8]) -> Result<(), HostError> {
+    let mut filled = 0;
+    while filled < sector.len() {
+        match file.read(&mut sector[filled..]) {
+            Ok(0) => break,
+            Ok(read) => filled += read,
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+            Err(error) => return Err(HostError::Io(error.kind())),
+        }
+    }
+    if filled == 0 {
+        return Err(HostError::Io(io::ErrorKind::UnexpectedEof));
+    }
+    Ok(())
 }

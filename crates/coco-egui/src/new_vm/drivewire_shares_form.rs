@@ -5,11 +5,13 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
+use coco_core::drivewire::NamedObjectInfo;
 use coco_core::drivewire::share::{
     MAX_SHARES, ShareConfigError, ShareError, ShareStatus, validate_share_name,
 };
 use eframe::egui;
 
+use super::drivewire_named_form::{follow_share, named_object_row, object_lines};
 use super::{FORM_GRID_SPACING, MachineForm};
 use crate::machine_def::{DriveWireShareDTO, ShareAccessDTO, resolve_media_path};
 
@@ -25,9 +27,9 @@ const ROOT_RECHECK_INTERVAL: Duration = Duration::from_secs(2);
 const NEW_SHARE_PREFIX: &str = "share";
 const EMPTY_FOLDER_HINT: &str = "No folder";
 const NO_FOLDER_WARNING: &str = "No folder selected; this share is inactive.";
-const SHARES_HINT: &str = "Shares name host folders that DriveWire guest services can reach. \
-    Guests cannot leave a share's folder, and only read/write shares accept writes. \
-    No guest service uses shares yet.";
+const SHARES_HINT: &str = "Shares name host folders that DriveWire guest services can reach: \
+    the NitrOS-9 dw commands and named objects. Guests cannot leave a share's folder, and \
+    only read/write shares accept writes.";
 const READ_ONLY_LABEL: &str = "Read-only";
 const READ_WRITE_LABEL: &str = "Read/write";
 
@@ -67,22 +69,26 @@ fn root_problem(root: &Path) -> Option<String> {
 }
 
 impl MachineForm {
-    /// One row per share, then Add share, the running session, and the hint.
+    /// One row per share, then Add share, the named-object share, the
+    /// running session and its named `objects`, and the hint.
     pub(crate) fn drivewire_share_rows(
         &mut self,
         ui: &mut egui::Ui,
         slug: &str,
         session: Option<&ShareStatus>,
+        objects: &[NamedObjectInfo],
     ) {
         ui.scope(|ui| {
             ui.spacing_mut().item_spacing.y = FORM_GRID_SPACING[1];
             ui.add_enabled_ui(self.drivewire.enabled, |ui| {
                 ui.push_id((self.salt, "drivewire_shares"), |ui| {
-                    self.share_list(ui, slug)
+                    self.share_list(ui, slug);
+                    named_object_row(ui, &mut self.drivewire);
                 });
             });
             if let Some(session) = session.filter(|_| self.drivewire.enabled) {
                 session_rows(ui, session);
+                object_lines(ui, objects);
             }
             ui.small(SHARES_HINT);
         });
@@ -91,11 +97,16 @@ impl MachineForm {
     fn share_list(&mut self, ui: &mut egui::Ui, slug: &str) {
         let mut remove = None;
         for index in 0..self.drivewire.shares.len() {
+            let before = self.drivewire.shares[index].name.clone();
             ui.push_id(index, |ui| {
                 if share_row(ui, index, &mut self.drivewire.shares[index]) {
                     remove = Some(index);
                 }
             });
+            let after = &self.drivewire.shares[index].name;
+            if *after != before {
+                follow_share(&mut self.drivewire.named_objects, &before, Some(after));
+            }
             let shares = &self.drivewire.shares;
             let problem = share_problem(&shares[index], shares, slug, &mut self.share_roots);
             if let Some(problem) = problem {
@@ -103,7 +114,8 @@ impl MachineForm {
             }
         }
         if let Some(index) = remove {
-            self.drivewire.shares.remove(index);
+            let removed = self.drivewire.shares.remove(index);
+            follow_share(&mut self.drivewire.named_objects, &removed.name, None);
         }
         let roots: Vec<PathBuf> = self
             .drivewire

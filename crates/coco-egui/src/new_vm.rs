@@ -20,6 +20,7 @@ mod cartridge_combo;
 mod cartridge_form;
 mod config_form;
 mod drivewire_form;
+mod drivewire_named_form;
 mod drivewire_shares_form;
 mod form;
 mod known_cartridges;

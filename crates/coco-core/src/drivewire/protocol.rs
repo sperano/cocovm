@@ -76,6 +76,19 @@ pub(super) enum State {
         ex: bool,
     },
     AwaitHostWrite,
+    /// A named-object opcode sent (`drivewire::named`); awaiting the name's
+    /// length byte.
+    AwaitNameLength {
+        create: bool,
+    },
+    /// Awaiting the rest of a `len`-byte object name.
+    AwaitName {
+        create: bool,
+        len: u8,
+        buf: Vec<u8>,
+    },
+    /// A complete named-object request waits for the host to resolve it.
+    AwaitHostNamed,
 }
 
 impl DWServer {
@@ -128,7 +141,9 @@ impl DWServer {
                 buf,
             } => self.feed_read_ex_checksum(expected, pending_error, buf, byte),
             State::AwaitWriteBody { buf } => self.feed_write_body(buf, byte),
-            State::AwaitHostRead { .. } | State::AwaitHostWrite => {
+            State::AwaitNameLength { create } => self.feed_name_length(create, byte),
+            State::AwaitName { create, len, buf } => self.feed_name(create, len, buf, byte),
+            State::AwaitHostRead { .. } | State::AwaitHostWrite | State::AwaitHostNamed => {
                 // A disk client must wait for its reply before sending another
                 // request. An early opcode abandons the unanswered request.
                 self.cancel_host_request();
@@ -202,6 +217,8 @@ impl DWServer {
             opcode::NOP | opcode::INIT | opcode::TERM => {
                 // Single byte, no reply, no state change.
             }
+            opcode::NAMEOBJ_MOUNT => self.begin_named(false),
+            opcode::NAMEOBJ_CREATE => self.begin_named(true),
             opcode::RESET1 | opcode::RESET2 | opcode::RESET3 => self.protocol_reset(),
             opcode::TIME => self.reply_time(),
             opcode::DWINIT => self.state = State::AwaitDwInitVersion,
