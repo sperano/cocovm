@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-11
+
 ### Added
 - An update check. At startup, CoCoVM asks GitHub for the latest release
   and, when it is newer, shows a notice above the welcome artwork with a
@@ -48,8 +50,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   returns them. `resources/templates/list` describes the two URI shapes.
   Subscriptions and list-change notifications aren't offered, because
   the server sends no server-to-client stream.
+- MCP media tools beyond floppies: `insert_tape`, `eject_tape`, and
+  `rewind_tape` for the cassette deck; `insert_cartridge` and
+  `remove_cartridge` for the cartridge port or one Multi-Pak slot;
+  `set_mpi_switch` for the Multi-Pak's slot switch; and `insert_vhd`,
+  `eject_vhd`, `insert_drivewire_disk`, and `eject_drivewire_disk`. A
+  cartridge uses the machine definition's `[peripherals].cartridge`
+  format, and a swap power-cycles the machine. The changes last for the
+  current session; the machine definition is unchanged. `list_vms` now
+  reports a running VM's installed cartridge instead of its definition's.
+- MCP `save_state` and `load_state` tools. They save a VM's state to, or
+  load it from, a `.ccstate` file at a host path or one of the five
+  quick-state slots the State selector uses. Modified floppies and tapes
+  are written back first, and a failed write-back is reported as a tool
+  error.
+- MCP `load_binary` tool. It loads a Disk BASIC `LOADM` binary, or raw
+  bytes at a given address, into a running VM's memory from a host path or
+  base64 data, and can start it at the binary's execution address.
+- The About window shows the asset and machine inventory, for example
+  "17 ROMs, 121 cartridges and 5 machine configurations found", the same
+  line the startup banner prints.
 
 ### Changed
+- Icon-only toolbars are compact: tiles are 32 points square instead of
+  52, and VM windows size themselves to match. The labeled layout is
+  unchanged.
 - Two running VMs can no longer mount the same DriveWire disk image. The
   second VM reports that the image is in use by another running VM, and a
   snapshot restore leaves that drive empty with a note.
@@ -109,15 +134,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   first. If a write-back fails, `stop_vm` still powers the VM off and
   returns an error naming the file, while `suspend_vm` leaves the VM
   running.
-- MCP media tools beyond floppies: `insert_tape`, `eject_tape`, and
-  `rewind_tape` for the cassette deck; `insert_cartridge` and
-  `remove_cartridge` for the cartridge port or one Multi-Pak slot;
-  `set_mpi_switch` for the Multi-Pak's slot switch; and `insert_vhd`,
-  `eject_vhd`, `insert_drivewire_disk`, and `eject_drivewire_disk`. A
-  cartridge uses the machine definition's `[peripherals].cartridge`
-  format, and a swap power-cycles the machine. The changes last for the
-  current session; the machine definition is unchanged. `list_vms` now
-  reports a running VM's installed cartridge instead of its definition's.
 - A `physical` option on the MCP `peek` and `poke` tools. With it, the
   address is a byte offset into installed RAM, so memory that isn't mapped
   in, such as other MMU blocks on a 512K or 2 MB CoCo 3, is reachable. A
