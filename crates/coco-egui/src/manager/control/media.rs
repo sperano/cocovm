@@ -150,12 +150,7 @@ impl ManagerApp {
         path: Option<PathBuf>,
     ) -> Result<Reply, String> {
         let idx = self.resolve_vm(vm, true)?;
-        if drive >= coco_core::drivewire::DRIVE_COUNT {
-            return Err(format!(
-                "drive must be 0..{}",
-                coco_core::drivewire::DRIVE_COUNT
-            ));
-        }
+        check_drivewire_drive(drive)?;
         let slug = self.entries[idx].slug.clone();
         let app = self.vm_mut(idx);
         if app.machine.bus.drivewire.is_none() {
@@ -189,6 +184,17 @@ fn wav_outcome(wav_error: Option<String>, done: &str) -> Result<Reply, String> {
             "{error}\nThe tape was {done}; only the .wav copy of the previous recording failed."
         )),
     }
+}
+
+/// [`check_drive`]'s twin for DriveWire's larger drive count.
+fn check_drivewire_drive(drive: usize) -> Result<(), String> {
+    if drive >= coco_core::drivewire::DRIVE_COUNT {
+        return Err(format!(
+            "drive must be 0..{}",
+            coco_core::drivewire::DRIVE_COUNT
+        ));
+    }
+    Ok(())
 }
 
 fn require_multipak(app: &CocoApp) -> Result<(), String> {
