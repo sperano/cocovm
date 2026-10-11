@@ -14,6 +14,7 @@ use super::{
 };
 
 mod load_binary;
+mod media;
 mod state;
 mod vms;
 
@@ -482,6 +483,16 @@ pub fn definitions(include_annotations: bool) -> Vec<Value> {
         joystick(include_annotations),
         insert_disk(include_annotations),
         eject_disk(include_annotations),
+        media::insert_tape(include_annotations),
+        media::eject_tape(include_annotations),
+        media::rewind_tape(include_annotations),
+        media::insert_cartridge(include_annotations),
+        media::remove_cartridge(include_annotations),
+        media::set_mpi_switch(include_annotations),
+        media::insert_vhd(include_annotations),
+        media::eject_vhd(include_annotations),
+        media::insert_drivewire_disk(include_annotations),
+        media::eject_drivewire_disk(include_annotations),
         reset(include_annotations),
         set_running(include_annotations),
         wait(include_annotations),

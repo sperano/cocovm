@@ -95,6 +95,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   first. If a write-back fails, `stop_vm` still powers the VM off and
   returns an error naming the file, while `suspend_vm` leaves the VM
   running.
+- MCP media tools beyond floppies: `insert_tape`, `eject_tape`, and
+  `rewind_tape` for the cassette deck; `insert_cartridge` and
+  `remove_cartridge` for the cartridge port or one Multi-Pak slot;
+  `set_mpi_switch` for the Multi-Pak's slot switch; and `insert_vhd`,
+  `eject_vhd`, `insert_drivewire_disk`, and `eject_drivewire_disk`. A
+  cartridge uses the machine definition's `[peripherals].cartridge`
+  format, and a swap power-cycles the machine. The changes last for the
+  current session; the machine definition is unchanged. `list_vms` now
+  reports a running VM's installed cartridge instead of its definition's.
 - A `physical` option on the MCP `peek` and `poke` tools. With it, the
   address is a byte offset into installed RAM, so memory that isn't mapped
   in, such as other MMU blocks on a 512K or 2 MB CoCo 3, is reachable. A

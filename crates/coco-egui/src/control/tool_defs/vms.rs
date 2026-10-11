@@ -106,10 +106,13 @@ fn peripheral_properties(kinds: &[&str]) -> Value {
     })
 }
 
-fn cartridge_schema() -> Value {
+/// A cartridge-port occupant in a definition's `[peripherals].cartridge`
+/// format; a MultiPak's `slots` hold slot occupants.
+pub(super) fn cartridge_object_schema() -> Value {
     let mut properties = peripheral_properties(CARTRIDGE_KINDS);
     properties["slots"] = json!({
         "type": "array",
+        "minItems": MPI_SLOT_COUNT,
         "maxItems": MPI_SLOT_COUNT,
         "items": object_schema(peripheral_properties(SLOT_KINDS), &["kind"])
     });
@@ -119,10 +122,14 @@ fn cartridge_schema() -> Value {
         "maximum": MPI_SLOT_COUNT,
         "description": "MultiPak front-panel slot (1-based) selected at power-on."
     });
-    let mut schema = object_schema(properties, &["kind"]);
+    object_schema(properties, &["kind"])
+}
+
+fn cartridge_schema() -> Value {
+    let mut schema = cartridge_object_schema();
     schema["description"] = json!(
-        "Cartridge-port occupant from the VM's definition, in its [peripherals] format. A \
-         cartridge swapped from a running VM's menu is not reflected."
+        "Cartridge-port occupant in the definition's [peripherals] format: the live VM's \
+         (including insert_cartridge changes) while it has one, otherwise the definition's."
     );
     schema
 }

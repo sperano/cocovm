@@ -11,6 +11,7 @@ use super::protocol::{Action, ControlError, Reply, Request, ScreenSnapshot, Stic
 use super::tool_defs;
 
 mod load_binary;
+mod media;
 mod memory;
 mod state;
 mod vms;
@@ -89,6 +90,16 @@ fn dispatch(backend: &mut dyn Backend, params: Value) -> Result<Value, RpcError>
         "joystick" => dispatch_joystick(backend, args),
         "insert_disk" => dispatch_insert_disk(backend, args),
         "eject_disk" => dispatch_eject_disk(backend, args),
+        "insert_tape" => media::dispatch_insert_tape(backend, args),
+        "eject_tape" => media::dispatch_eject_tape(backend, args),
+        "rewind_tape" => media::dispatch_rewind_tape(backend, args),
+        "insert_cartridge" => media::dispatch_insert_cartridge(backend, args),
+        "remove_cartridge" => media::dispatch_remove_cartridge(backend, args),
+        "set_mpi_switch" => media::dispatch_set_mpi_switch(backend, args),
+        "insert_vhd" => media::dispatch_insert_vhd(backend, args),
+        "eject_vhd" => media::dispatch_eject_vhd(backend, args),
+        "insert_drivewire_disk" => media::dispatch_insert_drivewire_disk(backend, args),
+        "eject_drivewire_disk" => media::dispatch_eject_drivewire_disk(backend, args),
         "reset" => dispatch_reset(backend, args),
         "set_running" => dispatch_set_running(backend, args),
         "wait" => dispatch_wait(backend, args),

@@ -56,6 +56,40 @@ fn a_live_vm_reports_its_running_hardware_and_current_mounts() {
 }
 
 #[test]
+fn a_live_vm_reports_its_installed_cartridge_not_its_definition() {
+    let mut entry = running_entry_with_stale_definition();
+    entry.def.peripherals.cartridge = CartridgeDTO::Orch90;
+    assert_eq!(vm_info(&entry).cartridge, CartridgeDTO::None);
+
+    let vm = entry.vm.as_mut().unwrap();
+    vm.insert_multipak();
+    vm.mpi_insert_fd502(0, DosRom::HdbDosDw3);
+    vm.mpi_insert_rs232(2);
+    vm.rs232 = Some(crate::RS232Endpoint::TCP("127.0.0.1:6551".to_string()));
+    vm.mpi_set_switch(2);
+    assert_eq!(vm.cart_error, None);
+
+    assert_eq!(
+        vm_info(&entry).cartridge,
+        CartridgeDTO::MPI {
+            slots: [
+                SlotDTO::FD502 {
+                    dos_rom: DosRom::HdbDosDw3
+                },
+                SlotDTO::Empty,
+                SlotDTO::RS232 {
+                    endpoint: RS232EndpointDTO::TCP {
+                        listen: "127.0.0.1:6551".to_string()
+                    }
+                },
+                SlotDTO::Empty,
+            ],
+            switch: 3,
+        }
+    );
+}
+
+#[test]
 fn a_powered_off_vm_reports_its_definition() {
     let mut entry = off_entry();
     entry.def.name = "Info Test".to_string();

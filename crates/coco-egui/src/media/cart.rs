@@ -260,6 +260,26 @@ impl CocoApp {
         self.rtc_direct = false;
     }
 
+    /// Empties the cartridge port, removing a MultiPak with everything in it,
+    /// and power-cycles like every cartridge swap. Aborts on a failed
+    /// dirty-floppy flush, leaving state untouched, and reports the error in
+    /// [`Self::cart_error`].
+    pub(crate) fn eject_cartridge(&mut self) {
+        if !self.flush_dirty_disks_or_report() {
+            return;
+        }
+        self.machine.eject_cartridge();
+        self.power_cycle();
+        self.cart_path = None;
+        self.disk_paths = [None, None];
+        self.disk_rom_path = None;
+        self.mpi = None;
+        self.rs232 = None;
+        self.rs232_eprom_path = None;
+        self.rs232_configured = None;
+        self.rtc_direct = false;
+    }
+
     /// Moves the MPI's front-panel switch to `slot`. A running program's own write to
     /// `$FF7F` overrides it until the next reset.
     pub(crate) fn mpi_set_switch(&mut self, slot: usize) {

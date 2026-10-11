@@ -53,6 +53,9 @@ pub const CURRENT_SCHEMA: u32 = 1;
 /// `chrono` format string for `[created]`, used by the manager's date sort.
 pub const DATE_FORMAT: &str = "%Y-%m-%d";
 
+/// Why an FD-502 with HDB-DOS needs a CoCo 3.
+pub(crate) const HDBDOS_NEEDS_COCO3: &str = "HDB-DOS (DriveWire, CoCo 3) requires a CoCo 3";
+
 /// Why DriveWire and the Games Master Cartridge can't share a machine.
 pub(crate) const DRIVEWIRE_GMC_CONFLICT: &str =
     "DriveWire Becker port conflicts with the Games Master Cartridge at $FF41";
@@ -127,7 +130,7 @@ impl MachineDef {
         if self.peripherals.cartridge.uses_hdbdos()
             && self.hardware.variant != dto::MachineVariantDTO::Coco3
         {
-            return Err("HDB-DOS (DriveWire, CoCo 3) requires a CoCo 3".to_string());
+            return Err(HDBDOS_NEEDS_COCO3.to_string());
         }
         if self.drivewire.enabled && self.peripherals.cartridge.contains_games_master() {
             return Err(DRIVEWIRE_GMC_CONFLICT.to_string());

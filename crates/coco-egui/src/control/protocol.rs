@@ -10,7 +10,7 @@ use coco_core::{MachineVariant, MemorySize};
 use serde::Deserialize;
 
 use crate::UI_DRIVES;
-use crate::machine_def::CartridgeDTO;
+use crate::machine_def::{CartridgeDTO, SlotDTO};
 
 /// A literal or compiled regex used by `wait_for_text`.
 #[derive(Clone, Debug)]
@@ -114,6 +114,41 @@ pub enum Action {
     EjectDisk {
         drive: usize,
     },
+    /// Mount the cassette image (`.cas` or `.wav`) at `path`.
+    InsertTape {
+        path: PathBuf,
+    },
+    EjectTape,
+    /// Move the tape head back to the start.
+    RewindTape,
+    /// Replace the cartridge port's occupant, or one MultiPak slot's.
+    InsertCartridge {
+        target: CartridgeTarget,
+    },
+    /// Empty the cartridge port, or MultiPak `slot` (0-based) when given.
+    RemoveCartridge {
+        slot: Option<usize>,
+    },
+    /// Move the MultiPak's front-panel switch to `slot` (0-based).
+    SetMPISwitch {
+        slot: usize,
+    },
+    /// Mount the virtual hard disk image at `path` in VHD `drive` (0-based).
+    InsertVHD {
+        drive: usize,
+        path: PathBuf,
+    },
+    EjectVHD {
+        drive: usize,
+    },
+    /// Mount the disk image at `path` in DriveWire `drive` (0-based).
+    InsertDriveWireDisk {
+        drive: usize,
+        path: PathBuf,
+    },
+    EjectDriveWireDisk {
+        drive: usize,
+    },
     /// Reset the machine; `hard` power-cycles (clears RAM).
     Reset {
         hard: bool,
@@ -162,6 +197,16 @@ pub enum Action {
     LoadState {
         target: StateTarget,
     },
+}
+
+/// What an [`Action::InsertCartridge`] installs, in a machine definition's
+/// `[peripherals].cartridge` format.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CartridgeTarget {
+    /// Straight into the cartridge port, replacing whatever is there.
+    Port(CartridgeDTO),
+    /// Into MultiPak `slot`, 0-based after MCP argument validation.
+    Slot { slot: usize, occupant: SlotDTO },
 }
 
 /// Where a save-state action reads or writes.
@@ -285,9 +330,9 @@ pub struct VmInfo {
     /// The live machine's RAM size, or the definition's when no VM is alive.
     pub ram: MemorySize,
     pub cpu: Cpu,
-    /// The definition's cartridge-port occupant, with embedded paths
-    /// resolved the way launching resolves them. A cartridge swapped from a
-    /// running VM's menu isn't reflected.
+    /// The cartridge-port occupant: the live VM's when one exists, or the
+    /// definition's, with embedded paths resolved the way launching
+    /// resolves them.
     pub cartridge: CartridgeDTO,
     /// `None` for a suspended VM whose window is closed: its media live in
     /// the saved state, which only a resume reads back.
