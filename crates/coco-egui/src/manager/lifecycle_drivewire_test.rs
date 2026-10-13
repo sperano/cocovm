@@ -112,3 +112,76 @@ fn cold_resume_keeps_the_saved_shares() {
     assert!(dw.share_session().table().get("games").is_some());
     assert_eq!(dw.share_session().table().named_objects(), Some("games"));
 }
+
+/// Starts a DriveWire VM printing into `prints` and sends it half a job.
+fn manager_mid_print_job(dir: &std::path::Path, prints: &std::path::Path) -> ManagerApp {
+    let (mut manager, _) = manager_with_disk(dir, true);
+    let printer = &mut manager.entries[0].def.drivewire.printer;
+    printer.output = machine_def::PrintOutputDTO::Folder;
+    printer.folder = prints.display().to_string();
+    manager.start_vm(0);
+    let vm = manager.entries[0].vm.as_mut().unwrap();
+    let dw = vm.machine.bus.drivewire.as_mut().unwrap();
+    for byte in *b"HALF" {
+        dw.data_write(coco_core::drivewire::opcode::PRINT, 0);
+        dw.data_write(byte, 0);
+    }
+    manager
+}
+
+/// Waits for the print writer thread, which outlives a stopped VM.
+fn wait_for_print_files(prints: &std::path::Path) -> Vec<String> {
+    const WAIT_LIMIT: std::time::Duration = std::time::Duration::from_secs(10);
+    const WAIT_STEP: std::time::Duration = std::time::Duration::from_millis(2);
+    let start = std::time::Instant::now();
+    loop {
+        let names: Vec<String> = fs::read_dir(prints)
+            .map(|entries| {
+                entries
+                    .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+                    .collect()
+            })
+            .unwrap_or_default();
+        if !names.is_empty() || start.elapsed() > WAIT_LIMIT {
+            return names;
+        }
+        std::thread::sleep(WAIT_STEP);
+    }
+}
+
+#[test]
+fn stopping_a_suspended_vm_writes_its_open_print_job() {
+    let dir = TempDir::new("stop-suspended-print");
+    let prints = dir.path().join("prints");
+    let mut manager = manager_mid_print_job(dir.path(), &prints);
+    manager.suspend_vm(0);
+    assert!(manager.entries[0].suspended);
+
+    manager.stop_vm(0);
+
+    let names = wait_for_print_files(&prints);
+    assert_eq!(names.len(), 1, "{names:?}");
+    assert!(names[0].ends_with("-job0001-incomplete.txt"), "{names:?}");
+    assert_eq!(fs::read(prints.join(&names[0])).unwrap(), b"HALF");
+}
+
+#[test]
+fn closing_a_suspended_vm_leaves_its_open_print_job_to_the_state_file() {
+    let dir = TempDir::new("close-suspended-print");
+    let prints = dir.path().join("prints");
+    let mut manager = manager_mid_print_job(dir.path(), &prints);
+    manager.suspend_vm(0);
+    manager.entries[0]
+        .vm
+        .as_mut()
+        .unwrap()
+        .stop_drivewire_host();
+    manager.entries[0].vm = None;
+
+    manager.resume_vm(0);
+
+    let vm = manager.entries[0].vm.as_ref().unwrap();
+    let dw = vm.machine.bus.drivewire.as_ref().unwrap();
+    assert_eq!(dw.print_diagnostics().open_bytes, b"HALF".len());
+    assert!(!prints.exists());
+}

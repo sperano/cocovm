@@ -284,6 +284,20 @@ fn switching_to_off_discards_waiting_jobs() {
 }
 
 #[test]
+fn write_failing_after_switching_to_off_is_discarded() {
+    let scratch = Scratch::new("late-failure");
+    let blocker = scratch.0.join("file");
+    fs::write(&blocker, b"").unwrap();
+    let mut server = DWServer::new();
+    server.set_print_output(folder(&blocker.join("prints"), PrintFormat::Raw));
+    print(&mut server, b"j");
+    flush(&mut server);
+    server.set_print_output(PrintOutput::Off);
+    wait_until(&mut server, |d| d.discarded == 1);
+    assert_eq!(server.print_diagnostics().waiting, 0);
+}
+
+#[test]
 fn protocol_resets_keep_the_open_job() {
     let mut server = port_server();
     print(&mut server, b"AB");

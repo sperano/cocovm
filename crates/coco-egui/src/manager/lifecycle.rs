@@ -267,11 +267,10 @@ impl ManagerApp {
         {
             let entry = &mut self.entries[index];
             if cold {
-                entry
-                    .vm
-                    .as_mut()
-                    .expect("cold resume launched a VM")
-                    .stop_drivewire_host();
+                let vm = entry.vm.as_mut().expect("cold resume launched a VM");
+                // The state file keeps the open print job; don't end it too.
+                vm.suspend_drivewire_host();
+                vm.stop_drivewire_host();
                 entry.vm = None; // back to Suspended with the window closed
             }
             entry.launch_error = Some(format!("could not remove {}: {e}", path.display()));
@@ -299,7 +298,13 @@ impl ManagerApp {
     pub(super) fn stop_vm(&mut self, index: usize) {
         self.print_action("Stopping", index);
         self.fold_runtime_into_def(index);
+        let suspended = self.entries[index].suspended;
         if let Some(vm) = self.entries[index].vm.as_mut() {
+            // The state file holding a suspended VM's open print job is
+            // discarded below, so the stop ends that job like any power-off.
+            if suspended {
+                vm.resume_drivewire_host();
+            }
             vm.stop_drivewire_host();
         }
         let flush_error = self.entries[index]

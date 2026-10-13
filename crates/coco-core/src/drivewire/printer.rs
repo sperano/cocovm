@@ -200,24 +200,37 @@ impl PrintSpool {
 
     /// Hands queued folder jobs to the writer and collects its results.
     pub(super) fn poll(&mut self) {
-        if let Some(writer) = &self.writer {
-            while let Some(result) = writer.try_result() {
-                self.writing -= 1;
-                match result {
-                    WriteResult::Written(path) => {
-                        self.stats.printed += 1;
-                        self.stats.last_file = Some(path);
-                        self.stats.last_error = None;
-                    }
-                    WriteResult::Failed { job, error } => {
-                        self.stats.last_error = Some(error);
-                        self.blocked = true;
-                        self.queue.push_front(job);
-                    }
+        let results: Vec<WriteResult> = self
+            .writer
+            .as_ref()
+            .map(|writer| std::iter::from_fn(|| writer.try_result()).collect())
+            .unwrap_or_default();
+        for result in results {
+            self.writing -= 1;
+            match result {
+                WriteResult::Written(path) => {
+                    self.stats.printed += 1;
+                    self.stats.last_file = Some(path);
+                    self.stats.last_error = None;
+                }
+                WriteResult::Failed { job, error } => {
+                    self.stats.last_error = Some(error);
+                    self.retry(job);
                 }
             }
         }
         self.pump();
+    }
+
+    /// A failed folder job waits for the next job or output change; after a
+    /// switch away from a folder, it follows the new output instead.
+    fn retry(&mut self, job: PrintJob) {
+        if matches!(self.output, PrintOutput::Folder { .. }) {
+            self.blocked = true;
+            self.queue.push_front(job);
+        } else {
+            self.deliver(job);
+        }
     }
 
     fn pump(&mut self) {
