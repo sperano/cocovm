@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 
 use coco_core::MachineConfig;
 use coco_core::drivewire::share::ShareOp;
+use coco_core::drivewire::{PrintFormat, PrintOutput};
 
 use super::*;
 use crate::machine_def::{self, tests::TempDir};
@@ -315,4 +316,73 @@ fn a_second_vm_cannot_start_with_an_image_the_first_has_mounted() {
     let error = manager.entries[1].launch_error.as_deref().unwrap();
     assert!(error.contains("in use by another running VM"), "{error}");
     assert!(manager.entries[1].vm.is_none());
+}
+
+fn folder_printer(folder: &Path) -> machine_def::DriveWirePrinterDTO {
+    machine_def::DriveWirePrinterDTO {
+        output: machine_def::PrintOutputDTO::Folder,
+        folder: folder.display().to_string(),
+        format: machine_def::PrintFormatDTO::Text,
+    }
+}
+
+#[test]
+fn a_saved_printer_setting_switches_the_running_output() {
+    let dir = TempDir::new("live-dw-printer-switch");
+    let mut manager = running_manager(dir.path(), None);
+    manager.entries[0].def.drivewire.enabled = true;
+    manager.apply_live_drivewire(0);
+    assert_eq!(
+        vm(&manager)
+            .machine
+            .bus
+            .drivewire
+            .as_ref()
+            .unwrap()
+            .print_output(),
+        &PrintOutput::Off
+    );
+
+    let folder = dir.path().join("prints");
+    manager.entries[0].def.drivewire.printer = folder_printer(&folder);
+    manager.apply_live_drivewire(0);
+    assert_eq!(
+        vm(&manager)
+            .machine
+            .bus
+            .drivewire
+            .as_ref()
+            .unwrap()
+            .print_output(),
+        &PrintOutput::Folder {
+            dir: folder,
+            format: PrintFormat::Text,
+        }
+    );
+}
+
+#[test]
+fn an_unrelated_drivewire_save_leaves_the_printer_output_as_configured() {
+    let dir = TempDir::new("live-dw-printer-unrelated");
+    let mut manager = running_manager(dir.path(), None);
+    manager.entries[0].def.drivewire.enabled = true;
+    let folder = dir.path().join("prints");
+    manager.entries[0].def.drivewire.printer = folder_printer(&folder);
+    manager.apply_live_drivewire(0);
+
+    manager.entries[0].def.drivewire.hdbdos_mode = true;
+    manager.apply_live_drivewire(0);
+    assert_eq!(
+        vm(&manager)
+            .machine
+            .bus
+            .drivewire
+            .as_ref()
+            .unwrap()
+            .print_output(),
+        &PrintOutput::Folder {
+            dir: folder,
+            format: PrintFormat::Text,
+        }
+    );
 }

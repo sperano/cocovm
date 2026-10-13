@@ -4,6 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use coco_core::drivewire::share::{ShareAccess, ShareSpec, ShareTable};
+use coco_core::drivewire::{PrintFormat, PrintOutput};
 
 use crate::app::DriveWireLaunch;
 use crate::machine_def::tests::TempDir;
@@ -76,6 +77,30 @@ fn restoring_its_own_snapshot_keeps_the_image_and_the_shares() {
     let dw = app.machine.bus.drivewire.as_ref().unwrap();
     assert!(dw.is_mounted(0));
     assert_eq!(dw.share_session().table(), &shares);
+}
+
+#[test]
+fn restoring_its_own_snapshot_keeps_the_printer_output() {
+    let dir = TempDir::new("restore-dw-printer");
+    let image = write_disk(dir.path());
+    let state = dir.path().join("printer.ccstate");
+    let mut app = app_with_image(&image);
+    let folder = dir.path().join("prints");
+    app.set_drivewire_printer(PrintOutput::Folder {
+        dir: folder.clone(),
+        format: PrintFormat::Text,
+    });
+    app.save_state_to(&state).unwrap();
+
+    let notes = app.restore_state_from(&state).unwrap();
+    assert!(notes.is_empty(), "{notes:?}");
+    assert_eq!(
+        app.machine.bus.drivewire.as_ref().unwrap().print_output(),
+        &PrintOutput::Folder {
+            dir: folder,
+            format: PrintFormat::Text,
+        }
+    );
 }
 
 #[cfg(unix)]

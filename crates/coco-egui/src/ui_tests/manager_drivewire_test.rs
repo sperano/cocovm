@@ -442,3 +442,33 @@ fn the_named_object_share_is_picked_and_follows_renames_and_removal() {
     click(&mut harness, "Remove share 1");
     assert_eq!(saved_def(&file).drivewire.named_objects, None);
 }
+
+#[test]
+fn printer_output_folder_is_picked_typed_and_saved() {
+    let (dir, mut entry, file) = seed_manager("ui-drivewire-printer");
+    entry.def.drivewire.enabled = true;
+    let folder = dir.path().join("prints");
+    let mut harness = manager_harness(Some(dir.path().to_path_buf()), vec![entry]);
+    select_drivewire(&mut harness);
+
+    click(&mut harness, "DriveWire print output");
+    click(&mut harness, "Folder");
+    // Folder with no folder yet fails `validate_drivewire`, so the switch alone isn't saved —
+    // the file still reports the old output until the folder below makes the def valid again.
+    assert_eq!(
+        saved_def(&file).drivewire.printer.output,
+        machine_def::PrintOutputDTO::Off
+    );
+
+    harness.get_by_label("Printer output folder").focus();
+    harness.step();
+    harness
+        .get_by_label("Printer output folder")
+        .type_text(&folder.display().to_string());
+    harness.step();
+    harness.step();
+
+    let saved = saved_def(&file).drivewire.printer;
+    assert_eq!(saved.output, machine_def::PrintOutputDTO::Folder);
+    assert_eq!(saved.folder, folder.display().to_string());
+}

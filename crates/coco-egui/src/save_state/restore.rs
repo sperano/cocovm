@@ -227,9 +227,10 @@ impl CocoApp {
     }
 
     /// Re-inject every host-only resource `#[serde(skip)]` dropped by the
-    /// round trip: RTC time source, DriveWire clock and shares, RS-232 endpoint (restored
-    /// as loopback here; [`Self::reapply_configured_rs232`] rebinds it to a
-    /// non-default kind afterward if one was configured).
+    /// round trip: RTC time source, DriveWire clock, shares and print
+    /// output, RS-232 endpoint (restored as loopback here;
+    /// [`Self::reapply_configured_rs232`] rebinds it to a non-default kind
+    /// afterward if one was configured).
     fn reinject_host_only_resources(&mut self) {
         if let Some(rtc) = self.machine.bus.cart.as_disto_rtc() {
             rtc.set_time_source(host_time_source());
@@ -238,6 +239,7 @@ impl CocoApp {
             dw.set_clock(host_dw_clock());
         }
         self.install_drivewire_shares();
+        self.install_drivewire_printer();
         if let Some(pak) = self.machine.bus.cart.as_deluxe_rs232() {
             pak.set_endpoint(Box::new(coco_core::serial::Loopback::new()));
         }

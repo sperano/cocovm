@@ -3,6 +3,7 @@
 
 use coco_core::drivewire;
 use coco_core::drivewire::NamedObjectInfo;
+use coco_core::drivewire::PrintDiagnostics;
 use coco_core::drivewire::share::ShareStatus;
 use eframe::egui;
 
@@ -19,6 +20,7 @@ pub(super) fn draw_drivewire_tab(
     let session = entry.share_status();
     let objects = entry.named_objects();
     let guest_drives = entry.guest_drive_notes();
+    let printer = entry.print_diagnostics();
     form.drivewire_rows(ui);
     ui.add_space(DETAIL_SECTION_GAP);
     titled_group(ui, "Disk images", |ui| {
@@ -31,6 +33,10 @@ pub(super) fn draw_drivewire_tab(
     titled_group(ui, "Host shares", |ui| {
         form.drivewire_share_rows(ui, slug, session.as_ref(), &objects);
     });
+    ui.add_space(DETAIL_SECTION_GAP);
+    titled_group(ui, "Printer", |ui| {
+        form.drivewire_printer_rows(ui, slug, printer.as_ref());
+    });
 }
 
 impl MachineEntry {
@@ -38,6 +44,14 @@ impl MachineEntry {
     pub(super) fn share_status(&self) -> Option<ShareStatus> {
         let dw = self.vm.as_ref()?.machine.bus.drivewire.as_ref()?;
         Some(dw.share_session().status())
+    }
+
+    /// The running VM's print diagnostics, for the DriveWire tab's Printer
+    /// status lines. `None` without a running server, like
+    /// [`Self::share_status`].
+    pub(super) fn print_diagnostics(&self) -> Option<PrintDiagnostics> {
+        let dw = self.vm.as_ref()?.machine.bus.drivewire.as_ref()?;
+        Some(dw.print_diagnostics())
     }
 
     /// The running VM's named objects, for the DriveWire tab.
@@ -80,7 +94,8 @@ impl MachineEntry {
 }
 
 impl ManagerApp {
-    /// Push `entries[index]`'s saved `[drivewire]`, shares included, into its Running VM.
+    /// Push `entries[index]`'s saved `[drivewire]`, shares and printer included, into its
+    /// Running VM.
     /// Failures surface in `launch_error`; success clears it.
     pub(super) fn apply_live_drivewire(&mut self, index: usize) {
         let entry = &mut self.entries[index];
@@ -92,6 +107,7 @@ impl ManagerApp {
         };
         let settings = crate::launch::drivewire_settings(&entry.def, &entry.slug);
         let applied = vm.apply_drivewire_settings(settings);
+        vm.set_drivewire_printer(entry.def.drivewire.printer.output(&entry.slug));
         entry.launch_error = match entry.def.drivewire.share_table(&entry.slug) {
             Ok(shares) => {
                 vm.set_drivewire_shares(shares);

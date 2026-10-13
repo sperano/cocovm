@@ -1,6 +1,7 @@
 //! The DriveWire virtual serial link and the disk images it serves.
 
 use coco_core::drivewire::MediaOrigin;
+use coco_core::drivewire::PrintOutput;
 use coco_core::drivewire::share::{AccessMode, AccessRegistry, ShareError, ShareTable};
 
 use crate::app::DriveWireLaunch;
@@ -16,6 +17,7 @@ impl CocoApp {
             dw.set_clock(host_dw_clock());
             dw.set_shares(self.dw_shares.clone(), self.lease_owner);
         }
+        self.install_drivewire_printer();
     }
 
     /// Record `table` as this VM's host shares and install it in a running
@@ -29,6 +31,29 @@ impl CocoApp {
     pub(crate) fn install_drivewire_shares(&mut self) {
         if let Some(ref mut dw) = self.machine.bus.drivewire {
             dw.set_shares(self.dw_shares.clone(), self.lease_owner);
+        }
+    }
+
+    /// Record `output` as this VM's print-job destination, install it, and
+    /// deliver any printer-port job that is now (or was already) waiting.
+    pub(crate) fn set_drivewire_printer(&mut self, output: PrintOutput) {
+        self.dw_print_output = output;
+        self.install_drivewire_printer();
+        self.machine.bus.deliver_drivewire_print();
+    }
+
+    /// Install [`Self::dw_print_output`] into a running server when it
+    /// differs from the server's own, so an unrelated settings save (whose
+    /// recomputed output is value-equal to what's already installed) or a
+    /// snapshot restore (whose fresh server starts at
+    /// [`PrintOutput::Off`]) doesn't disturb a job already queued for
+    /// folder output.
+    pub(crate) fn install_drivewire_printer(&mut self) {
+        let Some(ref mut dw) = self.machine.bus.drivewire else {
+            return;
+        };
+        if dw.print_output() != &self.dw_print_output {
+            dw.set_print_output(self.dw_print_output.clone());
         }
     }
 

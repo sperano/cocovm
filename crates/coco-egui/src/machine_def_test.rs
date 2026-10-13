@@ -75,6 +75,11 @@ fn full_def() -> MachineDef {
                 access: ShareAccessDTO::ReadWrite,
             }],
             named_objects: Some("games".to_string()),
+            printer: DriveWirePrinterDTO {
+                output: PrintOutputDTO::Folder,
+                folder: "prints".to_string(),
+                format: PrintFormatDTO::Raw,
+            },
         },
         peripherals: PeripheralsDTO {
             cartridge: CartridgeDTO::MPI {
