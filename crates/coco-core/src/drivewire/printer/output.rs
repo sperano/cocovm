@@ -137,10 +137,15 @@ struct WriteRequest {
     format: PrintFormat,
 }
 
-/// A folder write's outcome. A failed job comes back for another attempt.
+/// A folder write's outcome. A failed job comes back for another attempt,
+/// with the folder it failed in.
 pub(super) enum WriteResult {
     Written(PathBuf),
-    Failed { job: PrintJob, error: String },
+    Failed {
+        job: PrintJob,
+        dir: PathBuf,
+        error: String,
+    },
 }
 
 /// One VM's folder writer thread. Dropping it lets the thread finish the
@@ -160,7 +165,7 @@ impl FolderWriter {
             .spawn(move || {
                 for request in requests_rx {
                     let result = run(request);
-                    if let Err(mpsc::SendError(WriteResult::Failed { job, error })) =
+                    if let Err(mpsc::SendError(WriteResult::Failed { job, error, .. })) =
                         results_tx.send(result)
                     {
                         eprintln!("DriveWire printer: job {} not written: {error}", job.number);
@@ -193,6 +198,7 @@ fn run(request: WriteRequest) -> WriteResult {
         Err(error) => WriteResult::Failed {
             error: format!("{}: {error}", request.dir.display()),
             job: request.job,
+            dir: request.dir,
         },
     }
 }

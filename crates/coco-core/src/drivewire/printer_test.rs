@@ -298,6 +298,22 @@ fn write_failing_after_switching_to_off_is_discarded() {
 }
 
 #[test]
+fn write_failing_after_switching_folders_goes_to_the_new_folder() {
+    let scratch = Scratch::new("late-switch");
+    let blocker = scratch.0.join("file");
+    fs::write(&blocker, b"").unwrap();
+    let good = Scratch::new("late-switch-good");
+    let mut server = DWServer::new();
+    server.set_print_output(folder(&blocker.join("prints"), PrintFormat::Raw));
+    print(&mut server, b"moved");
+    flush(&mut server);
+    server.set_print_output(folder(&good.0, PrintFormat::Raw));
+    wait_until(&mut server, |d| d.printed == 1);
+    assert_eq!(good.files()[0].1, b"moved");
+    assert_eq!(server.print_diagnostics().waiting, 0);
+}
+
+#[test]
 fn protocol_resets_keep_the_open_job() {
     let mut server = port_server();
     print(&mut server, b"AB");

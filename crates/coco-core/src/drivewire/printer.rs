@@ -32,7 +32,7 @@
 //!   suspending leaves it there instead of ending it.
 
 use std::collections::VecDeque;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -213,19 +213,20 @@ impl PrintSpool {
                     self.stats.last_file = Some(path);
                     self.stats.last_error = None;
                 }
-                WriteResult::Failed { job, error } => {
+                WriteResult::Failed { job, dir, error } => {
                     self.stats.last_error = Some(error);
-                    self.retry(job);
+                    self.retry(job, &dir);
                 }
             }
         }
         self.pump();
     }
 
-    /// A failed folder job waits for the next job or output change; after a
-    /// switch away from a folder, it follows the new output instead.
-    fn retry(&mut self, job: PrintJob) {
-        if matches!(self.output, PrintOutput::Folder { .. }) {
+    /// A job that failed in `dir` waits for the next job or output change
+    /// while `dir` is still the output; after a switch, it follows the new
+    /// output instead.
+    fn retry(&mut self, job: PrintJob, dir: &Path) {
+        if matches!(&self.output, PrintOutput::Folder { dir: current, .. } if current == dir) {
             self.blocked = true;
             self.queue.push_front(job);
         } else {
