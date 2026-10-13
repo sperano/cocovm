@@ -89,6 +89,8 @@ pub(super) enum State {
     },
     /// A complete named-object request waits for the host to resolve it.
     AwaitHostNamed,
+    /// [`opcode::PRINT`] sent; awaiting its data byte (`drivewire::printer`).
+    AwaitPrintByte,
 }
 
 impl DWServer {
@@ -143,6 +145,7 @@ impl DWServer {
             State::AwaitWriteBody { buf } => self.feed_write_body(buf, byte),
             State::AwaitNameLength { create } => self.feed_name_length(create, byte),
             State::AwaitName { create, len, buf } => self.feed_name(create, len, buf, byte),
+            State::AwaitPrintByte => self.print_byte(byte),
             State::AwaitHostRead { .. } | State::AwaitHostWrite | State::AwaitHostNamed => {
                 // A disk client must wait for its reply before sending another
                 // request. An early opcode abandons the unanswered request.
@@ -221,6 +224,8 @@ impl DWServer {
             opcode::NAMEOBJ_CREATE => self.begin_named(true),
             opcode::RESET1 | opcode::RESET2 | opcode::RESET3 => self.protocol_reset(),
             opcode::TIME => self.reply_time(),
+            opcode::PRINT => self.state = State::AwaitPrintByte,
+            opcode::PRINTFLUSH => self.print_flush(),
             opcode::DWINIT => self.state = State::AwaitDwInitVersion,
             opcode::GETSTAT | opcode::SETSTAT => {
                 self.state = State::AwaitDiscard {

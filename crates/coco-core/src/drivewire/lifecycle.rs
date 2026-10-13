@@ -88,6 +88,7 @@ impl DWServer {
             }
         }
         self.step_commands();
+        self.printer.poll();
     }
 
     fn route_completion(&mut self, completion: HostCompletion) {
@@ -200,9 +201,11 @@ impl DWServer {
         self.channels.clear_counters();
     }
 
-    /// Suspend closes host services: running `dw` commands hang up. Resume
-    /// starts a fresh host generation.
+    /// Suspend closes host services: running `dw` commands hang up, and the
+    /// open print job stays with the suspend state. Resume starts a fresh
+    /// host generation.
     pub fn suspend_host(&mut self) {
+        self.printer.suspend();
         self.abort_commands();
         self.host.suspend();
         self.service_completions.clear();
@@ -212,11 +215,16 @@ impl DWServer {
 
     pub fn resume_host(&mut self) {
         self.host.resume();
+        self.printer.resume();
     }
 
     /// Cancels queued work without joining a possibly blocked worker, and
-    /// closes the named objects.
+    /// closes the named objects. The open print job ends as incomplete
+    /// unless it belongs to a suspend state; finished jobs still get written
+    /// (see `drivewire::printer`).
     pub fn stop_host(&mut self) {
+        let stamp = (self.clock)();
+        self.printer.stop(stamp);
         self.host.stop();
         self.named.clear();
         self.pending_host = None;
