@@ -9,6 +9,7 @@
 //! two VMs printing into one folder never overwrite each other, and a write
 //! that fails removes its partial file, so a retry cannot leave a duplicate.
 
+use std::borrow::Cow;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -56,10 +57,10 @@ impl PrintFormat {
         }
     }
 
-    fn encode(self, bytes: &[u8]) -> Vec<u8> {
+    fn encode(self, bytes: &[u8]) -> Cow<'_, [u8]> {
         match self {
-            Self::Text => to_host_text(bytes),
-            Self::Raw => bytes.to_vec(),
+            Self::Text => Cow::Owned(to_host_text(bytes)),
+            Self::Raw => Cow::Borrowed(bytes),
         }
     }
 }

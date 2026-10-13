@@ -16,7 +16,7 @@ const OUTPUT_COMBO_WIDTH: f32 = 130.0;
 const FORMAT_COMBO_WIDTH: f32 = 170.0;
 const BROWSE_BUTTON_WIDTH: f32 = 76.0;
 const MIN_FOLDER_FIELD_WIDTH: f32 = 80.0;
-const ROW_GAP: f32 = 4.0;
+const ROW_GAPS: f32 = 4.0;
 const OUTPUT_ROW_LABEL: &str = "Print jobs to";
 /// The output combo's accessible name — distinct from [`OUTPUT_ROW_LABEL`]'s visible text so a
 /// query for either finds exactly one node (the named-objects row's `ROW_LABEL`/`COMBO_LABEL`
@@ -115,7 +115,7 @@ fn folder_rows(ui: &mut egui::Ui, slug: &str, printer: &mut DriveWirePrinterDTO)
     let height = ui.spacing().interact_size.y;
     ui.horizontal(|ui| {
         let folder_width =
-            (ui.available_width() - BROWSE_BUTTON_WIDTH - ROW_GAP * ui.spacing().item_spacing.x)
+            (ui.available_width() - BROWSE_BUTTON_WIDTH - ROW_GAPS * ui.spacing().item_spacing.x)
                 .max(MIN_FOLDER_FIELD_WIDTH);
         let field = ui.add_sized(
             [folder_width, height],

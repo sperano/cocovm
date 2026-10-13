@@ -186,9 +186,7 @@ impl SystemBus {
     pub fn disable_drivewire(&mut self) {
         if let Some(mut dw) = self.drivewire.take() {
             dw.stop_host();
-            while let Some(job) = dw.take_port_print_job() {
-                self.bitbanger.print_bytes(&job.bytes);
-            }
+            print_on_port(&mut dw, &mut self.bitbanger);
         }
     }
 
@@ -205,11 +203,8 @@ impl SystemBus {
     /// [`crate::drivewire::PrintOutput::PrinterPort`] to the bit-banger's
     /// printer, so both ports print on the same paper or capture file.
     pub fn deliver_drivewire_print(&mut self) {
-        let Some(dw) = self.drivewire.as_mut() else {
-            return;
-        };
-        while let Some(job) = dw.take_port_print_job() {
-            self.bitbanger.print_bytes(&job.bytes);
+        if let Some(dw) = self.drivewire.as_mut() {
+            print_on_port(dw, &mut self.bitbanger);
         }
     }
 
@@ -285,6 +280,13 @@ impl SystemBus {
         }
         let off = (addr - ROM_WINDOW_BASE) as usize;
         self.rom.get(off).copied().unwrap_or(OPEN_BUS)
+    }
+}
+
+/// Feed `dw`'s finished printer-port jobs to the bit-banger's printer.
+fn print_on_port(dw: &mut DWServer, bitbanger: &mut BitBanger) {
+    while let Some(job) = dw.take_port_print_job() {
+        bitbanger.print_bytes(&job.bytes);
     }
 }
 
