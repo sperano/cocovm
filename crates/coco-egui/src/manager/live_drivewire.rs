@@ -105,11 +105,12 @@ impl ManagerApp {
         let Some(vm) = entry.vm.as_mut() else {
             return;
         };
+        let port = drivewire::PrintOutput::PrinterPort;
+        let was_port = vm.machine.bus.drivewire.is_some() && vm.dw_print_output == port;
         let settings = crate::launch::drivewire_settings(&entry.def, &entry.slug);
         let applied = vm.apply_drivewire_settings(settings);
         let output = entry.def.drivewire.printer.output(&entry.slug);
-        let becomes_port =
-            output == drivewire::PrintOutput::PrinterPort && vm.dw_print_output != output;
+        let becomes_port = entry.def.drivewire.enabled && output == port && !was_port;
         let attached = becomes_port
             .then(|| attach_print_port_sink(vm, &entry.def, &entry.slug))
             .flatten();
@@ -125,7 +126,8 @@ impl ManagerApp {
 }
 
 /// `[ports].serial` attaches its sink only at launch. Called when the
-/// printer port becomes the print output of a running VM: if its bit-banger
+/// printer port becomes the active print output of a running VM (the
+/// output changed to it, or DriveWire was turned on): if its bit-banger
 /// feeds nothing, this attaches that sink now, so the jobs don't print into
 /// nothing. Only on that change, so a later save never restarts a capture
 /// the user stopped from the Printer menu (which would truncate its file).
@@ -135,7 +137,7 @@ fn attach_print_port_sink(
     def: &machine_def::MachineDef,
     slug: &str,
 ) -> Option<String> {
-    if !def.drivewire.enabled || vm.has_printer_sink() {
+    if vm.has_printer_sink() {
         return None;
     }
     let prior = vm.cart_error.take();

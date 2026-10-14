@@ -459,3 +459,19 @@ fn a_later_save_does_not_restart_a_capture_stopped_from_the_menu() {
     assert!(!vm(&manager).has_printer_sink());
     assert_eq!(vm(&manager).cart_error.as_deref(), Some("earlier error"));
 }
+
+#[test]
+fn enabling_drivewire_with_a_printer_port_output_attaches_the_ports_sink() {
+    let dir = TempDir::new("live-dw-printer-enable");
+    let mut manager = running_manager(dir.path(), None);
+    manager.entries[0].def.drivewire.printer.output = machine_def::PrintOutputDTO::PrinterPort;
+    manager.apply_live_drivewire(0);
+    assert!(!vm(&manager).has_printer_sink());
+
+    let def = &mut manager.entries[0].def;
+    def.ports.serial = Some(machine_def::SerialDTO::Dmp130);
+    def.drivewire.enabled = true;
+    manager.apply_live_drivewire(0);
+
+    assert!(vm(&manager).has_printer_sink());
+}
