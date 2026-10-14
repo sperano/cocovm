@@ -8,6 +8,8 @@
 //! already reached the disk. A file name is claimed with `create_new`, so
 //! two VMs printing into one folder never overwrite each other, and a write
 //! that fails removes its partial file, so a retry cannot leave a duplicate.
+//! When that removal fails too, the job keeps the file's path and its next
+//! write into that folder removes it first, or fails again.
 
 use std::borrow::Cow;
 use std::fs::{self, OpenOptions};
@@ -97,8 +99,14 @@ pub(super) fn file_stem(job: &PrintJob) -> String {
 }
 
 /// Writes `job` into a new file in `dir`, creating `dir` itself (not its
-/// parents) when missing. Returns the file written.
-pub(super) fn write_job(job: &PrintJob, dir: &Path, format: PrintFormat) -> io::Result<PathBuf> {
+/// parents) when missing. Returns the file written. A failed write that
+/// cannot remove its partial file records it in [`PrintJob::leftover`].
+pub(super) fn write_job(
+    job: &mut PrintJob,
+    dir: &Path,
+    format: PrintFormat,
+) -> io::Result<PathBuf> {
+    remove_leftover(job, dir)?;
     match fs::create_dir(dir) {
         Err(error) if error.kind() != io::ErrorKind::AlreadyExists => return Err(error),
         _ => {}
@@ -120,8 +128,17 @@ pub(super) fn write_job(job: &PrintJob, dir: &Path, format: PrintFormat) -> io::
         };
         if let Err(error) = file.write_all(&bytes).and_then(|()| file.sync_all()) {
             drop(file);
-            let _ = fs::remove_file(&path);
-            return Err(error);
+            return Err(match fs::remove_file(&path) {
+                Ok(()) => error,
+                Err(remove_error) => {
+                    let message = format!(
+                        "{error}; partial file {} not removed: {remove_error}",
+                        path.display()
+                    );
+                    job.leftover = Some(path);
+                    io::Error::new(error.kind(), message)
+                }
+            });
         }
         return Ok(path);
     }
@@ -131,6 +148,25 @@ pub(super) fn write_job(job: &PrintJob, dir: &Path, format: PrintFormat) -> io::
     ))
 }
 
+/// Removes the partial file an earlier failed write of `job` left behind.
+/// While it is still in `dir`, writing the job there again would leave a
+/// second, complete file beside it, so the write fails instead. A file left
+/// in another folder cannot duplicate a job written to `dir`; that folder
+/// keeps it, as the earlier error reported.
+fn remove_leftover(job: &mut PrintJob, dir: &Path) -> io::Result<()> {
+    let Some(leftover) = job.leftover.take() else {
+        return Ok(());
+    };
+    match fs::remove_file(&leftover) {
+        Err(error) if error.kind() != io::ErrorKind::NotFound && leftover.parent() == Some(dir) => {
+            let message = format!("partial file {} not removed: {error}", leftover.display());
+            job.leftover = Some(leftover);
+            Err(io::Error::new(error.kind(), message))
+        }
+        _ => Ok(()),
+    }
+}
+
 struct WriteRequest {
     job: PrintJob,
     dir: PathBuf,
@@ -138,12 +174,13 @@ struct WriteRequest {
 }
 
 /// A folder write's outcome. A failed job comes back for another attempt,
-/// with the folder it failed in.
+/// with the folder and format it failed in.
 pub(super) enum WriteResult {
     Written(PathBuf),
     Failed {
         job: PrintJob,
         dir: PathBuf,
+        format: PrintFormat,
         error: String,
     },
 }
@@ -192,13 +229,14 @@ impl FolderWriter {
     }
 }
 
-fn run(request: WriteRequest) -> WriteResult {
-    match write_job(&request.job, &request.dir, request.format) {
+fn run(mut request: WriteRequest) -> WriteResult {
+    match write_job(&mut request.job, &request.dir, request.format) {
         Ok(path) => WriteResult::Written(path),
         Err(error) => WriteResult::Failed {
             error: format!("{}: {error}", request.dir.display()),
             job: request.job,
             dir: request.dir,
+            format: request.format,
         },
     }
 }

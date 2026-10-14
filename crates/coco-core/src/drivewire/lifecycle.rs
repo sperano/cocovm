@@ -220,8 +220,8 @@ impl DWServer {
 
     /// Cancels queued work without joining a possibly blocked worker, and
     /// closes the named objects. The open print job ends as incomplete
-    /// unless it belongs to a suspend state; finished jobs still get written
-    /// (see `drivewire::printer`).
+    /// unless it belongs to a suspend state; finished jobs still go to the
+    /// configured output (see `drivewire::printer`).
     pub fn stop_host(&mut self) {
         let stamp = (self.clock)();
         self.printer.stop(stamp);

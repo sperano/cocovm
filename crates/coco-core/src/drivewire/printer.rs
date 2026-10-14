@@ -73,6 +73,9 @@ pub struct PrintJob {
     /// Host time when the part ended.
     pub stamp: DWTime,
     pub bytes: Vec<u8>,
+    /// The partial file a failed folder write left behind because it could
+    /// not be removed; the next write of this job removes it first.
+    pub(super) leftover: Option<PathBuf>,
 }
 
 /// Counters and state for the settings pane and status bar.
@@ -145,6 +148,9 @@ impl PrintSpool {
             if end != JobEnd::Split && self.parts > 0 {
                 self.ended += 1;
                 self.parts = 0;
+                if end == JobEnd::Unterminated {
+                    self.stats.incomplete += 1;
+                }
             }
             return;
         }
@@ -155,6 +161,7 @@ impl PrintSpool {
             end,
             stamp,
             bytes: std::mem::take(&mut self.open),
+            leftover: None,
         };
         if end != JobEnd::Split {
             self.ended += 1;
@@ -213,20 +220,27 @@ impl PrintSpool {
                     self.stats.last_file = Some(path);
                     self.stats.last_error = None;
                 }
-                WriteResult::Failed { job, dir, error } => {
+                WriteResult::Failed {
+                    job,
+                    dir,
+                    format,
+                    error,
+                } => {
                     self.stats.last_error = Some(error);
-                    self.retry(job, &dir);
+                    self.retry(job, &dir, format);
                 }
             }
         }
         self.pump();
     }
 
-    /// A job that failed in `dir` waits for the next job or output change
-    /// while `dir` is still the output; after a switch, it follows the new
-    /// output instead.
-    fn retry(&mut self, job: PrintJob, dir: &Path) {
-        if matches!(&self.output, PrintOutput::Folder { dir: current, .. } if current == dir) {
+    /// A job that failed in `dir` as `format` waits for the next job or
+    /// output change while that is still the output; after a switch (of
+    /// folder or format), it follows the new output instead.
+    fn retry(&mut self, job: PrintJob, dir: &Path, format: PrintFormat) {
+        if matches!(&self.output, PrintOutput::Folder { dir: current, format: current_format }
+            if current == dir && *current_format == format)
+        {
             self.blocked = true;
             self.queue.push_front(job);
         } else {

@@ -91,12 +91,21 @@ fn wait_until(server: &mut DWServer, done: impl Fn(&PrintDiagnostics) -> bool) {
     }
 }
 
-fn wait_for_files(dir: &Path, count: usize) -> Vec<(String, Vec<u8>)> {
+/// Waits until `dir` holds exactly `expected`, contents included: the
+/// writer creates each file before it writes the bytes.
+fn wait_for_files(dir: &Path, expected: &[(&str, &[u8])]) {
     let start = Instant::now();
     loop {
         let files = files_in(dir);
-        if files.len() >= count {
-            return files;
+        let matches = files.len() == expected.len()
+            && files
+                .iter()
+                .zip(expected)
+                .all(|((name, bytes), (want_name, want_bytes))| {
+                    name == want_name && bytes == want_bytes
+                });
+        if matches {
+            return;
         }
         assert!(start.elapsed() < WAIT_LIMIT, "{files:?}");
         std::thread::sleep(WAIT_STEP);
@@ -314,6 +323,47 @@ fn write_failing_after_switching_folders_goes_to_the_new_folder() {
 }
 
 #[test]
+fn write_failing_after_switching_format_follows_the_new_format() {
+    let scratch = Scratch::new("late-format");
+    let mut spool = PrintSpool::default();
+    spool.set_output(folder(&scratch.0, PrintFormat::Raw));
+    let job = PrintJob {
+        number: 1,
+        part: 1,
+        end: JobEnd::Flushed,
+        stamp: crate::drivewire::default_clock(),
+        bytes: b"a\r".to_vec(),
+        leftover: None,
+    };
+    // A write sent as text failed after the output switched to raw.
+    spool.retry(job, &scratch.0, PrintFormat::Text);
+    assert!(!spool.blocked);
+    let start = Instant::now();
+    while spool.stats.printed == 0 {
+        assert!(start.elapsed() < WAIT_LIMIT, "{:?}", spool.diagnostics());
+        std::thread::sleep(WAIT_STEP);
+        spool.poll();
+    }
+    assert_eq!(scratch.files()[0].1, b"a\r");
+    assert!(scratch.files()[0].0.ends_with(".prn"));
+}
+
+#[test]
+fn reset_right_after_a_split_counts_the_job_as_incomplete() {
+    let mut server = port_server();
+    print(&mut server, &vec![b'x'; PRINT_JOB_PART_BYTES]);
+    assert_eq!(server.print_diagnostics().open_bytes, 0);
+    server.machine_reset();
+    assert_eq!(server.print_diagnostics().incomplete, 1);
+    print(&mut server, b"next");
+    flush(&mut server);
+    let jobs: Vec<_> = std::iter::from_fn(|| server.take_port_print_job())
+        .map(|job| (job.number, job.part))
+        .collect();
+    assert_eq!(jobs, [(1, 1), (2, 1)]);
+}
+
+#[test]
 fn protocol_resets_keep_the_open_job() {
     let mut server = port_server();
     print(&mut server, b"AB");
@@ -351,17 +401,12 @@ fn stop_writes_the_incomplete_job_after_the_session_ends() {
     print(&mut server, b"half");
     server.stop_host();
     drop(server);
-    let files = wait_for_files(&scratch.0, 2);
-    assert_eq!(
-        files[0],
-        ("print-19900101-000000-job0001.prn".into(), b"done".to_vec())
-    );
-    assert_eq!(
-        files[1],
-        (
-            "print-19900101-000000-job0002-incomplete.prn".into(),
-            b"half".to_vec()
-        )
+    wait_for_files(
+        &scratch.0,
+        &[
+            ("print-19900101-000000-job0001.prn", b"done"),
+            ("print-19900101-000000-job0002-incomplete.prn", b"half"),
+        ],
     );
 }
 
