@@ -107,8 +107,13 @@ impl ManagerApp {
         };
         let settings = crate::launch::drivewire_settings(&entry.def, &entry.slug);
         let applied = vm.apply_drivewire_settings(settings);
-        let attached = attach_print_port_sink(vm, &entry.def, &entry.slug);
-        vm.set_drivewire_printer(entry.def.drivewire.printer.output(&entry.slug));
+        let output = entry.def.drivewire.printer.output(&entry.slug);
+        let becomes_port =
+            output == drivewire::PrintOutput::PrinterPort && vm.dw_print_output != output;
+        let attached = becomes_port
+            .then(|| attach_print_port_sink(vm, &entry.def, &entry.slug))
+            .flatten();
+        vm.set_drivewire_printer(output);
         entry.launch_error = match entry.def.drivewire.share_table(&entry.slug) {
             Ok(shares) => {
                 vm.set_drivewire_shares(shares);
@@ -119,21 +124,23 @@ impl ManagerApp {
     }
 }
 
-/// `[ports].serial` attaches its sink only at launch. When the printer port
-/// becomes the print output of a running VM whose bit-banger feeds nothing,
-/// this attaches that sink now, so the jobs don't print into nothing.
-/// Returns the attach failure, if any.
+/// `[ports].serial` attaches its sink only at launch. Called when the
+/// printer port becomes the print output of a running VM: if its bit-banger
+/// feeds nothing, this attaches that sink now, so the jobs don't print into
+/// nothing. Only on that change, so a later save never restarts a capture
+/// the user stopped from the Printer menu (which would truncate its file).
+/// Returns the attach failure; an earlier [`CocoApp::cart_error`] stays.
 fn attach_print_port_sink(
     vm: &mut CocoApp,
     def: &machine_def::MachineDef,
     slug: &str,
 ) -> Option<String> {
-    let printer_port = def.drivewire.printer.output == machine_def::PrintOutputDTO::PrinterPort;
-    if !def.drivewire.enabled || !printer_port || vm.has_printer_sink() {
+    if !def.drivewire.enabled || vm.has_printer_sink() {
         return None;
     }
+    let prior = vm.cart_error.take();
     crate::launch::mount_serial(vm, def.ports.serial, slug);
-    vm.cart_error.take()
+    std::mem::replace(&mut vm.cart_error, prior)
 }
 
 #[cfg(test)]

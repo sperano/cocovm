@@ -439,3 +439,23 @@ fn a_printer_port_output_keeps_a_printer_attached_from_the_menu() {
         Some(coco_core::dmp::DmpModel::Dmp105)
     );
 }
+
+#[test]
+fn a_later_save_does_not_restart_a_capture_stopped_from_the_menu() {
+    let dir = TempDir::new("live-dw-printer-stopped");
+    let mut manager = running_manager(dir.path(), None);
+    let def = &mut manager.entries[0].def;
+    def.drivewire.enabled = true;
+    def.ports.serial = Some(machine_def::SerialDTO::Dmp130);
+    def.drivewire.printer.output = machine_def::PrintOutputDTO::PrinterPort;
+    manager.apply_live_drivewire(0);
+    let running = manager.entries[0].vm.as_mut().unwrap();
+    running.stop_print_capture();
+    running.cart_error = Some("earlier error".to_string());
+
+    manager.entries[0].def.drivewire.hdbdos_mode = true;
+    manager.apply_live_drivewire(0);
+
+    assert!(!vm(&manager).has_printer_sink());
+    assert_eq!(vm(&manager).cart_error.as_deref(), Some("earlier error"));
+}
