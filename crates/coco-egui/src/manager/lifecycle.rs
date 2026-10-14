@@ -121,10 +121,12 @@ impl ManagerApp {
         if self.entries[index].suspended {
             // Resume restores DriveWire from the snapshot. Startup images may
             // have changed or disappeared since suspension and must not block it.
-            // Shares are configuration, not session media, so they carry over.
+            // Shares and the print output are configuration, not session
+            // media, so they carry over.
             def.drivewire = machine_def::DriveWireDTO {
                 shares: std::mem::take(&mut def.drivewire.shares),
                 named_objects: def.drivewire.named_objects.take(),
+                printer: std::mem::take(&mut def.drivewire.printer),
                 ..machine_def::DriveWireDTO::default()
             };
         }
@@ -299,10 +301,12 @@ impl ManagerApp {
         self.print_action("Stopping", index);
         self.fold_runtime_into_def(index);
         let suspended = self.entries[index].suspended;
+        let discard_error = self.discard_suspend_state(index);
         if let Some(vm) = self.entries[index].vm.as_mut() {
-            // The state file holding a suspended VM's open print job is
-            // discarded below, so the stop ends that job like any power-off.
-            if suspended {
+            // A suspended VM's open print job belongs to its state file. Once
+            // that is gone, the stop ends the job like any power-off; while
+            // it remains, the job stays there for a later resume.
+            if suspended && discard_error.is_none() {
                 vm.resume_drivewire_host();
             }
             vm.stop_drivewire_host();
@@ -311,39 +315,39 @@ impl ManagerApp {
             .vm
             .take()
             .and_then(|mut vm| vm.flush_media().err());
-        let entry = &mut self.entries[index];
-        let mut discard_error = None;
-        if let Some(root) = &self.artifacts_root {
-            let dir = root.join(&entry.slug);
-            let state_path = dir.join(SUSPEND_STATE_FILE);
-            match fs::remove_file(&state_path) {
-                Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
-                    discard_error =
-                        Some(format!("could not discard {}: {e}", state_path.display()));
-                }
-                _ => {
-                    entry.suspended = false;
-                    entry.invalidate_thumbnail();
-                    if let Err(e) = fs::remove_file(dir.join(THUMBNAIL_FILE))
-                        && e.kind() != std::io::ErrorKind::NotFound
-                    {
-                        tracing::warn!(
-                            "could not remove {THUMBNAIL_FILE} for '{}': {e}",
-                            entry.slug
-                        );
-                    }
-                }
-            }
-        } else {
-            // No artifact root means Suspend never wrote a state file or
-            // thumbnail, so there's nothing on disk to reconcile.
-            entry.suspended = false;
-            entry.invalidate_thumbnail();
-        }
-        entry.launch_error = match (flush_error, discard_error) {
+        self.entries[index].launch_error = match (flush_error, discard_error) {
             (Some(flush), Some(discard)) => Some(format!("{flush}\n{discard}")),
             (either, None) | (None, either) => either,
         };
+    }
+
+    /// Discards `entries[index]`'s [`SUSPEND_STATE_FILE`] and its preview,
+    /// leaving the entry no longer Suspended. A state file that can't be
+    /// removed keeps the entry Suspended and returns the error.
+    fn discard_suspend_state(&mut self, index: usize) -> Option<String> {
+        let entry = &mut self.entries[index];
+        // No artifact root means Suspend never wrote a state file or
+        // thumbnail, so there's nothing on disk to reconcile.
+        if let Some(root) = &self.artifacts_root {
+            let dir = root.join(&entry.slug);
+            let state_path = dir.join(SUSPEND_STATE_FILE);
+            if let Err(e) = fs::remove_file(&state_path)
+                && e.kind() != std::io::ErrorKind::NotFound
+            {
+                return Some(format!("could not discard {}: {e}", state_path.display()));
+            }
+            if let Err(e) = fs::remove_file(dir.join(THUMBNAIL_FILE))
+                && e.kind() != std::io::ErrorKind::NotFound
+            {
+                tracing::warn!(
+                    "could not remove {THUMBNAIL_FILE} for '{}': {e}",
+                    entry.slug
+                );
+            }
+        }
+        entry.suspended = false;
+        entry.invalidate_thumbnail();
+        None
     }
 
     /// `entries[index]`'s [`SUSPEND_STATE_FILE`] path — `None` when no

@@ -386,3 +386,56 @@ fn an_unrelated_drivewire_save_leaves_the_printer_output_as_configured() {
         }
     );
 }
+
+#[test]
+fn a_printer_port_output_attaches_the_ports_sink_the_vm_launched_without() {
+    let dir = TempDir::new("live-dw-printer-port");
+    let mut manager = running_manager(dir.path(), None);
+    assert!(!vm(&manager).has_printer_sink());
+    let def = &mut manager.entries[0].def;
+    def.drivewire.enabled = true;
+    def.ports.serial = Some(machine_def::SerialDTO::Dmp130);
+    def.drivewire.printer.output = machine_def::PrintOutputDTO::PrinterPort;
+
+    manager.apply_live_drivewire(0);
+
+    assert!(manager.entries[0].launch_error.is_none());
+    let paper = vm(&manager).machine.bus.bitbanger.printer_handle();
+    assert_eq!(
+        paper.map(|paper| paper.model()),
+        Some(coco_core::dmp::DmpModel::Dmp130)
+    );
+    assert_eq!(
+        vm(&manager)
+            .machine
+            .bus
+            .drivewire
+            .as_ref()
+            .unwrap()
+            .print_output(),
+        &PrintOutput::PrinterPort
+    );
+}
+
+#[test]
+fn a_printer_port_output_keeps_a_printer_attached_from_the_menu() {
+    let dir = TempDir::new("live-dw-printer-keep");
+    let mut manager = running_manager(dir.path(), None);
+    manager.entries[0]
+        .vm
+        .as_mut()
+        .unwrap()
+        .attach_printer(coco_core::dmp::DmpModel::Dmp105);
+    let def = &mut manager.entries[0].def;
+    def.drivewire.enabled = true;
+    def.ports.serial = Some(machine_def::SerialDTO::Dmp130);
+    def.drivewire.printer.output = machine_def::PrintOutputDTO::PrinterPort;
+
+    manager.apply_live_drivewire(0);
+
+    let paper = vm(&manager).machine.bus.bitbanger.printer_handle();
+    assert_eq!(
+        paper.map(|paper| paper.model()),
+        Some(coco_core::dmp::DmpModel::Dmp105)
+    );
+}

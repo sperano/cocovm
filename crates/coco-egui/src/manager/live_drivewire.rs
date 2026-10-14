@@ -8,7 +8,7 @@ use coco_core::drivewire::share::ShareStatus;
 use eframe::egui;
 
 use super::{DETAIL_SECTION_GAP, MachineEntry, ManagerApp};
-use crate::{new_vm, titled_group};
+use crate::{CocoApp, machine_def, new_vm, titled_group};
 
 /// The switches sit bare — the tab's own label already says "DriveWire".
 pub(super) fn draw_drivewire_tab(
@@ -107,15 +107,33 @@ impl ManagerApp {
         };
         let settings = crate::launch::drivewire_settings(&entry.def, &entry.slug);
         let applied = vm.apply_drivewire_settings(settings);
+        let attached = attach_print_port_sink(vm, &entry.def, &entry.slug);
         vm.set_drivewire_printer(entry.def.drivewire.printer.output(&entry.slug));
         entry.launch_error = match entry.def.drivewire.share_table(&entry.slug) {
             Ok(shares) => {
                 vm.set_drivewire_shares(shares);
-                applied.err()
+                applied.err().or(attached)
             }
             Err(error) => Some(error),
         };
     }
+}
+
+/// `[ports].serial` attaches its sink only at launch. When the printer port
+/// becomes the print output of a running VM whose bit-banger feeds nothing,
+/// this attaches that sink now, so the jobs don't print into nothing.
+/// Returns the attach failure, if any.
+fn attach_print_port_sink(
+    vm: &mut CocoApp,
+    def: &machine_def::MachineDef,
+    slug: &str,
+) -> Option<String> {
+    let printer_port = def.drivewire.printer.output == machine_def::PrintOutputDTO::PrinterPort;
+    if !def.drivewire.enabled || !printer_port || vm.has_printer_sink() {
+        return None;
+    }
+    crate::launch::mount_serial(vm, def.ports.serial, slug);
+    vm.cart_error.take()
 }
 
 #[cfg(test)]

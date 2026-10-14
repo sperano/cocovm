@@ -244,11 +244,12 @@ fn plural_s(count: u64) -> &'static str {
 }
 
 /// [`PRINT_JOB_PART_BYTES`] spelled out in MiB, so the hint never drifts
-/// from the real limit.
+/// from the real limit. The core counts each part of a large job as one
+/// job (`PrintDiagnostics::printed`), and the hint says so.
 fn printer_hint() -> String {
     format!(
         "NitrOS-9 prints to /P over DriveWire. Each closed /P path is one job; jobs larger \
-         than {} MiB are written in parts.",
+         than {} MiB are written in parts, and each part counts as one job.",
         PRINT_JOB_PART_BYTES / BYTES_PER_MIB
     )
 }

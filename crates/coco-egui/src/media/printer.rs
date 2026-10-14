@@ -28,6 +28,12 @@ impl CocoApp {
         self.print_capture_path = None;
     }
 
+    /// Whether the bit-banger feeds a printer or a capture file, rather than
+    /// discarding its bytes.
+    pub(crate) fn has_printer_sink(&self) -> bool {
+        self.print_capture_path.is_some() || self.machine.bus.bitbanger.printer_handle().is_some()
+    }
+
     /// Attaches a DMP printer to the bit-banger, stopping any active print-file
     /// capture first — only one sink is live at a time. Does not open the paper window.
     pub(crate) fn attach_printer(&mut self, model: DmpModel) {

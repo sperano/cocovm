@@ -235,7 +235,7 @@ fn mount_peripherals(app: &mut CocoApp, media: Media, cartridge: Cartridge) {
 /// Wire `[ports].serial` — the built-in bit-banger serial port's host sink,
 /// distinct from the cartridge-port RS-232 Pak. Runs before
 /// `launch_machine`'s `cart_error` promotion so failures surface the same way.
-fn mount_serial(app: &mut CocoApp, serial: Option<machine_def::SerialDTO>, slug: &str) {
+pub(crate) fn mount_serial(app: &mut CocoApp, serial: Option<machine_def::SerialDTO>, slug: &str) {
     match serial {
         // Attached with the paper window closed; output accumulates and the status bar's
         // printer menu ("View Papers") shows it.

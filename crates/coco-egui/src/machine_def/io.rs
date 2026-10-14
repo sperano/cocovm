@@ -58,6 +58,7 @@ const UI_KEYS: &[&str] = &[
     "tv_overscan",
 ];
 const STATS_KEYS: &[&str] = &["runtime_secs", "starts"];
+const DRIVEWIRE_PRINTER_KEYS: &[&str] = &["output", "folder", "format"];
 
 /// Sections that nest under the top level, paired with their known-key
 /// lists, so [`warn_unknown_keys`] can recurse one level without extra
@@ -73,13 +74,38 @@ const KNOWN_SECTIONS: &[(&str, &[&str])] = &[
     ("stats", STATS_KEYS),
 ];
 
+/// Tables one level further down, as `(section, table, known keys)`, so
+/// their unknown keys warn and survive a Save like a section's do.
+const KNOWN_SUBSECTIONS: &[(&str, &str, &[&str])] =
+    &[("drivewire", "printer", DRIVEWIRE_PRINTER_KEYS)];
+
+/// `table[section][sub]`, when both are tables.
+fn subsection<'a>(table: &'a toml::Table, section: &str, sub: &str) -> Option<&'a toml::Table> {
+    table.get(section)?.as_table()?.get(sub)?.as_table()
+}
+
+/// `table`'s keys missing from `known`.
+fn unknown_keys(table: &toml::Table, known: &[&str]) -> toml::Table {
+    table
+        .iter()
+        .filter(|(key, _)| !known.contains(&key.as_str()))
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect()
+}
+
 /// Log a `tracing::warn` for every TOML key not in the known schema (top
-/// level, one level into each known section). Unknown keys are forward-compat, not fatal.
+/// level, one level into each known section, and into each known
+/// subsection). Unknown keys are forward-compat, not fatal.
 fn warn_unknown_keys(table: &toml::Table, path: &Path) {
     check_known_keys(table, TOP_LEVEL_KEYS, path, "");
     for &(section, known) in KNOWN_SECTIONS {
         if let Some(toml::Value::Table(sub)) = table.get(section) {
             check_known_keys(sub, known, path, section);
+        }
+    }
+    for &(section, sub, known) in KNOWN_SUBSECTIONS {
+        if let Some(sub_table) = subsection(table, section, sub) {
+            check_known_keys(sub_table, known, path, &format!("{section}.{sub}"));
         }
     }
 }
@@ -109,36 +135,39 @@ fn extract_unknown(table: &toml::Table) -> toml::Table {
     }
     for &(section, known) in KNOWN_SECTIONS {
         if let Some(toml::Value::Table(sub)) = table.get(section) {
-            let mut extra = toml::Table::new();
-            for (key, value) in sub {
-                if !known.contains(&key.as_str()) {
-                    extra.insert(key.clone(), value.clone());
-                }
-            }
+            let extra = unknown_keys(sub, known);
             if !extra.is_empty() {
                 unknown.insert(section.to_string(), toml::Value::Table(extra));
             }
+        }
+    }
+    for &(section, sub, known) in KNOWN_SUBSECTIONS {
+        let Some(sub_table) = subsection(table, section, sub) else {
+            continue;
+        };
+        let extra = unknown_keys(sub_table, known);
+        if extra.is_empty() {
+            continue;
+        }
+        let entry = unknown
+            .entry(section)
+            .or_insert_with(|| toml::Value::Table(toml::Table::new()));
+        if let toml::Value::Table(section_extra) = entry {
+            section_extra.insert(sub.to_string(), toml::Value::Table(extra));
         }
     }
     unknown
 }
 
 /// Merge `unknown` (an [`extract_unknown`]-shaped table) into `table` so
-/// keys this build ignored survive a Save. Section entries merge key-by-key
-/// into the existing sub-table rather than overwriting it.
+/// keys this build ignored survive a Save. A table merges key-by-key into
+/// the table already at its place, at every depth, rather than overwriting
+/// it.
 fn merge_unknown(table: &mut toml::Table, unknown: &toml::Table) {
     for (key, value) in unknown {
-        let is_known_section = KNOWN_SECTIONS.iter().any(|&(section, _)| section == key);
-        match (is_known_section, value) {
-            (true, toml::Value::Table(extra)) => {
-                let entry = table
-                    .entry(key.clone())
-                    .or_insert_with(|| toml::Value::Table(toml::Table::new()));
-                if let toml::Value::Table(sub) = entry {
-                    for (extra_key, extra_value) in extra {
-                        sub.insert(extra_key.clone(), extra_value.clone());
-                    }
-                }
+        match (table.get_mut(key), value) {
+            (Some(toml::Value::Table(sub)), toml::Value::Table(extra)) => {
+                merge_unknown(sub, extra);
             }
             _ => {
                 table.insert(key.clone(), value.clone());
