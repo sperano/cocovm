@@ -166,9 +166,9 @@ impl PrintSpool {
         if end != JobEnd::Split {
             self.ended += 1;
             self.parts = 0;
-        }
-        if end == JobEnd::Unterminated {
-            self.stats.incomplete += 1;
+            if end == JobEnd::Unterminated {
+                self.stats.incomplete += 1;
+            }
         }
         self.deliver(job);
     }
