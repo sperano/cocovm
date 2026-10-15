@@ -475,3 +475,46 @@ fn enabling_drivewire_with_a_printer_port_output_attaches_the_ports_sink() {
 
     assert!(vm(&manager).has_printer_sink());
 }
+
+/// A running VM whose print output is already the printer port, with no
+/// `[ports].serial` sink and a pending retry, as a failed live attach of
+/// the file sink leaves it. The file sink itself can't be made to fail here:
+/// it resolves under the real data directory.
+fn manager_with_a_pending_port_sink(dir: &Path) -> ManagerApp {
+    let mut manager = running_manager(dir, None);
+    let def = &mut manager.entries[0].def;
+    def.drivewire.enabled = true;
+    def.drivewire.printer.output = machine_def::PrintOutputDTO::PrinterPort;
+    manager.apply_live_drivewire(0);
+    let running = manager.entries[0].vm.as_mut().unwrap();
+    assert!(!running.has_printer_sink());
+    running.dw_port_sink_pending = true;
+    manager.entries[0].def.ports.serial = Some(machine_def::SerialDTO::Dmp130);
+    manager
+}
+
+#[test]
+fn a_failed_port_sink_attach_is_retried_on_the_next_save() {
+    let dir = TempDir::new("live-dw-printer-retry");
+    let mut manager = manager_with_a_pending_port_sink(dir.path());
+
+    manager.entries[0].def.drivewire.hdbdos_mode = true;
+    manager.apply_live_drivewire(0);
+
+    assert!(vm(&manager).has_printer_sink());
+    assert!(!vm(&manager).dw_port_sink_pending);
+}
+
+#[test]
+fn a_capture_stopped_from_the_menu_ends_a_pending_retry() {
+    let dir = TempDir::new("live-dw-printer-retry-stopped");
+    let mut manager = manager_with_a_pending_port_sink(dir.path());
+    let running = manager.entries[0].vm.as_mut().unwrap();
+    running.start_print_capture(dir.path().join("menu.txt"));
+    running.stop_print_capture();
+
+    manager.entries[0].def.drivewire.hdbdos_mode = true;
+    manager.apply_live_drivewire(0);
+
+    assert!(!vm(&manager).has_printer_sink());
+}

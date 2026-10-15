@@ -104,6 +104,11 @@ pub(crate) struct CocoApp {
     /// (host-only state, dropped by the snapshot round trip), so a Load
     /// State reinstalls this.
     pub(crate) dw_print_output: drivewire::PrintOutput,
+    /// Whether the printer port is this VM's print output but attaching its
+    /// `[ports].serial` sink live failed, so the next DriveWire save retries
+    /// it. Any sink attached afterwards, from the Printer menu or a retry,
+    /// clears it, so a capture the user then stops stays stopped.
+    pub(crate) dw_port_sink_pending: bool,
     /// This VM's identity in cross-VM file leases.
     pub(crate) lease_owner: drivewire::share::LeaseOwner,
     /// Source path of the mounted cassette tape (.cas), if any — the
@@ -357,6 +362,7 @@ impl CocoApp {
             dw_startup: std::array::from_fn(|_| None),
             dw_shares: drivewire::share::ShareTable::default(),
             dw_print_output: drivewire::PrintOutput::default(),
+            dw_port_sink_pending: false,
             lease_owner: drivewire::share::LeaseOwner::new(),
             tape_path: None,
             save_tape_wav,

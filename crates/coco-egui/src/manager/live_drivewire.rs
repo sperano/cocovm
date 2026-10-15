@@ -110,10 +110,12 @@ impl ManagerApp {
         let settings = crate::launch::drivewire_settings(&entry.def, &entry.slug);
         let applied = vm.apply_drivewire_settings(settings);
         let output = entry.def.drivewire.printer.output(&entry.slug);
-        let becomes_port = entry.def.drivewire.enabled && output == port && !was_port;
-        let attached = becomes_port
+        let is_port = entry.def.drivewire.enabled && output == port;
+        let attach = is_port && (!was_port || vm.dw_port_sink_pending);
+        let attached = attach
             .then(|| attach_print_port_sink(vm, &entry.def, &entry.slug))
             .flatten();
+        vm.dw_port_sink_pending = attached.is_some();
         vm.set_drivewire_printer(output);
         entry.launch_error = match entry.def.drivewire.share_table(&entry.slug) {
             Ok(shares) => {
@@ -129,8 +131,10 @@ impl ManagerApp {
 /// printer port becomes the active print output of a running VM (the
 /// output changed to it, or DriveWire was turned on): if its bit-banger
 /// feeds nothing, this attaches that sink now, so the jobs don't print into
-/// nothing. Only on that change, so a later save never restarts a capture
-/// the user stopped from the Printer menu (which would truncate its file).
+/// nothing. Only on that change, or after that attach failed
+/// ([`CocoApp::dw_port_sink_pending`]), so a later save never restarts a
+/// capture the user stopped from the Printer menu (which would truncate its
+/// file).
 /// Returns the attach failure; an earlier [`CocoApp::cart_error`] stays.
 fn attach_print_port_sink(
     vm: &mut CocoApp,

@@ -16,6 +16,7 @@ impl CocoApp {
         {
             Ok(()) => {
                 self.print_capture_path = Some(path);
+                self.dw_port_sink_pending = false;
                 self.paper_window.detach();
             }
             Err(e) => self.cart_error = Some(format!("could not open {}: {e}", path.display())),
@@ -41,6 +42,7 @@ impl CocoApp {
             self.stop_print_capture();
         }
         let handle = self.machine.bus.bitbanger.start_printer(model);
+        self.dw_port_sink_pending = false;
         self.paper_window.resync(Some(handle));
     }
 
