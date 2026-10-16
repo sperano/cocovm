@@ -341,6 +341,13 @@ pub struct DriveWireDTO {
     /// The share named objects resolve in; see `share_dto`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub named_objects: Option<String>,
+    /// `[drivewire.printer]`; see `printer_dto`. Skipped when it's the
+    /// all-`Off` default, so an existing definition round-trips unchanged.
+    #[serde(
+        default,
+        skip_serializing_if = "super::DriveWirePrinterDTO::is_default"
+    )]
+    pub printer: super::DriveWirePrinterDTO,
 }
 
 impl DriveWireDTO {

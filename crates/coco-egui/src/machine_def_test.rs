@@ -75,6 +75,11 @@ fn full_def() -> MachineDef {
                 access: ShareAccessDTO::ReadWrite,
             }],
             named_objects: Some("games".to_string()),
+            printer: DriveWirePrinterDTO {
+                output: PrintOutputDTO::Folder,
+                folder: "prints".to_string(),
+                format: PrintFormatDTO::Raw,
+            },
         },
         peripherals: PeripheralsDTO {
             cartridge: CartridgeDTO::MPI {
@@ -484,6 +489,11 @@ hdbdos_mode = false
 disk0 = "dw0.dsk"
 future_drivewire_field = "preserve me"
 
+[drivewire.printer]
+output = "folder"
+folder = "prints"
+future_printer_field = "keep me too"
+
 [hardware]
 variant = "coco3"
 ram = "512k"
@@ -519,6 +529,11 @@ enabled = true
 hdbdos_mode = false
 disk0 = "dw0.dsk"
 future_drivewire_field = "preserve me"
+
+[drivewire.printer]
+output = "folder"
+folder = "prints"
+future_printer_field = "keep me too"
 
 [hardware]
 variant = "coco3"
@@ -561,6 +576,15 @@ future_ui_field = 42
     assert_eq!(
         table["drivewire"].get("future_drivewire_field"),
         Some(&toml::Value::String("preserve me".to_string()))
+    );
+    let printer = &table["drivewire"]["printer"];
+    assert_eq!(
+        printer.get("future_printer_field"),
+        Some(&toml::Value::String("keep me too".to_string()))
+    );
+    assert_eq!(
+        printer.get("folder"),
+        Some(&toml::Value::String("prints".to_string()))
     );
 
     // And the edit itself did take effect.

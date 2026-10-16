@@ -19,7 +19,7 @@ fn write_disk(dir: &Path, name: &str) -> PathBuf {
 }
 
 /// A started manager whose one machine boots with `disk0` on DW0, if any.
-fn running_manager(dir: &Path, disk0: Option<&Path>) -> ManagerApp {
+pub(super) fn running_manager(dir: &Path, disk0: Option<&Path>) -> ManagerApp {
     let mut def = machine_def::MachineDef::from_config(
         "DriveWire live".to_string(),
         None,
@@ -39,7 +39,7 @@ fn running_manager(dir: &Path, disk0: Option<&Path>) -> ManagerApp {
     manager
 }
 
-fn vm(manager: &ManagerApp) -> &crate::CocoApp {
+pub(super) fn vm(manager: &ManagerApp) -> &crate::CocoApp {
     manager.entries[0].vm.as_ref().expect("VM is alive")
 }
 

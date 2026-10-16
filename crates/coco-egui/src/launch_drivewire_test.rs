@@ -1,8 +1,12 @@
 use std::path::Path;
 
 use coco_core::MachineConfig;
+use coco_core::drivewire::{PrintFormat, PrintOutput};
 
-use crate::machine_def::{CartridgeDTO, DriveWireDTO, MachineDef, SlotDTO};
+use crate::machine_def::{
+    CartridgeDTO, DriveWireDTO, DriveWirePrinterDTO, MachineDef, PrintFormatDTO, PrintOutputDTO,
+    SlotDTO,
+};
 
 fn base_def() -> MachineDef {
     MachineDef::from_config(
@@ -154,4 +158,27 @@ fn enabled_drivewire_rejects_games_master_direct_or_in_mpi() {
             .expect("Games Master and DriveWire should conflict");
         assert!(err.contains("$FF41"), "unexpected error: {err}");
     }
+}
+
+#[test]
+fn a_folder_printer_setting_installs_folder_output() {
+    let dir = crate::machine_def::tests::TempDir::new("launch-drivewire-printer");
+    let image = dir.path().join("dw0.dsk");
+    std::fs::write(&image, vec![0_u8; coco_core::drivewire::SECTOR_SIZE]).unwrap();
+    let mut def = drivewire_def(&image, false);
+    let folder = dir.path().join("prints");
+    def.drivewire.printer = DriveWirePrinterDTO {
+        output: PrintOutputDTO::Folder,
+        folder: folder.display().to_string(),
+        format: PrintFormatDTO::Text,
+    };
+
+    let app = super::launch_machine(&def, "drivewire-printer").unwrap();
+    assert_eq!(
+        app.machine.bus.drivewire.as_ref().unwrap().print_output(),
+        &PrintOutput::Folder {
+            dir: folder,
+            format: PrintFormat::Text,
+        }
+    );
 }

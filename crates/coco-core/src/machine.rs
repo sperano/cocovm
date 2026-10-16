@@ -311,8 +311,9 @@ impl Machine {
     /// CPU's.
     pub fn reset(&mut self) {
         if let Some(dw) = self.bus.drivewire.as_mut() {
-            dw.reset_session();
+            dw.machine_reset();
         }
+        self.bus.deliver_drivewire_print();
         self.artifact_phase.select_for_reset(self.config.variant);
         self.cpu.reset(&mut self.bus);
         self.bus.cart.reset();

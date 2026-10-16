@@ -19,7 +19,8 @@
 //! serial channels live in [`channel`] (state and queues) and [`serial`]
 //! (wire requests and the host-side `channel_*` API); the NitrOS-9 `dw`
 //! command service on those channels lives in [`command`], per-drive
-//! media descriptions in [`media`], and named objects in [`named`].
+//! media descriptions in [`media`], named objects in [`named`], and the
+//! print spool in [`printer`].
 
 use std::collections::VecDeque;
 
@@ -32,6 +33,7 @@ mod image;
 mod lifecycle;
 mod media;
 mod named;
+mod printer;
 mod protocol;
 mod serial;
 pub use channel::{
@@ -44,6 +46,10 @@ pub use named::{
     MAX_NAMED_OBJECTS, NAMED_DRIVE_FIRST, NAMED_FAILURE, NamedObjectInfo, NamedRestoreError,
     NamedRestoreFailure,
 };
+pub use printer::{
+    JobEnd, PRINT_JOB_PART_BYTES, PRINT_QUEUE_JOBS, PrintDiagnostics, PrintFormat, PrintJob,
+    PrintOutput,
+};
 pub mod share;
 mod transfer;
 
@@ -55,6 +61,7 @@ use host::HostCompletion;
 use host::HostExecutor;
 use lifecycle::PendingHost;
 use named::NamedObjects;
+use printer::PrintSpool;
 use protocol::State;
 use share::ShareSession;
 
@@ -174,6 +181,14 @@ pub mod opcode {
     /// counted as unknown-channel operations.
     pub const FASTWRITE_BASE: u8 = 0x80;
     pub const FASTWRITE_LAST: u8 = 0x9F;
+
+    /// Add a byte to the print buffer: 1-byte payload (the byte), no reply.
+    /// DriveWire specification "Printing"; `DWDefs.java` `OP_PRINT`. See
+    /// `drivewire::printer`.
+    pub const PRINT: u8 = 0x50;
+    /// Print the buffered job: no payload, no reply. `DWDefs.java`
+    /// `OP_PRINTFLUSH`.
+    pub const PRINTFLUSH: u8 = 0x46;
 }
 
 /// [`opcode::DWINIT`]'s reply byte: the DriveWire protocol version this
@@ -327,6 +342,11 @@ pub struct DWServer {
     /// skipped; [`DWServer::reattach_named_objects`] reopens them.
     #[serde(default)]
     named: NamedObjects,
+    /// The open print job; queued jobs and the output are skipped (see
+    /// `drivewire::printer`). `#[serde(default)]` loads older save states
+    /// with no open job.
+    #[serde(default)]
+    printer: PrintSpool,
     /// Set on a successful [`opcode::WRITE`]/[`opcode::REWRITE`]; cleared by
     /// [`DWServer::mount`]/[`DWServer::eject`].
     dirty: [bool; DRIVE_COUNT],
@@ -377,6 +397,7 @@ impl DWServer {
             commands: Commands::default(),
             media: MediaTable::default(),
             named: NamedObjects::default(),
+            printer: PrintSpool::default(),
             dirty: [false; DRIVE_COUNT],
             reply: VecDeque::new(),
             state: State::Idle,

@@ -268,7 +268,9 @@ fn session_rows(ui: &mut egui::Ui, session: &ShareStatus) {
     }
 }
 
-fn folder_dialog(path: &str) -> rfd::FileDialog {
+/// A folder picker pre-seeded at `path` when it already names a directory
+/// — shared with `drivewire_printer_form`'s own folder row.
+pub(super) fn folder_dialog(path: &str) -> rfd::FileDialog {
     let dialog = rfd::FileDialog::new();
     let path = Path::new(path);
     if path.is_dir() {

@@ -3,11 +3,12 @@
 
 use coco_core::drivewire;
 use coco_core::drivewire::NamedObjectInfo;
+use coco_core::drivewire::PrintDiagnostics;
 use coco_core::drivewire::share::ShareStatus;
 use eframe::egui;
 
 use super::{DETAIL_SECTION_GAP, MachineEntry, ManagerApp};
-use crate::{new_vm, titled_group};
+use crate::{CocoApp, machine_def, new_vm, titled_group};
 
 /// The switches sit bare — the tab's own label already says "DriveWire".
 pub(super) fn draw_drivewire_tab(
@@ -19,6 +20,7 @@ pub(super) fn draw_drivewire_tab(
     let session = entry.share_status();
     let objects = entry.named_objects();
     let guest_drives = entry.guest_drive_notes();
+    let printer = entry.print_diagnostics();
     form.drivewire_rows(ui);
     ui.add_space(DETAIL_SECTION_GAP);
     titled_group(ui, "Disk images", |ui| {
@@ -31,6 +33,10 @@ pub(super) fn draw_drivewire_tab(
     titled_group(ui, "Host shares", |ui| {
         form.drivewire_share_rows(ui, slug, session.as_ref(), &objects);
     });
+    ui.add_space(DETAIL_SECTION_GAP);
+    titled_group(ui, "Printer", |ui| {
+        form.drivewire_printer_rows(ui, slug, printer.as_ref());
+    });
 }
 
 impl MachineEntry {
@@ -38,6 +44,14 @@ impl MachineEntry {
     pub(super) fn share_status(&self) -> Option<ShareStatus> {
         let dw = self.vm.as_ref()?.machine.bus.drivewire.as_ref()?;
         Some(dw.share_session().status())
+    }
+
+    /// The running VM's print diagnostics, for the DriveWire tab's Printer
+    /// status lines. `None` without a running server, like
+    /// [`Self::share_status`].
+    pub(super) fn print_diagnostics(&self) -> Option<PrintDiagnostics> {
+        let dw = self.vm.as_ref()?.machine.bus.drivewire.as_ref()?;
+        Some(dw.print_diagnostics())
     }
 
     /// The running VM's named objects, for the DriveWire tab.
@@ -80,7 +94,8 @@ impl MachineEntry {
 }
 
 impl ManagerApp {
-    /// Push `entries[index]`'s saved `[drivewire]`, shares included, into its Running VM.
+    /// Push `entries[index]`'s saved `[drivewire]`, shares and printer included, into its
+    /// Running VM.
     /// Failures surface in `launch_error`; success clears it.
     pub(super) fn apply_live_drivewire(&mut self, index: usize) {
         let entry = &mut self.entries[index];
@@ -90,18 +105,54 @@ impl ManagerApp {
         let Some(vm) = entry.vm.as_mut() else {
             return;
         };
+        let port = drivewire::PrintOutput::PrinterPort;
+        let was_port = vm.machine.bus.drivewire.is_some() && vm.dw_print_output == port;
         let settings = crate::launch::drivewire_settings(&entry.def, &entry.slug);
         let applied = vm.apply_drivewire_settings(settings);
+        let output = entry.def.drivewire.printer.output(&entry.slug);
+        let is_port = entry.def.drivewire.enabled && output == port;
+        let attach = is_port && (!was_port || vm.dw_port_sink_retry);
+        let attach_error = attach
+            .then(|| attach_print_port_sink(vm, &entry.def, &entry.slug))
+            .flatten();
+        vm.dw_port_sink_retry = attach_error.is_some();
+        vm.set_drivewire_printer(output);
         entry.launch_error = match entry.def.drivewire.share_table(&entry.slug) {
             Ok(shares) => {
                 vm.set_drivewire_shares(shares);
-                applied.err()
+                applied.err().or(attach_error)
             }
             Err(error) => Some(error),
         };
     }
 }
 
+/// `[ports].serial` attaches its sink only at launch. Called when the
+/// printer port becomes the active print output of a running VM (the
+/// output changed to it, or DriveWire was turned on): if its bit-banger
+/// feeds nothing, this attaches that sink now, so the jobs don't print into
+/// nothing. Only on that change, or on a later save after that attach
+/// failed ([`CocoApp::dw_port_sink_retry`]). A later save never restarts a
+/// capture the user stopped from the Printer menu (which would truncate its
+/// file).
+/// Returns the attach failure; an earlier [`CocoApp::cart_error`] stays.
+fn attach_print_port_sink(
+    vm: &mut CocoApp,
+    def: &machine_def::MachineDef,
+    slug: &str,
+) -> Option<String> {
+    if vm.has_printer_sink() {
+        return None;
+    }
+    let prior = vm.cart_error.take();
+    crate::launch::mount_serial(vm, def.ports.serial, slug);
+    std::mem::replace(&mut vm.cart_error, prior)
+}
+
 #[cfg(test)]
 #[path = "live_drivewire_test.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "live_drivewire_printer_test.rs"]
+mod printer_tests;

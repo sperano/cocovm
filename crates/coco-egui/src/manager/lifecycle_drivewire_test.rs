@@ -112,3 +112,136 @@ fn cold_resume_keeps_the_saved_shares() {
     assert!(dw.share_session().table().get("games").is_some());
     assert_eq!(dw.share_session().table().named_objects(), Some("games"));
 }
+
+/// Sends `text` to the first entry's open print job, without a flush.
+fn print_half_a_job(manager: &mut ManagerApp, text: &[u8]) {
+    let vm = manager.entries[0].vm.as_mut().unwrap();
+    let dw = vm.machine.bus.drivewire.as_mut().unwrap();
+    for &byte in text {
+        dw.data_write(coco_core::drivewire::opcode::PRINT, 0);
+        dw.data_write(byte, 0);
+    }
+}
+
+/// Starts a DriveWire VM printing into `prints` and sends it half a job.
+fn manager_mid_print_job(dir: &std::path::Path, prints: &std::path::Path) -> ManagerApp {
+    let (mut manager, _) = manager_with_disk(dir, true);
+    let printer = &mut manager.entries[0].def.drivewire.printer;
+    printer.output = machine_def::PrintOutputDTO::Folder;
+    printer.folder = prints.display().to_string();
+    manager.start_vm(0);
+    print_half_a_job(&mut manager, b"HALF");
+    manager
+}
+
+/// Starts a DriveWire VM printing on its DMP-105 and sends it half a job
+/// that ends a line, so it reaches the paper once the job ends.
+fn manager_mid_port_job(dir: &std::path::Path) -> (ManagerApp, coco_core::dmp::DmpHandle) {
+    let (mut manager, _) = manager_with_disk(dir, true);
+    let def = &mut manager.entries[0].def;
+    def.ports.serial = Some(machine_def::SerialDTO::Printer);
+    def.drivewire.printer.output = machine_def::PrintOutputDTO::PrinterPort;
+    manager.start_vm(0);
+    let vm = manager.entries[0].vm.as_ref().unwrap();
+    let paper = vm.machine.bus.bitbanger.printer_handle();
+    print_half_a_job(&mut manager, b"HALF\r");
+    (manager, paper.expect("[ports].serial attached a printer"))
+}
+
+/// Waits until `prints` holds one file with all of `contents`: the print
+/// writer thread outlives a stopped VM and creates the file before writing.
+fn wait_for_print_file(prints: &std::path::Path, contents: &[u8]) -> Vec<String> {
+    const WAIT_LIMIT: std::time::Duration = std::time::Duration::from_secs(10);
+    const WAIT_STEP: std::time::Duration = std::time::Duration::from_millis(2);
+    let start = std::time::Instant::now();
+    loop {
+        let names: Vec<String> = fs::read_dir(prints)
+            .map(|entries| {
+                entries
+                    .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+                    .collect()
+            })
+            .unwrap_or_default();
+        let written = names.len() == 1
+            && fs::read(prints.join(&names[0])).is_ok_and(|bytes| bytes == contents);
+        if written || start.elapsed() > WAIT_LIMIT {
+            return names;
+        }
+        std::thread::sleep(WAIT_STEP);
+    }
+}
+
+#[test]
+fn stopping_a_suspended_vm_writes_its_open_print_job() {
+    let dir = TempDir::new("stop-suspended-print");
+    let prints = dir.path().join("prints");
+    let mut manager = manager_mid_print_job(dir.path(), &prints);
+    manager.suspend_vm(0);
+    assert!(manager.entries[0].suspended);
+
+    manager.stop_vm(0);
+
+    let names = wait_for_print_file(&prints, b"HALF");
+    assert_eq!(names.len(), 1, "{names:?}");
+    assert!(names[0].ends_with("-job0001-incomplete.txt"), "{names:?}");
+    assert_eq!(fs::read(prints.join(&names[0])).unwrap(), b"HALF");
+}
+
+#[test]
+fn closing_a_suspended_vm_leaves_its_open_print_job_to_the_state_file() {
+    let dir = TempDir::new("close-suspended-print");
+    let prints = dir.path().join("prints");
+    let mut manager = manager_mid_print_job(dir.path(), &prints);
+    manager.suspend_vm(0);
+    manager.entries[0]
+        .vm
+        .as_mut()
+        .unwrap()
+        .stop_drivewire_host();
+    manager.entries[0].vm = None;
+
+    manager.resume_vm(0);
+
+    let vm = manager.entries[0].vm.as_ref().unwrap();
+    let dw = vm.machine.bus.drivewire.as_ref().unwrap();
+    assert_eq!(dw.print_diagnostics().open_bytes, b"HALF".len());
+    assert_eq!(
+        dw.print_output(),
+        &coco_core::drivewire::PrintOutput::Folder {
+            dir: prints.clone(),
+            format: coco_core::drivewire::PrintFormat::Text,
+        }
+    );
+    assert!(!prints.exists());
+}
+
+#[test]
+fn stopping_a_suspended_vm_prints_its_open_job_on_the_printer_port() {
+    let dir = TempDir::new("stop-suspended-port");
+    let (mut manager, paper) = manager_mid_port_job(dir.path());
+    manager.suspend_vm(0);
+
+    manager.stop_vm(0);
+
+    assert!(!manager.entries[0].suspended);
+    assert!(paper.paper_extent().dot_count > 0);
+}
+
+#[test]
+fn a_failed_discard_leaves_the_open_print_job_to_the_state_file() {
+    let dir = TempDir::new("stop-suspended-kept");
+    let (mut manager, paper) = manager_mid_port_job(dir.path());
+    manager.suspend_vm(0);
+    let state = suspend_state_path(&dir.path().join("artifacts"), TEST_SLUG);
+    // A non-empty folder in place of the state file makes its removal fail.
+    fs::remove_file(&state).unwrap();
+    fs::create_dir_all(state.join("stuck")).unwrap();
+
+    manager.stop_vm(0);
+
+    let entry = &manager.entries[0];
+    assert!(entry.suspended);
+    let error = entry.launch_error.as_deref().unwrap_or_default();
+    assert!(error.contains("could not discard"), "{error}");
+    assert_eq!(paper.paper_extent().dot_count, 0);
+}

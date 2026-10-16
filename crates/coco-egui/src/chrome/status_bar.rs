@@ -2,6 +2,8 @@ use coco_core::joystick::{LEFT, RIGHT};
 
 use crate::*;
 
+mod dw_printer;
+
 /// Status-bar marker text of a suspended machine.
 const SUSPENDED_STATUS: &str = "Suspended";
 /// Hover text of that marker: what the window can still do.
@@ -423,6 +425,7 @@ fn drivewire_hover(dw: &coco_core::drivewire::DWServer, drive: Option<usize>) ->
         channels.unknown_channel_ops,
         channels.short_reads,
     ));
+    hover.push_str(&dw_printer::hover_lines(dw));
     hover
 }
 
