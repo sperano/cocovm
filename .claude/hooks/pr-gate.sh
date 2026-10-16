@@ -21,21 +21,31 @@ deny() {
   exit 0
 }
 
+# The hook's cwd is the session's, not the command's: honor a leading `cd <dir> &&`.
+if [[ "$cmd" =~ ^[[:space:]]*cd[[:space:]]+[\"\']?([^[:space:]\"\'\&\;]+)[\"\']?[[:space:]]*\&\& ]]; then
+  dir="${BASH_REMATCH[1]}"; dir="${dir/#\~/$HOME}"
+  cd "$dir" || deny "pr-gate: cannot cd to $dir"
+fi
+
+# Diff the --head branch when one is given.
+head_ref=HEAD
+if [[ "$cmd" =~ --head[[:space:]=]+[\"\']?([^[:space:]\"\']+) ]]; then head_ref="${BASH_REMATCH[1]##*:}"; fi
+
 base="${PR_GATE_BASE:-}"
 if [ -z "$base" ]; then
   if git rev-parse --verify -q origin/main >/dev/null; then base=origin/main; else base=main; fi
 fi
 
-stat=$(git diff "$base"...HEAD --stat) || deny "pr-gate: git diff $base...HEAD failed"
+stat=$(git diff "$base...$head_ref" --stat) || deny "pr-gate: git diff $base...$head_ref failed"
 [ -n "$stat" ] || deny "pr-gate: no commits ahead of $base — nothing to open a PR for"
 
-stray=$(git diff "$base"...HEAD --name-only | grep -E '(^|/)(target/|\.DS_Store$|.*\.(orig|rej|swp)$)' || true)
+stray=$(git diff "$base...$head_ref" --name-only | grep -E '(^|/)(target/|\.DS_Store$|.*\.(orig|rej|swp)$)' || true)
 [ -z "$stray" ] && stray=""
 if [ -n "$stray" ]; then deny "pr-gate: stray/generated files in the diff:"$'\n'"$stray"; fi
 
-diff=$(git diff "$base"...HEAD | head -c "$MAX_DIFF_BYTES")
+diff=$(git diff "$base...$head_ref" | head -c "$MAX_DIFF_BYTES")
 truncated=""
-[ "$(git diff "$base"...HEAD | wc -c)" -gt "$MAX_DIFF_BYTES" ] && truncated=" (diff truncated to ${MAX_DIFF_BYTES} bytes)"
+[ "$(git diff "$base...$head_ref" | wc -c)" -gt "$MAX_DIFF_BYTES" ] && truncated=" (diff truncated to ${MAX_DIFF_BYTES} bytes)"
 
 prompt="You are the final gate before PR creation in the cocovm Rust workspace. Pre-PR reviews (idiomatic-rust + pr-challenger) have already run on this branch, so this is a fast last-line check, NOT a re-review. Look ONLY for: obviously broken logic or invariants in changed code; brand-new behavior with no test at all. Do NOT flag style or anything the compiler/clippy/tests already guarantee; never request tests that assert a removed feature stays absent. PASS is a first-class outcome — do not manufacture findings.
 
