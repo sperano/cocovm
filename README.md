@@ -245,7 +245,7 @@ MAME), Virtual CoCo on the classic Mac OS, and CoCoNut on Palm OS.
 CoCoVM exists for the fun of building one: a chance to write a cycle-counted
 6809 machine in Rust, to see how far AI coding agents (Claude, Codex, and
 DeepSeek) can go on a project like this, and to make the result as friendly
-as possible. Machines are created and managed from a GUI, missing ROMs are
+and polished as possible. Machines are created and managed from a GUI, missing ROMs are
 downloaded on first launch, and everyday use never needs a config file.
 Hardware behavior is checked against the original technical manuals, real ROM
 images, and trace comparisons with MAME and XRoar rather than taken on faith.
