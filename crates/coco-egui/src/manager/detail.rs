@@ -166,11 +166,9 @@ fn draw_tab_bar(ui: &mut egui::Ui, tab: &mut DetailTab) {
 }
 
 /// The General tab's model and RAM controls.
-fn draw_machine_ram_sections(ui: &mut egui::Ui, slug: &str, form: &mut new_vm::MachineForm) {
+fn draw_machine_ram_sections(ui: &mut egui::Ui, form: &mut new_vm::MachineForm) {
     titled_group(ui, "Machine", |ui| {
-        form_grid(("detail_form_machine", slug)).show(ui, |ui| {
-            form.machine_rows(ui);
-        });
+        form.machine_rows(ui);
     });
 
     ui.add_space(DETAIL_SECTION_GAP);
@@ -396,7 +394,7 @@ impl ManagerApp {
             let details_width = (ui.available_width() - ui.spacing().item_spacing.x) / 2.0;
             let details = ui.vertical(|ui| {
                 ui.set_max_width(details_width);
-                draw_machine_ram_sections(ui, slug, &mut edit.form);
+                draw_machine_ram_sections(ui, &mut edit.form);
             });
             draw_screen_preview(ui, details.response.rect.height(), &self.entries[index]);
         });
