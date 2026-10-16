@@ -83,9 +83,9 @@ format. Prepend a new section:
   refactor. Omit empty subsections. Fold internal-only changes into a short
   line or drop them.
 - Source material: the PR titles/bodies and commits gathered in preview.
-  Draft the entry and show it to the user. Wording tweaks happen via
-  `git commit --amend` after step 5 — do not leave the bump and changelog
-  sitting uncommitted while waiting for a reply.
+  Draft the entry and show it to the user, but don't wait for a reply.
+  Later wording tweaks go in a follow-up commit to `CHANGELOG.md` plus
+  `gh release edit vX.Y.Z --notes-file <notes>`.
 - **First release only** (no CHANGELOG.md yet): create the file with the
   standard Keep-a-Changelog header and backfill one section per era of the
   full git history rather than pretending everything is new. Ask the user
@@ -108,11 +108,9 @@ git push --follow-tags
 
 - Annotated tag (`-a`), name prefixed with `v`.
 - No co-author trailers on the commit message.
-- Commit and tag immediately after verification passes, without waiting for
-  the user: an uncommitted bump gets swept into the next unrelated commit
-  and the version is silently never tagged. Only the push waits for the
-  user's confirmation (the push publishes the tag; everything before it is
-  local and reversible — `git tag -d` and `git commit --amend` fix wording).
+- Commit, tag and push immediately after verification passes, without
+  waiting for the user. A bump left uncommitted, or a tag left unpushed,
+  gets stranded: the version is silently never published.
 
 ### 6. GitHub release (draft)
 
