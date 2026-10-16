@@ -266,10 +266,6 @@ fn grow_to_manager_commands() -> [egui::ViewportCommand; 4] {
     ]
 }
 
-#[cfg(test)]
-#[path = "assets_test.rs"]
-mod tests;
-
 fn secondary_color(ui: &egui::Ui) -> egui::Color32 {
     if ui.visuals().dark_mode {
         SECONDARY_DARK
@@ -302,3 +298,7 @@ impl ManagerApp {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "assets_test.rs"]
+mod tests;
