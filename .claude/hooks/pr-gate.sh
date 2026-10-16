@@ -22,14 +22,14 @@ deny() {
 }
 
 # The hook's cwd is the session's, not the command's: honor a leading `cd <dir> &&`.
-if [[ "$cmd" =~ ^[[:space:]]*cd[[:space:]]+([^[:space:]\&\;]+)[[:space:]]*\&\& ]]; then
+if [[ "$cmd" =~ ^[[:space:]]*cd[[:space:]]+[\"\']?([^[:space:]\"\'\&\;]+)[\"\']?[[:space:]]*\&\& ]]; then
   dir="${BASH_REMATCH[1]}"; dir="${dir/#\~/$HOME}"
   cd "$dir" || deny "pr-gate: cannot cd to $dir"
 fi
 
 # Diff the --head branch when one is given.
 head_ref=HEAD
-if [[ "$cmd" =~ --head[[:space:]=]+([^[:space:]]+) ]]; then head_ref="${BASH_REMATCH[1]}"; fi
+if [[ "$cmd" =~ --head[[:space:]=]+[\"\']?([^[:space:]\"\']+) ]]; then head_ref="${BASH_REMATCH[1]##*:}"; fi
 
 base="${PR_GATE_BASE:-}"
 if [ -z "$base" ]; then
