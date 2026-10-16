@@ -41,6 +41,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   read or write it by sector through the drive number it gets back. Objects
   use drives 4 to 255, never drives 0 to 3, also in HDB-DOS mode. Save
   states record objects by name and reopen them on restore.
+- DriveWire printing. NitrOS-9 output to `/P` now reaches a destination
+  that you choose in the DriveWire tab's Printer group
+  (`[drivewire.printer]`): a folder, with one new file per job as host
+  text or raw bytes, or the VM's printer port, which is the DMP printer
+  or capture file under Ports. Printing is off by default, and jobs are
+  discarded until you choose an output. Each closed `/P` path is one job.
+  A job larger than 1 MiB is written in 1 MiB parts, one file per part,
+  and the Printer group counts each part as a job. A failed write keeps
+  its job, and the job is written again after the next job or an output
+  change. A machine reset or stop writes an unfinished job as an
+  incomplete one. Stopping a suspended VM whose window is closed discards
+  its unfinished job along with the rest of its saved state.
 - MCP resources for the screen. The server now offers the `resources`
   capability: `resources/list` reports `cocovm://vm/<slug>/screen.txt`
   (the text screen as `text/plain`) and `cocovm://vm/<slug>/screen.png`

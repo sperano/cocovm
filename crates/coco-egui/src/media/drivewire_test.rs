@@ -221,3 +221,123 @@ fn a_restored_read_only_guest_image_takes_a_read_lease() {
         "\nInserted by the guest, read-only"
     );
 }
+
+/// Sends `text` the way `scdwp` does, then `OP_PRINTFLUSH`
+/// (`coco_core::drivewire::printer_test::print`/`flush`).
+fn print_and_flush(dw: &mut drivewire::DWServer, text: &[u8]) {
+    for &byte in text {
+        dw.data_write(drivewire::opcode::PRINT, 0);
+        dw.data_write(byte, 0);
+    }
+    dw.data_write(drivewire::opcode::PRINTFLUSH, 0);
+}
+
+#[test]
+fn enabling_drivewire_installs_the_recorded_print_output() {
+    let dir = TempDir::new("dw-printer-enable");
+    let folder = dir.path().join("prints");
+    let mut app = boot_app();
+    app.set_drivewire_printer(drivewire::PrintOutput::Folder {
+        dir: folder.clone(),
+        format: drivewire::PrintFormat::Text,
+    });
+    // Enabling comes after the printer setting was recorded, as a settings load does.
+    app.apply_drivewire_settings(settings(None)).unwrap();
+    assert_eq!(
+        app.machine.bus.drivewire.as_ref().unwrap().print_output(),
+        &drivewire::PrintOutput::Folder {
+            dir: folder,
+            format: drivewire::PrintFormat::Text,
+        }
+    );
+}
+
+#[test]
+fn setting_the_printer_installs_it_live_and_delivers_printer_port_jobs() {
+    let mut app = boot_app();
+    app.apply_drivewire_settings(settings(None)).unwrap();
+    app.set_drivewire_printer(drivewire::PrintOutput::PrinterPort);
+    assert_eq!(
+        app.machine.bus.drivewire.as_ref().unwrap().print_output(),
+        &drivewire::PrintOutput::PrinterPort
+    );
+
+    print_and_flush(app.machine.bus.drivewire.as_mut().unwrap(), b"HI");
+    app.set_drivewire_printer(drivewire::PrintOutput::PrinterPort);
+    assert_eq!(app.machine.bus.bitbanger.bytes_out(), 2);
+}
+
+#[test]
+fn polling_delivers_a_finished_printer_port_job() {
+    let mut app = boot_app();
+    app.apply_drivewire_settings(settings(None)).unwrap();
+    app.set_drivewire_printer(drivewire::PrintOutput::PrinterPort);
+    print_and_flush(app.machine.bus.drivewire.as_mut().unwrap(), b"HI");
+
+    app.poll_drivewire_host();
+    assert_eq!(app.machine.bus.bitbanger.bytes_out(), 2);
+}
+
+#[test]
+fn stopping_delivers_the_ended_job_to_the_printer_port() {
+    let mut app = boot_app();
+    app.apply_drivewire_settings(settings(None)).unwrap();
+    app.set_drivewire_printer(drivewire::PrintOutput::PrinterPort);
+    let dw = app.machine.bus.drivewire.as_mut().unwrap();
+    // Not flushed: only a stop ends it.
+    dw.data_write(drivewire::opcode::PRINT, 0);
+    dw.data_write(b'H', 0);
+
+    app.stop_drivewire_host();
+    assert_eq!(app.machine.bus.bitbanger.bytes_out(), 1);
+}
+
+#[test]
+fn an_unrelated_save_with_the_same_output_leaves_a_waiting_job_untouched() {
+    let dir = TempDir::new("dw-printer-unchanged");
+    // A regular file, not a folder: every write to it fails, so the flushed job stays queued.
+    let blocker = dir.path().join("blocker");
+    fs::write(&blocker, b"not a folder").unwrap();
+    let mut app = boot_app();
+    app.apply_drivewire_settings(settings(None)).unwrap();
+    let output = drivewire::PrintOutput::Folder {
+        dir: blocker,
+        format: drivewire::PrintFormat::Text,
+    };
+    app.set_drivewire_printer(output.clone());
+    print_and_flush(app.machine.bus.drivewire.as_mut().unwrap(), b"HI");
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        let dw = app.machine.bus.drivewire.as_mut().unwrap();
+        dw.poll_host();
+        if dw.print_diagnostics().last_error.is_some() {
+            break;
+        }
+        assert!(std::time::Instant::now() < deadline, "write never failed");
+        std::thread::yield_now();
+    }
+    assert_eq!(
+        app.machine
+            .bus
+            .drivewire
+            .as_ref()
+            .unwrap()
+            .print_diagnostics()
+            .waiting,
+        1
+    );
+
+    // A settings save unrelated to printing recomputes the same output.
+    app.set_drivewire_printer(output);
+    assert_eq!(
+        app.machine
+            .bus
+            .drivewire
+            .as_ref()
+            .unwrap()
+            .print_diagnostics()
+            .waiting,
+        1
+    );
+}

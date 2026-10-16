@@ -98,6 +98,17 @@ pub(crate) struct CocoApp {
     pub(crate) dw_startup: [Option<PathBuf>; drivewire::DRIVE_COUNT],
     /// Host shares, installed whenever the DriveWire server exists.
     pub(crate) dw_shares: drivewire::share::ShareTable,
+    /// Where finished DriveWire print jobs go, installed whenever the
+    /// server exists (`media::drivewire::install_drivewire_printer`). A
+    /// restored server always comes back at [`drivewire::PrintOutput::Off`]
+    /// (host-only state, dropped by the snapshot round trip), so a Load
+    /// State reinstalls this.
+    pub(crate) dw_print_output: drivewire::PrintOutput,
+    /// Whether the printer port is this VM's print output but attaching its
+    /// `[ports].serial` sink live failed, so the next DriveWire save retries
+    /// it. Any sink attached afterwards, from the Printer menu or a retry,
+    /// clears it, so a capture the user then stops stays stopped.
+    pub(crate) dw_port_sink_retry: bool,
     /// This VM's identity in cross-VM file leases.
     pub(crate) lease_owner: drivewire::share::LeaseOwner,
     /// Source path of the mounted cassette tape (.cas), if any — the
@@ -350,6 +361,8 @@ impl CocoApp {
             dw_leases: std::array::from_fn(|_| None),
             dw_startup: std::array::from_fn(|_| None),
             dw_shares: drivewire::share::ShareTable::default(),
+            dw_print_output: drivewire::PrintOutput::default(),
+            dw_port_sink_retry: false,
             lease_owner: drivewire::share::LeaseOwner::new(),
             tape_path: None,
             save_tape_wav,
@@ -415,19 +428,22 @@ impl CocoApp {
     }
 
     /// Poll completed DriveWire host work without blocking the UI thread, and
-    /// mirror the guest's `dw disk` mounts into the session media.
+    /// mirror the guest's `dw disk` mounts into the session media. Also
+    /// delivers any print job finished for
+    /// [`drivewire::PrintOutput::PrinterPort`] — cheap when none is pending.
     pub(crate) fn poll_drivewire_host(&mut self) {
         if let Some(dw) = self.machine.bus.drivewire.as_mut() {
             dw.poll_host();
         }
+        self.machine.bus.deliver_drivewire_print();
         self.sync_guest_dw_media();
     }
 
-    /// Stop DriveWire host work before this VM is dropped or replaced.
+    /// Stop DriveWire host work before this VM is dropped or replaced, and
+    /// deliver the print job the stop ended if the output is the printer
+    /// port (`SystemBus::stop_drivewire_host`).
     pub(crate) fn stop_drivewire_host(&mut self) {
-        if let Some(dw) = self.machine.bus.drivewire.as_mut() {
-            dw.stop_host();
-        }
+        self.machine.bus.stop_drivewire_host();
     }
 
     /// Suspend DriveWire host work after the VM reaches an idle save point.

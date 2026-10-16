@@ -297,6 +297,15 @@ impl BitBanger {
         self.bytes_out
     }
 
+    /// Deliver bytes that arrived another way (a DriveWire print job) to the
+    /// sink, counted in [`Self::bytes_out`] like decoded bytes.
+    pub fn print_bytes(&mut self, bytes: &[u8]) {
+        for &byte in bytes {
+            self.sink.write_byte(byte);
+        }
+        self.bytes_out += bytes.len() as u64;
+    }
+
     /// Current BUSY (PIA1 PB0) level: false = ready, true = busy.
     pub fn busy(&self) -> bool {
         self.busy

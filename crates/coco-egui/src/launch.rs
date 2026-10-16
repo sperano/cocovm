@@ -56,6 +56,7 @@ pub(crate) fn launch_machine_with_gamepad(
     mount_peripherals(&mut app, media, cartridge);
     mount_serial(&mut app, def.ports.serial, slug);
     app.set_drivewire_shares(def.drivewire.share_table(slug)?);
+    app.set_drivewire_printer(def.drivewire.printer.output(slug));
 
     // Promote any `cart_error` the insert_*/mpi_insert_* helpers recorded into this launch
     // `Result`.
@@ -234,7 +235,7 @@ fn mount_peripherals(app: &mut CocoApp, media: Media, cartridge: Cartridge) {
 /// Wire `[ports].serial` — the built-in bit-banger serial port's host sink,
 /// distinct from the cartridge-port RS-232 Pak. Runs before
 /// `launch_machine`'s `cart_error` promotion so failures surface the same way.
-fn mount_serial(app: &mut CocoApp, serial: Option<machine_def::SerialDTO>, slug: &str) {
+pub(crate) fn mount_serial(app: &mut CocoApp, serial: Option<machine_def::SerialDTO>, slug: &str) {
     match serial {
         // Attached with the paper window closed; output accumulates and the status bar's
         // printer menu ("View Papers") shows it.

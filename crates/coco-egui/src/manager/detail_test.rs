@@ -239,3 +239,24 @@ fn displayed_runtime_secs_reads_the_live_vms_total_runtime() {
     entry.vm.as_mut().unwrap().total_runtime = std::time::Duration::from_secs(130);
     assert_eq!(displayed_runtime_secs(&entry), 130);
 }
+
+#[test]
+fn removing_the_serial_sink_rejects_a_printer_port_print_output() {
+    let mut def = machine_def::MachineDef::from_config(
+        "Alpha".to_string(),
+        None,
+        &coco_core::MachineConfig::default(),
+    );
+    def.ports.serial = Some(machine_def::SerialDTO::Printer);
+    def.drivewire.enabled = true;
+    def.drivewire.printer.output = machine_def::PrintOutputDTO::PrinterPort;
+    let manager = ManagerApp::new(None, None, None, Vec::new(), None);
+    let mut form = detail_map::seed_form(&def);
+    manager
+        .pack_def(&def, "alpha", &mut form)
+        .expect("a sink is attached");
+
+    form.serial = new_vm::SerialChoice::None;
+    let error = manager.pack_def(&def, "alpha", &mut form).unwrap_err();
+    assert!(error.contains("printer port"), "{error}");
+}

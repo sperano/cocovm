@@ -50,6 +50,7 @@ impl SystemBus {
             BECKER_DATA => {
                 let cycle = self.cycle_clock;
                 self.drivewire.as_mut().unwrap().data_write(val, cycle);
+                self.deliver_drivewire_print();
                 true
             }
             _ => false,

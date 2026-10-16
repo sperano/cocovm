@@ -129,6 +129,8 @@ impl ManagerApp {
             &form.rs232_endpoint,
         );
         def.drivewire = form.drivewire.clone();
+        // Before validating: a printer-port print output needs this sink.
+        def.ports.serial = form.serial.into();
         def.validate_drivewire()?;
         self.pack_media(slug, form, &mut def)?;
         pack_ui(form, &mut def);
@@ -166,11 +168,9 @@ impl ManagerApp {
     }
 }
 
-/// Pack the form's remaining `[ports]`/`[ui]` picks: the Serial sink,
-/// TV settings, per-port joystick source and hi-res interface, and keyboard
-/// mode.
+/// Pack the form's remaining `[ui]` picks: TV settings, per-port joystick
+/// source and hi-res interface, and keyboard mode.
 fn pack_ui(form: &new_vm::MachineForm, def: &mut machine_def::MachineDef) {
-    def.ports.serial = form.serial.into();
     def.ui.tv_scanline = form.tv.scanline_pct;
     def.ui.tv_noise = form.tv.noise_pct;
     def.ui.tv_overscan = form.tv.overscan_pct;
