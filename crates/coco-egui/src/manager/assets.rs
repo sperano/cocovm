@@ -245,6 +245,27 @@ impl AssetDialog {
     }
 }
 
+/// Viewport commands, in order, that turn the fixed-size dialog window into
+/// the manager's resizable one.
+///
+/// `Resizable(true)` alone is not enough on Linux: winit 0.30 makes a window
+/// created non-resizable (`run.rs`) fixed by recording its size as the
+/// window's min and max size, on X11 (`x11/window.rs`, window creation) and
+/// Wayland (`WindowState::set_resizable`). `set_resizable(true)` restores
+/// those recorded limits, so the window stays pinned at
+/// [`DIALOG_WINDOW_SIZE`] and the window manager clamps the `InnerSize`
+/// request to it. Clearing both limits afterwards matches a normal start,
+/// which sets neither: egui-winit maps `MinInnerSize(Vec2::ZERO)` and
+/// `MaxInnerSize(Vec2::INFINITY)` to "no limit".
+fn grow_to_manager_commands() -> [egui::ViewportCommand; 4] {
+    [
+        egui::ViewportCommand::Resizable(true),
+        egui::ViewportCommand::MinInnerSize(egui::Vec2::ZERO),
+        egui::ViewportCommand::MaxInnerSize(egui::Vec2::INFINITY),
+        egui::ViewportCommand::InnerSize(WINDOW_SIZE.into()),
+    ]
+}
+
 fn secondary_color(ui: &egui::Ui) -> egui::Color32 {
     if ui.visuals().dark_mode {
         SECONDARY_DARK
@@ -266,8 +287,9 @@ impl ManagerApp {
             Verdict::Pending => {}
             Verdict::Installed => {
                 self.asset_dialog = None;
-                ctx.send_viewport_cmd(egui::ViewportCommand::Resizable(true));
-                ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(WINDOW_SIZE.into()));
+                for command in grow_to_manager_commands() {
+                    ctx.send_viewport_cmd(command);
+                }
                 if self.welcome_image.is_blank() {
                     self.welcome_image.load_random();
                 }
@@ -276,3 +298,7 @@ impl ManagerApp {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "assets_test.rs"]
+mod tests;
