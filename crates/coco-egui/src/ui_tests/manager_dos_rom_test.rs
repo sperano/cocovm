@@ -86,21 +86,6 @@ fn changing_model_resets_hdbdos_direct_and_in_mpi() {
             form.cartridge = CartridgeChoice::FD502 { dos_rom };
         }
         harness.step();
-        for click_model in [false, true] {
-            let combo = harness
-                .get_all_by_value("CoCo 3")
-                .find(|node| {
-                    node.accesskit_node().role() == eframe::egui::accesskit::Role::ComboBox
-                })
-                .unwrap();
-            if click_model {
-                combo.click();
-            } else {
-                combo.hover();
-            }
-            harness.step();
-        }
-        harness.step();
         click(&mut harness, "CoCo 2");
         assert_eq!(
             saved_definition(&dir).peripherals.cartridge.dos_rom(),
