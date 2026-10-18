@@ -47,10 +47,10 @@ impl MachineForm {
         }
     }
 
-    /// The Model row — the detail pane hosts it inside its "Machine" titled group. Must be
-    /// called inside an already-open two-column [`egui::Grid`] with [`FORM_GRID_SPACING`].
+    /// The model radios — the detail pane hosts them inside its "Machine"
+    /// titled group.
     pub(crate) fn machine_rows(&mut self, ui: &mut egui::Ui) {
-        config_form::machine_rows(ui, self.salt, &mut self.config);
+        config_form::machine_rows(ui, &mut self.config);
         self.normalize();
     }
 

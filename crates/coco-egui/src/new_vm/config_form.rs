@@ -1,34 +1,26 @@
-//! The hardware-config rows, split by the detail pane's sections:
-//! [`machine_rows`] (Model) and [`display_rows`] (VDG) —
-//! see the parent module doc. RAM is deliberately absent: the detail pane
-//! draws it as its own titled radio-button group (`manager::detail`), not
-//! a grid row.
+//! The hardware-config controls, split by the detail pane's sections:
+//! [`machine_rows`] (model radios) and [`display_rows`] (VDG) — see the
+//! parent module doc. RAM is deliberately absent: the detail pane draws it
+//! as its own titled radio-button group (`manager::detail`).
 
 use coco_core::{MachineConfig, MachineVariant, VDGVariant};
 use eframe::egui;
 
 use super::{constrain, vdg_label};
 
-/// The Model row (which CoCo this machine is), label + combo box — the detail pane hosts
-/// it inside its "Machine" titled group. Must be called inside an already-open two-column
-/// [`egui::Grid`]; `salt` distinguishes the combo's persistent id across call sites.
-pub(super) fn machine_rows(ui: &mut egui::Ui, salt: &str, draft: &mut MachineConfig) {
-    let font = ui.style().text_styles[&egui::TextStyle::Button].size;
-
-    ui.label(egui::RichText::new("Model").size(font));
-    egui::ComboBox::from_id_salt((salt, "machine"))
-        .selected_text(crate::machine_label(draft.variant))
-        .show_ui(ui, |ui| {
-            for variant in MachineVariant::ALL {
-                if ui
-                    .selectable_value(&mut draft.variant, variant, crate::machine_label(variant))
-                    .changed()
-                {
-                    constrain(draft);
-                }
+/// The model radios (which CoCo this machine is), hosted inside the detail
+/// pane's "Machine" titled group.
+pub(super) fn machine_rows(ui: &mut egui::Ui, draft: &mut MachineConfig) {
+    ui.horizontal(|ui| {
+        for variant in MachineVariant::ALL {
+            if ui
+                .radio_value(&mut draft.variant, variant, crate::machine_label(variant))
+                .changed()
+            {
+                constrain(draft);
             }
-        });
-    ui.end_row();
+        }
+    });
 }
 
 /// The conditional VDG row (CoCo 2 only) — [`machine_rows`]'s sibling, hosted by the

@@ -46,6 +46,36 @@ fn ram_radio_autosaves_the_definition() {
     );
 }
 
+/// The detail pane's Machine fieldset exposes each model as a radio button,
+/// and clicking one auto-saves the definition with its normalized defaults.
+#[test]
+fn model_radio_autosaves_the_definition() {
+    let dir = TempDir::new("model-radio");
+    let entries = vec![sample_entry("dev-coco-3", "Dev CoCo 3")];
+    let mut harness = manager_harness(Some(dir.path().to_path_buf()), entries);
+
+    click(&mut harness, "Dev CoCo 3");
+    harness.get_by_label("Machine");
+    let coco2 = harness.get_by_label("CoCo 2");
+    assert_eq!(
+        coco2.accesskit_node().role(),
+        eframe::egui::accesskit::Role::RadioButton
+    );
+    click(&mut harness, "CoCo 2");
+
+    let config = harness.state().entries[0]
+        .def
+        .to_machine_config()
+        .expect("saved definitions validate");
+    assert_eq!(config.variant, coco_core::MachineVariant::Coco2);
+    assert_eq!(config.memory, coco_core::MemorySize::K64);
+    let toml = fs::read_to_string(dir.path().join("dev-coco-3.toml")).unwrap();
+    assert!(
+        toml.contains("variant = \"coco2\""),
+        "auto-save must write the new machine model: {toml}"
+    );
+}
+
 /// ⌘N/Ctrl+N in the manager is the toolbar's "New…": it creates a machine
 /// on the spot — saved to disk, inserted, selected — with no dialog.
 #[test]
@@ -426,7 +456,7 @@ fn manager_new_creates_a_definition_file_immediately() {
         Some(0),
         "New must select the new row"
     );
-    // Not get_by_label: the detail pane's own "CoCo 3" Machine combo makes the label ambiguous.
+    // Not get_by_label: the detail pane's own "CoCo 3" model radio makes the label ambiguous.
     assert_eq!(harness.state().detail_name(), Some("CoCo 3"));
 
     click_containing(&mut harness, "New");
