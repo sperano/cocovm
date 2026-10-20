@@ -54,13 +54,13 @@ cd cocovm
 To build and launch CoCoVM during development, run:
 
 ```sh
-cargo run -p coco-egui
+cargo run 
 ```
 
 To create an optimized executable, run:
 
 ```sh
-cargo build --release -p coco-egui
+cargo build --release
 ```
 
 The executable is `target/release/cocovm` on macOS and Linux, or
