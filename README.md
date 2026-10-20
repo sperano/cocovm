@@ -65,30 +65,8 @@ repository. See [NOTICE.md](NOTICE.md) for details.
 
 ## Build from source
 
-Install the [latest stable Rust toolchain](https://www.rust-lang.org/tools/install).
-
-On Debian or Ubuntu, install the native development libraries:
-
-```sh
-sudo apt-get install \
-  libasound2-dev \
-  libudev-dev \
-  libxkbcommon-dev \
-  libwayland-dev \
-  libxcb-render0-dev \
-  libxcb-shape0-dev \
-  libxcb-xfixes0-dev
-```
-
-Then clone and run CoCoVM:
-
-```sh
-git clone https://github.com/sperano/cocovm.git
-cd cocovm
-cargo run
-```
-
-For an optimized build, add `--release` to the `cargo run` command.
+See [BUILD.md](BUILD.md) for macOS, Debian or Ubuntu Linux, and Windows setup,
+build, and run instructions.
 
 ## Launch a saved machine
 
