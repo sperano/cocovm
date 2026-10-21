@@ -9,7 +9,7 @@
 //! asset bundle already ships (the DOS ROMs `machine_def::DosRom` names).
 
 use std::ffi::OsString;
-use std::fs;
+use std::fs::{self, File, OpenOptions};
 use std::path::{Path, PathBuf};
 
 use coco_core::{MachineConfig, MachineVariant, MemorySize};
@@ -23,6 +23,10 @@ const BLANK_DISK_DRIVE: usize = 0;
 /// Appended to the machines directory's name (behind a leading dot) to name
 /// the sibling directory [`seed_first_run`] fills before moving it into place.
 const SEED_STAGING_SUFFIX: &str = ".seeding";
+
+/// Appended the same way to name the lock file that serializes
+/// [`seed_first_run`] across app instances launched at the same time.
+const SEED_LOCK_SUFFIX: &str = ".seeding.lock";
 
 /// A built-in machine template.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -162,14 +166,22 @@ fn place_media(preset: Preset, artifacts_root: Option<&Path>, slug: &str) -> Res
 /// `machines_dir` only once all of them are in it, so a failure (or a crash)
 /// partway never leaves a `machines_dir` that would stop the next launch
 /// from seeding the rest. A failure discards the staging directory; one
-/// left by a crash is discarded before seeding starts.
+/// left by a crash is discarded before seeding starts. Seeding holds a lock
+/// file ([`lock_seeding`]), so a second instance launched at the same time
+/// waits instead of discarding the first one's live staging directory, then
+/// finds `machines_dir` in place and leaves it alone.
 pub(super) fn seed_first_run(
     machines_dir: &Path,
     artifacts_root: Option<&Path>,
     created: Option<String>,
 ) -> Result<(), String> {
-    // An unreadable path counts as present: never seed over what may exist.
-    if machines_dir.try_exists().unwrap_or(true) {
+    if machines_dir_present(machines_dir) {
+        return Ok(());
+    }
+    let _lock = lock_seeding(machines_dir)?;
+    // Checked again under the lock: another instance may have seeded while
+    // this one waited.
+    if machines_dir_present(machines_dir) {
         return Ok(());
     }
     let staging = staging_dir(machines_dir)?;
@@ -184,16 +196,47 @@ pub(super) fn seed_first_run(
     seeded
 }
 
+/// Whether `machines_dir` exists. An unreadable path counts as present:
+/// never seed over what may exist.
+fn machines_dir_present(machines_dir: &Path) -> bool {
+    machines_dir.try_exists().unwrap_or(true)
+}
+
+/// Open the `.<name>.seeding.lock` file next to `machines_dir` and wait for
+/// an exclusive lock on it; dropping the file releases the lock, and so does
+/// a crash. The file is never removed: an instance still waiting on a
+/// removed file would lock it while a third instance locks a new one.
+fn lock_seeding(machines_dir: &Path) -> Result<File, String> {
+    let path = sibling_path(machines_dir, SEED_LOCK_SUFFIX)?;
+    let error = |e: std::io::Error| format!("{}: {e}", path.display());
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(error)?;
+    }
+    let file = OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(&path)
+        .map_err(error)?;
+    file.lock().map_err(error)?;
+    Ok(file)
+}
+
 /// The staging directory [`seed_first_run`] fills: `.<name>.seeding` next to
 /// `machines_dir`, so the final rename stays on one file system.
 fn staging_dir(machines_dir: &Path) -> Result<PathBuf, String> {
+    sibling_path(machines_dir, SEED_STAGING_SUFFIX)
+}
+
+/// `.<name><suffix>` next to `machines_dir`.
+fn sibling_path(machines_dir: &Path, suffix: &str) -> Result<PathBuf, String> {
     let name = machines_dir
         .file_name()
         .ok_or_else(|| format!("{}: no directory name", machines_dir.display()))?;
-    let mut staged = OsString::from(".");
-    staged.push(name);
-    staged.push(SEED_STAGING_SUFFIX);
-    Ok(machines_dir.with_file_name(staged))
+    let mut sibling = OsString::from(".");
+    sibling.push(name);
+    sibling.push(suffix);
+    Ok(machines_dir.with_file_name(sibling))
 }
 
 /// Write the [`Preset::FIRST_RUN`] machines into `staging`. Each definition

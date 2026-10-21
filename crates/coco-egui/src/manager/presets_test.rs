@@ -279,6 +279,65 @@ fn seeding_discards_a_crashed_run() {
     assert_eq!(fs::read(&kept).unwrap(), b"user data");
 }
 
+/// App instances launched together at first run; enough that, unserialized,
+/// one would discard another's live staging directory.
+const CONCURRENT_LAUNCHES: usize = 4;
+
+/// A launch that finds another instance seeding waits for it, then leaves
+/// the machines directory that instance put in place alone. The test holds
+/// the lock as the other instance and creates an empty machines directory
+/// before releasing it, so any machine in it came from the waiting launch.
+#[test]
+fn seeding_waits_for_another_instance() {
+    let config = TempDir::new("preset-seed-wait-config");
+    let artifacts = TempDir::new("preset-seed-wait-artifacts");
+    let machines = config.path().join("machines");
+    let lock = lock_seeding(&machines).expect("lock taken");
+
+    let waiting = std::thread::scope(|scope| {
+        let launch = scope.spawn(|| seed_first_run(&machines, Some(artifacts.path()), created()));
+        fs::create_dir(&machines).unwrap();
+        drop(lock);
+        launch.join().unwrap()
+    });
+
+    waiting.expect("the waiting launch succeeds");
+    assert_eq!(fs::read_dir(&machines).unwrap().count(), 0);
+    assert!(!staging_dir(&machines).unwrap().exists());
+}
+
+/// Launches racing on a first run seed the starter machines once, under
+/// their plain slugs, and leave no staging directory behind.
+#[test]
+fn concurrent_first_runs_seed_once() {
+    let config = TempDir::new("preset-seed-race-config");
+    let artifacts = TempDir::new("preset-seed-race-artifacts");
+    let machines = config.path().join("machines");
+    let start = std::sync::Barrier::new(CONCURRENT_LAUNCHES);
+
+    let results: Vec<_> = std::thread::scope(|scope| {
+        let launches: Vec<_> = (0..CONCURRENT_LAUNCHES)
+            .map(|_| {
+                scope.spawn(|| {
+                    start.wait();
+                    seed_first_run(&machines, Some(artifacts.path()), created())
+                })
+            })
+            .collect();
+        launches
+            .into_iter()
+            .map(|launch| launch.join().unwrap())
+            .collect()
+    });
+
+    assert!(results.iter().all(Result::is_ok), "{results:?}");
+    let loaded = machine_def::load_all(&machines).expect("seeded machines load");
+    let slugs: Vec<&str> = loaded.iter().map(|(slug, _)| slug.as_str()).collect();
+    assert_eq!(slugs, ["coco-2-disk-basic", "coco-3-disk-basic"]);
+    assert!(!staging_dir(&machines).unwrap().exists());
+    assert_eq!(fs::read_dir(artifacts.path()).unwrap().count(), slugs.len());
+}
+
 /// Each template boots through the production launch path with the
 /// installed ROMs: its DOS ROM loads and its blank floppy mounts. The
 /// relative `disk0` is pointed at the placed file, since launch resolves it
