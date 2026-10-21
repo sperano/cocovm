@@ -180,6 +180,25 @@ fn new_machine_skips_a_slug_with_leftover_artifacts() {
     assert_eq!(fs::metadata(new_disk).unwrap().len(), 0);
 }
 
+/// Plain New skips a leftover artifact dir the same way.
+#[test]
+fn new_skips_a_slug_with_leftover_artifacts() {
+    let machines = TempDir::new("new-leftover-machines");
+    let artifacts = TempDir::new("new-leftover-artifacts");
+    fs::create_dir_all(artifacts.path().join("coco-3")).unwrap();
+    let mut app = ManagerApp::new(
+        None,
+        Some(machines.path().to_path_buf()),
+        Some(artifacts.path().to_path_buf()),
+        Vec::new(),
+        None,
+    );
+
+    app.create_machine_now();
+
+    assert_eq!(app.entries[0].slug, "coco-3-2");
+}
+
 /// Seeding over a data directory that outlived its config gives the
 /// starter machines fresh slugs instead of the old artifact dirs.
 #[test]

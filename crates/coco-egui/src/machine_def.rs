@@ -197,6 +197,19 @@ pub fn slugify(name: &str) -> String {
     }
 }
 
+/// Whether `slug` already has a definition in `machines_dir` or an artifact
+/// dir under `artifacts_root`. Deleting a machine leaves its artifact dir
+/// behind (`manager::delete`), so a new machine reusing the slug would
+/// inherit its disk images and suspend state.
+pub fn slug_on_disk(
+    machines_dir: Option<&Path>,
+    artifacts_root: Option<&Path>,
+    slug: &str,
+) -> bool {
+    machines_dir.is_some_and(|dir| def_path(dir, slug).exists())
+        || artifacts_root.is_some_and(|root| root.join(slug).exists())
+}
+
 /// `base`, or `base-2`, `base-3`, … — the first candidate for which `taken`
 /// returns `false`.
 pub fn unique_slug(base: &str, taken: &dyn Fn(&str) -> bool) -> String {

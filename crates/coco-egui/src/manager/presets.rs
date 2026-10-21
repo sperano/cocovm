@@ -13,7 +13,6 @@ use std::path::Path;
 use coco_core::{MachineConfig, MachineVariant, MemorySize};
 
 use super::detail_map::{blank_disk_file, place_blank_file};
-use super::lifecycle::slug_on_disk;
 use crate::machine_def::{self, CartridgeDTO, DosRom, MachineDef};
 
 /// Floppy drive of the blank disk a Disk BASIC template mounts.
@@ -154,8 +153,9 @@ pub(super) fn seed_first_run(
     if machines_dir.try_exists().unwrap_or(true) {
         return Ok(());
     }
+    let taken =
+        |candidate: &str| machine_def::slug_on_disk(Some(machines_dir), artifacts_root, candidate);
     for preset in Preset::FIRST_RUN {
-        let taken = |candidate: &str| slug_on_disk(machines_dir, artifacts_root, candidate);
         let slug = machine_def::unique_slug(&machine_def::slugify(preset.name()), &taken);
         install(preset, machines_dir, artifacts_root, &slug, created.clone())?;
     }
