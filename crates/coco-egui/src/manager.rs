@@ -49,10 +49,13 @@ mod selection;
 mod settings;
 mod sort;
 mod thumbnails;
-pub(crate) mod toolbar;
+mod toolbar;
 mod vm_windows;
 pub(crate) mod welcome;
 mod welcome_image;
+
+#[cfg(test)]
+pub(crate) use toolbar::TEMPLATES_LABEL;
 
 pub use run::run;
 

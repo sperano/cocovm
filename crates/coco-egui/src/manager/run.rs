@@ -67,8 +67,11 @@ pub fn run(
         std::process::exit(1);
     }
     if let Some(dir) = machines_dir.as_deref()
-        && let Err(error) =
-            presets::seed_first_run(dir, artifacts_root.as_deref(), lifecycle::created_today())
+        && let Err(error) = presets::seed_first_run(
+            dir,
+            artifacts_root.as_deref(),
+            Some(lifecycle::created_today()),
+        )
     {
         // Not fatal: the list starts with whatever was written, and New still works.
         eprintln!("coco: cannot create the starter machines: {error}");

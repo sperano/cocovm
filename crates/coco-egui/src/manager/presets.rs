@@ -10,7 +10,7 @@
 
 use std::path::Path;
 
-use coco_core::{MachineConfig, MachineVariant, MemorySize, VideoStandard};
+use coco_core::{MachineConfig, MachineVariant, MemorySize};
 
 use super::detail_map::{blank_disk_file, place_blank_file};
 use crate::machine_def::{self, CartridgeDTO, DosRom, MachineDef};
@@ -95,7 +95,7 @@ impl Preset {
         if self.has_blank_disk() {
             def.media.disk0 = Some(blank_disk_file(BLANK_DISK_DRIVE));
         }
-        if dos_rom == DosRom::HdbDosDw3 {
+        if def.peripherals.cartridge.uses_hdbdos() {
             // What the form switches on when HDB-DOS is picked
             // (`MachineForm::default_drivewire_for_hdbdos`).
             def.drivewire.enabled = true;
@@ -105,16 +105,16 @@ impl Preset {
     }
 }
 
-/// A stock 64K CoCo 2: NTSC, the MC6847T1 VDG it shipped with, and the
+/// A stock 64K CoCo 2: NTSC (the default config's), the MC6847T1 VDG it shipped with, and the
 /// composite display its variant defaults to.
 fn coco2_config() -> MachineConfig {
     let variant = MachineVariant::Coco2;
     MachineConfig {
         variant,
-        video: VideoStandard::NTSC,
         memory: MemorySize::K64,
         monitor: None,
         vdg: crate::default_vdg(variant),
+        ..MachineConfig::default()
     }
 }
 
@@ -122,7 +122,7 @@ fn coco2_config() -> MachineConfig {
 /// under `artifacts_root` first, then its definition into `machines_dir`, so
 /// a failure never leaves a definition pointing at a missing image. Returns
 /// the saved definition.
-pub(crate) fn install(
+pub(super) fn install(
     preset: Preset,
     machines_dir: &Path,
     artifacts_root: Option<&Path>,
@@ -142,7 +142,7 @@ pub(crate) fn install(
 /// [`Preset::FIRST_RUN`] templates so the list starts with machines that
 /// run. An existing directory, even an empty one, is left alone, so
 /// machines the user deleted stay deleted.
-pub(crate) fn seed_first_run(
+pub(super) fn seed_first_run(
     machines_dir: &Path,
     artifacts_root: Option<&Path>,
     created: Option<String>,

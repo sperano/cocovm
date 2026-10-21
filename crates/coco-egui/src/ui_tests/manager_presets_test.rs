@@ -4,8 +4,8 @@
 use egui_kittest::kittest::Queryable;
 
 use crate::machine_def::tests::TempDir;
+use crate::manager::TEMPLATES_LABEL;
 use crate::manager::presets::Preset;
-use crate::manager::toolbar::TEMPLATES_LABEL;
 
 use super::harness::*;
 

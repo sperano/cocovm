@@ -24,12 +24,10 @@ fn default_new_name() -> String {
 }
 
 /// Today's date in `[created]`'s format, for a machine created now.
-pub(super) fn created_today() -> Option<String> {
-    Some(
-        chrono::Local::now()
-            .format(machine_def::DATE_FORMAT)
-            .to_string(),
-    )
+pub(super) fn created_today() -> String {
+    chrono::Local::now()
+        .format(machine_def::DATE_FORMAT)
+        .to_string()
 }
 
 impl ManagerApp {
@@ -67,12 +65,12 @@ impl ManagerApp {
                 &dir,
                 self.artifacts_root.as_deref(),
                 &slug,
-                created_today(),
+                Some(created_today()),
             ),
             None => {
                 let def = machine_def::MachineDef::from_config(
                     name,
-                    created_today(),
+                    Some(created_today()),
                     &MachineConfig::default(),
                 );
                 machine_def::save(&dir, &slug, &def).map(|()| def)

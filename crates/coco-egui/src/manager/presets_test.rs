@@ -4,6 +4,7 @@ use coco_core::{MachineVariant, MemorySize, MonitorType, VDGVariant};
 
 use super::*;
 use crate::machine_def::tests::TempDir;
+use crate::manager::{ManagerApp, NO_DATA_DIR};
 
 const CREATED: &str = "2026-10-21";
 
@@ -23,8 +24,8 @@ fn every_preset_validates() {
     }
 }
 
-/// The templates are what the task's proposal promised: model, RAM,
-/// display, VDG, and DOS ROM.
+/// Each template has the model, RAM, display, VDG, and DOS ROM its
+/// `description` claims.
 #[test]
 fn presets_have_the_promised_hardware() {
     let coco3 = Preset::CoCo3DiskBasic
@@ -103,7 +104,7 @@ fn install_without_artifact_root_writes_nothing() {
         None,
     )
     .unwrap_err();
-    assert_eq!(error, super::super::NO_DATA_DIR);
+    assert_eq!(error, NO_DATA_DIR);
     assert!(!machine_def::def_path(machines.path(), "coco-3-disk-basic").exists());
 }
 
@@ -113,7 +114,7 @@ fn install_without_artifact_root_writes_nothing() {
 fn creating_a_preset_twice_gives_each_copy_its_own_slug() {
     let machines = TempDir::new("preset-twice-machines");
     let artifacts = TempDir::new("preset-twice-artifacts");
-    let mut app = super::super::ManagerApp::new(
+    let mut app = ManagerApp::new(
         None,
         Some(machines.path().to_path_buf()),
         Some(artifacts.path().to_path_buf()),

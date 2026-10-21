@@ -213,6 +213,7 @@ const MENU_TILE_WIDTH: f32 = 16.0;
 /// icon so it reads as part of the tile beside it. Present in egui's bundled
 /// emoji-icon-font, like [`SUSPEND_GLYPH`].
 const MENU_GLYPH: &str = "⏷";
+/// [`MENU_GLYPH`]'s size, smaller than [`ICON_FONT_SIZE`].
 const MENU_GLYPH_FONT_SIZE: f32 = 12.0;
 
 /// A narrow, full-height toolbar tile showing only a dropdown arrow, drawn
@@ -226,7 +227,7 @@ pub(crate) fn toolbar_menu_tile(ui: &mut egui::Ui, name: &str, icons_only: bool)
     response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, name));
     let visuals = ui.style().interact(&response);
     let painter = ui.painter();
-    if response.hovered() || response.is_pointer_button_down_on() {
+    if enabled && (response.hovered() || response.is_pointer_button_down_on()) {
         painter.rect_filled(rect, BUTTON_CORNER_RADIUS, visuals.weak_bg_fill);
     }
     painter.text(
