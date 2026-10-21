@@ -13,6 +13,7 @@ use std::path::Path;
 use coco_core::{MachineConfig, MachineVariant, MemorySize};
 
 use super::detail_map::{blank_disk_file, place_blank_file};
+use super::lifecycle::slug_on_disk;
 use crate::machine_def::{self, CartridgeDTO, DosRom, MachineDef};
 
 /// Floppy drive of the blank disk a Disk BASIC template mounts.
@@ -141,7 +142,9 @@ pub(super) fn install(
 /// On a real first run — `machines_dir` does not exist yet — write the
 /// [`Preset::FIRST_RUN`] templates so the list starts with machines that
 /// run. An existing directory, even an empty one, is left alone, so
-/// machines the user deleted stay deleted.
+/// machines the user deleted stay deleted. A slug whose artifact dir
+/// survived (data kept, config removed) gets a suffix, so no starter
+/// machine starts on an old disk.
 pub(super) fn seed_first_run(
     machines_dir: &Path,
     artifacts_root: Option<&Path>,
@@ -152,7 +155,8 @@ pub(super) fn seed_first_run(
         return Ok(());
     }
     for preset in Preset::FIRST_RUN {
-        let slug = machine_def::slugify(preset.name());
+        let taken = |candidate: &str| slug_on_disk(machines_dir, artifacts_root, candidate);
+        let slug = machine_def::unique_slug(&machine_def::slugify(preset.name()), &taken);
         install(preset, machines_dir, artifacts_root, &slug, created.clone())?;
     }
     Ok(())

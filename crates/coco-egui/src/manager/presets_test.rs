@@ -153,6 +153,49 @@ fn first_run_seeds_the_starter_machines() {
     }
 }
 
+/// A slug whose artifact dir outlived its machine is not reused: the new
+/// machine's blank disk must not be the old machine's disk.
+#[test]
+fn new_machine_skips_a_slug_with_leftover_artifacts() {
+    let machines = TempDir::new("preset-leftover-machines");
+    let artifacts = TempDir::new("preset-leftover-artifacts");
+    let old_disk = artifacts.path().join("coco-3-disk-basic").join("disk0.dsk");
+    fs::create_dir_all(old_disk.parent().unwrap()).unwrap();
+    fs::write(&old_disk, b"old machine's files").unwrap();
+    let mut app = ManagerApp::new(
+        None,
+        Some(machines.path().to_path_buf()),
+        Some(artifacts.path().to_path_buf()),
+        Vec::new(),
+        None,
+    );
+
+    app.create_machine_from_preset(Preset::CoCo3DiskBasic);
+
+    assert_eq!(app.entries[0].slug, "coco-3-disk-basic-2");
+    let new_disk = artifacts
+        .path()
+        .join("coco-3-disk-basic-2")
+        .join("disk0.dsk");
+    assert_eq!(fs::metadata(new_disk).unwrap().len(), 0);
+}
+
+/// Seeding over a data directory that outlived its config gives the
+/// starter machines fresh slugs instead of the old artifact dirs.
+#[test]
+fn first_run_skips_slugs_with_leftover_artifacts() {
+    let config = TempDir::new("preset-seed-leftover-config");
+    let artifacts = TempDir::new("preset-seed-leftover-artifacts");
+    fs::create_dir_all(artifacts.path().join("coco-3-disk-basic")).unwrap();
+    let machines = config.path().join("machines");
+
+    seed_first_run(&machines, Some(artifacts.path()), None).expect("seeding succeeds");
+
+    let loaded = machine_def::load_all(&machines).expect("seeded machines load");
+    let slugs: Vec<&str> = loaded.iter().map(|(slug, _)| slug.as_str()).collect();
+    assert_eq!(slugs, ["coco-2-disk-basic", "coco-3-disk-basic-2"]);
+}
+
 /// An existing machines directory is never seeded, even when empty: the
 /// user may have deleted every machine on purpose.
 #[test]

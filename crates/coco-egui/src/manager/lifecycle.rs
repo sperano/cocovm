@@ -7,7 +7,7 @@ use coco_core::MachineConfig;
 use owo_colors::colors::xterm;
 use owo_colors::{OwoColorize, Stream};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::machine_def;
 
@@ -21,6 +21,15 @@ use super::{
 /// ([`ManagerApp::create_machine_now`]) — [`MachineConfig::default`]'s model.
 fn default_new_name() -> String {
     crate::machine_label(MachineConfig::default().variant).to_string()
+}
+
+/// Whether `slug` already has a definition in `machines_dir` or an artifact
+/// dir under `artifacts_root`. Deleting a machine leaves its artifact dir
+/// behind (`ManagerApp::delete_machine`), so a new machine reusing the slug
+/// would inherit its disk images and suspend state.
+pub(super) fn slug_on_disk(machines_dir: &Path, artifacts_root: Option<&Path>, slug: &str) -> bool {
+    machine_def::def_path(machines_dir, slug).exists()
+        || artifacts_root.is_some_and(|root| root.join(slug).exists())
 }
 
 /// Today's date in `[created]`'s format, for a machine created now.
@@ -52,11 +61,11 @@ impl ManagerApp {
             return;
         };
         let name = preset.map_or_else(default_new_name, |preset| preset.name().to_string());
-        // Checks both the in-memory list and the directory itself, since
-        // `entries` misses a file written by another instance.
+        // Checks both the in-memory list and the disk, since `entries`
+        // misses a file written by another instance.
         let taken = |candidate: &str| {
             self.entries.iter().any(|e| e.slug == candidate)
-                || machine_def::def_path(&dir, candidate).exists()
+                || slug_on_disk(&dir, self.artifacts_root.as_deref(), candidate)
         };
         let slug = machine_def::unique_slug(&machine_def::slugify(&name), &taken);
         let saved = match preset {
