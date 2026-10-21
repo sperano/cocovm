@@ -282,7 +282,7 @@ pub fn load_all(dir: &Path) -> Result<Vec<(String, MachineDef)>, String> {
     for entry in entries {
         let entry = entry.map_err(|e| format!("{}: {e}", dir.display()))?;
         let path = entry.path();
-        if path.extension().and_then(|ext| ext.to_str()) != Some("toml") {
+        if path.extension().and_then(|ext| ext.to_str()) != Some(DEF_EXTENSION) {
             continue;
         }
         let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
@@ -297,11 +297,14 @@ pub fn load_all(dir: &Path) -> Result<Vec<(String, MachineDef)>, String> {
     Ok(results)
 }
 
+/// Extension of a definition file ([`def_path`]).
+pub const DEF_EXTENSION: &str = "toml";
+
 /// The definition file for `slug` under `dir`: `<dir>/<slug>.toml`. The one
 /// place that spells out the file name, shared by [`save`] and the manager's
 /// "Show config in …" action.
 pub fn def_path(dir: &Path, slug: &str) -> PathBuf {
-    dir.join(format!("{slug}.toml"))
+    dir.join(format!("{slug}.{DEF_EXTENSION}"))
 }
 
 /// Serialize `def` and write it to `<dir>/<slug>.toml`, merging `def.unknown`

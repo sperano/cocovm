@@ -24,9 +24,6 @@ const BLANK_DISK_DRIVE: usize = 0;
 /// the sibling directory [`seed_first_run`] fills before moving it into place.
 const SEED_STAGING_SUFFIX: &str = ".seeding";
 
-/// Extension of a saved definition (`machine_def::def_path`).
-const DEF_EXTENSION: &str = "toml";
-
 /// A built-in machine template.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Preset {
@@ -227,7 +224,7 @@ fn discard_staging(staging: &Path, artifacts_root: Option<&Path>) -> Result<(), 
     };
     if let Some(root) = artifacts_root {
         for path in entries.flatten().map(|entry| entry.path()) {
-            if path.extension().and_then(|ext| ext.to_str()) == Some(DEF_EXTENSION)
+            if path.extension().and_then(|ext| ext.to_str()) == Some(machine_def::DEF_EXTENSION)
                 && let Some(slug) = path.file_stem().and_then(|stem| stem.to_str())
             {
                 discard_blank_media(&root.join(slug));
