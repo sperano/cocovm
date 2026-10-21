@@ -27,6 +27,7 @@ use crate::display::Display;
 use crate::paths;
 
 mod dto;
+mod host_paths;
 mod io;
 mod peripherals_dto;
 mod printer_dto;

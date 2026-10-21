@@ -178,3 +178,90 @@ fn failed_artifact_dir_removal_keeps_machine_and_definition() {
     assert!(manager.entries.is_empty());
     assert!(!artifact_dir.exists());
 }
+
+/// Slug of a machine that mounts a disk from [`TEST_SLUG`]'s data folder.
+const BORROWER_SLUG: &str = "borrower";
+
+/// [`manager_with_artifacts`] plus a [`BORROWER_SLUG`] machine whose drive 0
+/// is `disk0`, a path naming [`TEST_SLUG`]'s disk.
+fn manager_with_borrower(machines_dir: &Path, artifacts_root: &Path, disk0: String) -> ManagerApp {
+    let mut manager = manager_with_artifacts(machines_dir, artifacts_root);
+    let mut borrower = test_def();
+    borrower.name = "Borrower".to_string();
+    borrower.media.disk0 = Some(disk0);
+    machine_def::save(machines_dir, BORROWER_SLUG, &borrower).expect("save borrower");
+    manager
+        .entries
+        .push(MachineEntry::new(BORROWER_SLUG.to_string(), borrower));
+    manager
+}
+
+/// Deleting a machine whose data folder holds a disk another machine
+/// mounts, by absolute path or by a relative one climbing out with `..`, is
+/// refused before anything is removed.
+#[test]
+fn deleting_machine_whose_files_another_machine_uses_is_refused() {
+    for (label, disk0) in [
+        ("absolute", None),
+        ("relative", Some(format!("../{TEST_SLUG}/./{DISK_FILE}"))),
+    ] {
+        let machines_dir = TempDir::new("delete-shared-defs");
+        let artifacts_root = TempDir::new("delete-shared-root");
+        let shared_disk = artifacts_root.path().join(TEST_SLUG).join(DISK_FILE);
+        let disk0 = disk0.unwrap_or_else(|| shared_disk.display().to_string());
+        let mut manager = manager_with_borrower(machines_dir.path(), artifacts_root.path(), disk0);
+
+        let error = manager
+            .delete_machine(0)
+            .expect_err(&format!("{label}: the delete must be refused"));
+
+        assert!(error.contains("“Borrower”"), "{label}: {error}");
+        assert_eq!(manager.entries.len(), 2, "{label}");
+        assert!(machine_def::def_path(machines_dir.path(), TEST_SLUG).is_file());
+        assert_eq!(fs::read(&shared_disk).expect("disk survives"), DISK_BYTES);
+    }
+}
+
+/// A file another machine names only counts when it is inside the data
+/// folder: a sibling folder sharing the slug as a name prefix doesn't.
+#[test]
+fn deleting_machine_ignores_paths_beside_its_data_folder() {
+    let machines_dir = TempDir::new("delete-prefix-defs");
+    let artifacts_root = TempDir::new("delete-prefix-root");
+    let beside = artifacts_root
+        .path()
+        .join(format!("{TEST_SLUG}-2"))
+        .join(DISK_FILE);
+    let mut manager = manager_with_borrower(
+        machines_dir.path(),
+        artifacts_root.path(),
+        beside.display().to_string(),
+    );
+
+    manager.delete_machine(0).expect("delete should succeed");
+
+    assert_eq!(manager.entries.len(), 1);
+    assert!(!artifacts_root.path().join(TEST_SLUG).exists());
+}
+
+/// Deleting both machines together goes ahead: the one using the other's
+/// files is going too.
+#[test]
+fn deleting_machine_with_its_borrower_succeeds() {
+    let machines_dir = TempDir::new("delete-batch-defs");
+    let artifacts_root = TempDir::new("delete-batch-root");
+    let shared_disk = artifacts_root.path().join(TEST_SLUG).join(DISK_FILE);
+    let mut manager = manager_with_borrower(
+        machines_dir.path(),
+        artifacts_root.path(),
+        shared_disk.display().to_string(),
+    );
+    manager.pending_delete = vec![TEST_SLUG.to_string(), BORROWER_SLUG.to_string()];
+
+    manager.commit_pending_delete();
+
+    assert_eq!(manager.delete_error, None);
+    assert!(manager.entries.is_empty());
+    assert!(manager.pending_delete.is_empty());
+    assert!(!artifacts_root.path().join(TEST_SLUG).exists());
+}

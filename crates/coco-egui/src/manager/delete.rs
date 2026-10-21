@@ -7,7 +7,7 @@
 
 use std::ffi::OsStr;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use eframe::egui;
 
@@ -97,8 +97,12 @@ impl ManagerApp {
     /// deleting it, since each removal shifts indices after it. On the
     /// first failure, the failed slug and everything after it go back into
     /// `pending_delete` so the still-open modal can retry.
+    ///
+    /// `pending_delete` keeps the whole batch until the loop ends, so
+    /// [`ManagerApp::check_data_folder_unshared`] can tell the batch's
+    /// machines from the ones that stay.
     fn commit_pending_delete(&mut self) {
-        let mut slugs = std::mem::take(&mut self.pending_delete);
+        let mut slugs = self.pending_delete.clone();
         for i in 0..slugs.len() {
             let Some(index) = self.entries.iter().position(|e| e.slug == slugs[i]) else {
                 continue; // already gone
@@ -109,6 +113,7 @@ impl ManagerApp {
                 return;
             }
         }
+        self.pending_delete.clear();
         self.delete_error = None;
     }
 
@@ -117,6 +122,8 @@ impl ManagerApp {
     /// selection/edit state. Media outside the artifact dir stays on disk.
     /// The definition goes last, so a failed removal leaves the machine
     /// listed for the modal's retry instead of orphaning its artifact dir.
+    /// An artifact dir another machine uses refuses the delete before
+    /// anything happens ([`ManagerApp::check_data_folder_unshared`]).
     fn delete_machine(&mut self, index: usize) -> Result<(), String> {
         let Some(dir) = self.machines_dir.clone() else {
             return Err(NO_CONFIG_DIR.to_string());
@@ -128,6 +135,9 @@ impl ManagerApp {
             .as_deref()
             .map(|root| artifact_dir(root, &slug))
             .transpose()?;
+        if let Some(artifact_dir) = &artifact_dir {
+            self.check_data_folder_unshared(index, artifact_dir)?;
+        }
         // Stopping flushes dirty disk images, which may live in the artifact
         // dir, so it must finish before that dir goes.
         self.stop_vm(index);
@@ -147,6 +157,63 @@ impl ManagerApp {
         }
         Ok(())
     }
+
+    /// Refuse to delete `entries[index]` while a machine outside the pending
+    /// batch names a file or folder inside its `artifact_dir` (by absolute
+    /// path, or a relative one climbing out with `..`): removing the dir
+    /// would take that file from the other machine. Paths are compared
+    /// lexically, without following symlinks.
+    fn check_data_folder_unshared(&self, index: usize, artifact_dir: &Path) -> Result<(), String> {
+        let Some(root) = self.artifacts_root.as_deref() else {
+            return Ok(());
+        };
+        let deleted = &self.entries[index];
+        let dir = lexically_normalized(artifact_dir);
+        let users: Vec<String> = self
+            .entries
+            .iter()
+            .filter(|e| e.slug != deleted.slug && !self.pending_delete.contains(&e.slug))
+            .filter(|e| {
+                let own_dir = root.join(&e.slug);
+                e.def
+                    .host_paths()
+                    .into_iter()
+                    .any(|raw| lexically_normalized(&own_dir.join(raw)).starts_with(&dir))
+            })
+            .map(|e| format!("“{}”", e.def.name))
+            .collect();
+        if users.is_empty() {
+            return Ok(());
+        }
+        let whom = if users.len() == 1 {
+            "that machine"
+        } else {
+            "those machines"
+        };
+        Err(format!(
+            "Can't delete “{}”: its data folder ({}) holds files used by {}. Remove them from \
+             {whom} first, or delete {whom} too.",
+            deleted.def.name,
+            artifact_dir.display(),
+            users.join(", "),
+        ))
+    }
+}
+
+/// `path` with `.` dropped and each `..` cancelling the component before it,
+/// without touching the file system (the files may not exist).
+fn lexically_normalized(path: &Path) -> PathBuf {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                normalized.pop();
+            }
+            other => normalized.push(other),
+        }
+    }
+    normalized
 }
 
 /// `slug`'s artifact dir under `root`. A slug that isn't a single plain

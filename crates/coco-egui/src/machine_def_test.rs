@@ -40,7 +40,7 @@ impl Drop for TempDir {
     }
 }
 
-fn full_def() -> MachineDef {
+pub(crate) fn full_def() -> MachineDef {
     MachineDef {
         schema: CURRENT_SCHEMA,
         name: "Dev CoCo 3".to_string(),
