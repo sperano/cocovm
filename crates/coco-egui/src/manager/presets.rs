@@ -178,9 +178,18 @@ pub(super) fn seed_first_run(
     if machines_dir_present(machines_dir) {
         return Ok(());
     }
+    seed_under_lock(machines_dir, artifacts_root, created)
+}
+
+/// [`seed_first_run`] past its first check: take the seeding lock, check
+/// again for `machines_dir` (another instance may have seeded while this one
+/// waited), then stage the machines and move them into place.
+fn seed_under_lock(
+    machines_dir: &Path,
+    artifacts_root: Option<&Path>,
+    created: Option<String>,
+) -> Result<(), String> {
     let _lock = lock_seeding(machines_dir)?;
-    // Checked again under the lock: another instance may have seeded while
-    // this one waited.
     if machines_dir_present(machines_dir) {
         return Ok(());
     }
@@ -205,9 +214,13 @@ fn machines_dir_present(machines_dir: &Path) -> bool {
 /// Open the `.<name>.seeding.lock` file next to `machines_dir` and wait for
 /// an exclusive lock on it; dropping the file releases the lock, and so does
 /// a crash. The file is never removed: an instance still waiting on a
-/// removed file would lock it while a third instance locks a new one. Where
-/// std reports file locks as unsupported, seeding goes ahead unlocked rather
-/// than never seeding there.
+/// removed file would lock it while a third instance locks a new one.
+///
+/// When the lock can't be taken, seeding warns and goes ahead unlocked:
+/// std reports some platforms' locks as unsupported, and NFS without a lock
+/// manager fails with a plain OS error (ENOLCK). Refusing there would leave
+/// the user without starter machines on every launch, to guard against a
+/// race that needs two instances started at the same moment.
 fn lock_seeding(machines_dir: &Path) -> Result<File, String> {
     let path = sibling_path(machines_dir, SEED_LOCK_SUFFIX)?;
     if let Some(parent) = path.parent() {
@@ -219,11 +232,13 @@ fn lock_seeding(machines_dir: &Path) -> Result<File, String> {
         .write(true)
         .open(&path)
         .map_err(|e| format!("{}: {e}", path.display()))?;
-    match file.lock() {
-        Ok(()) => Ok(file),
-        Err(e) if e.kind() == std::io::ErrorKind::Unsupported => Ok(file),
-        Err(e) => Err(format!("{}: locking: {e}", path.display())),
+    if let Err(e) = file.lock() {
+        eprintln!(
+            "coco: {}: locking: {e}; seeding the starter machines unlocked",
+            path.display()
+        );
     }
+    Ok(file)
 }
 
 /// The staging directory [`seed_first_run`] fills: `.<name>.seeding` next to

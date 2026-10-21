@@ -289,6 +289,8 @@ const CONCURRENT_LAUNCHES: usize = 4;
 /// the machines directory that instance put in place alone. The test holds
 /// the lock as the other instance and creates an empty machines directory
 /// before releasing it, so any machine in it came from the waiting launch.
+/// The launch starts past [`seed_first_run`]'s first check, so it can only
+/// see the directory once it holds the lock.
 #[test]
 fn seeding_waits_for_another_instance() {
     let config = TempDir::new("preset-seed-wait-config");
@@ -297,7 +299,7 @@ fn seeding_waits_for_another_instance() {
     let lock = lock_seeding(&machines).expect("lock taken");
 
     let waiting = thread::scope(|scope| {
-        let launch = scope.spawn(|| seed_first_run(&machines, Some(artifacts.path()), created()));
+        let launch = scope.spawn(|| seed_under_lock(&machines, Some(artifacts.path()), created()));
         fs::create_dir(&machines).unwrap();
         drop(lock);
         launch.join().unwrap()
