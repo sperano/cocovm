@@ -5,8 +5,9 @@
 //! `lifecycle.rs` to keep that module to the single-machine start/stop/
 //! rename lifecycle.
 
+use std::ffi::OsStr;
 use std::fs;
-use std::path::{Component, Path};
+use std::path::{Path, PathBuf};
 
 use eframe::egui;
 
@@ -122,11 +123,16 @@ impl ManagerApp {
         };
         let slug = self.entries[index].slug.clone();
         let path = machine_def::def_path(&dir, &slug);
+        let artifact_dir = self
+            .artifacts_root
+            .as_deref()
+            .map(|root| artifact_dir(root, &slug))
+            .transpose()?;
         // Stopping flushes dirty disk images, which may live in the artifact
         // dir, so it must finish before that dir goes.
         self.stop_vm(index);
-        if let Some(root) = &self.artifacts_root {
-            remove_artifact_dir(root, &slug)?;
+        if let Some(artifact_dir) = &artifact_dir {
+            remove_dir_if_present(artifact_dir)?;
         }
         // A file already gone is fine — the goal state is reached either way.
         match fs::remove_file(&path) {
@@ -143,21 +149,20 @@ impl ManagerApp {
     }
 }
 
-/// Remove `slug`'s artifact dir under `root` with everything in it. A dir
-/// already gone is fine, like the definition file. A slug that isn't a
-/// single plain path component (`load_all` never yields one) is refused
-/// rather than joined, so the removal can never reach `root` itself or
-/// beyond it.
-fn remove_artifact_dir(root: &Path, slug: &str) -> Result<(), String> {
-    let mut components = Path::new(slug).components();
-    if !matches!(
-        (components.next(), components.next()),
-        (Some(Component::Normal(_)), None)
-    ) {
+/// `slug`'s artifact dir under `root`. A slug that isn't a single plain
+/// file name (`load_all` never yields one) is refused rather than joined,
+/// so a delete can never reach `root` itself or beyond it.
+fn artifact_dir(root: &Path, slug: &str) -> Result<PathBuf, String> {
+    if Path::new(slug).file_name() != Some(OsStr::new(slug)) {
         return Err(format!("refusing to delete the data folder of {slug:?}"));
     }
-    let dir = root.join(slug);
-    match fs::remove_dir_all(&dir) {
+    Ok(root.join(slug))
+}
+
+/// Remove `dir` with everything in it. A dir already gone is fine, like the
+/// definition file.
+fn remove_dir_if_present(dir: &Path) -> Result<(), String> {
+    match fs::remove_dir_all(dir) {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(e) => Err(format!("{}: {e}", dir.display())),

@@ -36,10 +36,7 @@ fn test_manager(machines_dir: &std::path::Path) -> ManagerApp {
 
 /// A manager over a saved [`TEST_SLUG`] whose artifact dir under
 /// `artifacts_root` holds a disk image and a suspend state.
-fn manager_with_artifacts(
-    machines_dir: &std::path::Path,
-    artifacts_root: &std::path::Path,
-) -> ManagerApp {
+fn manager_with_artifacts(machines_dir: &Path, artifacts_root: &Path) -> ManagerApp {
     machine_def::save(machines_dir, TEST_SLUG, &test_def()).expect("save definition");
     let artifact_dir = artifacts_root.join(TEST_SLUG);
     fs::create_dir_all(&artifact_dir).expect("create artifact dir");
@@ -139,19 +136,22 @@ fn deleting_machine_without_artifact_dir_succeeds() {
 }
 
 #[test]
-fn artifact_dir_removal_refuses_slugs_outside_one_component() {
-    let artifacts_root = TempDir::new("delete-bad-slug-root");
-    let disk = artifacts_root.path().join(TEST_SLUG).join(DISK_FILE);
-    fs::create_dir_all(disk.parent().unwrap()).expect("create artifact dir");
-    fs::write(&disk, DISK_BYTES).expect("write disk");
-
-    for slug in ["", ".", "..", "running-delete/..", "/tmp"] {
+fn artifact_dir_refuses_slugs_other_than_one_file_name() {
+    let root = Path::new("artifacts");
+    for slug in [
+        "",
+        ".",
+        "..",
+        "running-delete/..",
+        "running-delete/.",
+        "/tmp",
+    ] {
         assert!(
-            remove_artifact_dir(artifacts_root.path(), slug).is_err(),
+            artifact_dir(root, slug).is_err(),
             "slug {slug:?} must be refused"
         );
     }
-    assert_eq!(fs::read(&disk).expect("disk survives"), DISK_BYTES);
+    assert_eq!(artifact_dir(root, TEST_SLUG), Ok(root.join(TEST_SLUG)));
 }
 
 /// An artifact dir that can't be removed fails the delete before the
