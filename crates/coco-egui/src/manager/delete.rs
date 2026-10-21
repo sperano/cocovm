@@ -124,41 +124,64 @@ impl ManagerApp {
     }
 
     /// `slugs` reordered so a machine that uses another batch member's data
-    /// folder is deleted before that member: a borrower whose delete fails
-    /// stops the batch while the folder it uses is still there. In a cycle
-    /// (each uses the other's folder) no order protects both; the earliest
-    /// in `slugs` goes first.
+    /// folder, directly or through other members, is deleted before that
+    /// member: a borrower whose delete fails stops the batch while the folder
+    /// it uses is still there. Members that use each other's folders (a
+    /// cycle) go once nothing else left depends on them, in `slugs` order; no
+    /// order protects them from each other.
     fn dependents_first(&self, slugs: &[String]) -> Vec<String> {
-        let Some(root) = self.artifacts_root.as_deref() else {
-            return slugs.to_vec();
-        };
-        let mut remaining = slugs.to_vec();
+        let mut depends = self.folder_dependencies(slugs);
+        close_transitively(&mut depends);
+        let mut remaining: Vec<usize> = (0..slugs.len()).collect();
         let mut ordered = Vec::with_capacity(slugs.len());
         while !remaining.is_empty() {
+            // Free once every member left that depends on it is one it
+            // depends on too; some member always is.
             let next = remaining
                 .iter()
-                .position(|slug| !self.folder_used_by_any(root, slug, &remaining))
+                .position(|&i| remaining.iter().all(|&j| !depends[j][i] || depends[i][j]))
                 .unwrap_or(0);
-            ordered.push(remaining.remove(next));
+            ordered.push(slugs[remaining.remove(next)].clone());
         }
         ordered
     }
 
-    /// Whether a machine in `users` other than `slug` itself uses `slug`'s
-    /// data folder under `root`.
-    fn folder_used_by_any(&self, root: &Path, slug: &str, users: &[String]) -> bool {
-        let Ok(dir) = artifact_dir(root, slug) else {
-            return false; // refused by the delete itself
+    /// `depends[j][i]`: batch member `slugs[j]` uses `slugs[i]`'s data folder.
+    /// No member depends on anything without an artifacts root.
+    fn folder_dependencies(&self, slugs: &[String]) -> Vec<Vec<bool>> {
+        let Some(root) = self.artifacts_root.as_deref() else {
+            return vec![vec![false; slugs.len()]; slugs.len()];
         };
-        let dir = lexically_normalized(&dir);
-        self.entries
+        // A slug refused here is refused by the delete itself.
+        let folders: Vec<Option<PathBuf>> = slugs
             .iter()
-            .filter(|e| e.slug != slug && users.contains(&e.slug))
-            .any(|e| uses_folder(e, root, &dir))
+            .map(|slug| {
+                artifact_dir(root, slug)
+                    .ok()
+                    .map(|d| lexically_normalized(&d))
+            })
+            .collect();
+        slugs
+            .iter()
+            .map(|user| {
+                let entry = self.entries.iter().find(|e| &e.slug == user);
+                slugs
+                    .iter()
+                    .zip(&folders)
+                    .map(|(slug, folder)| {
+                        slug != user
+                            && entry
+                                .zip(folder.as_deref())
+                                .is_some_and(|(entry, folder)| uses_folder(entry, root, folder))
+                    })
+                    .collect()
+            })
+            .collect()
     }
 
     /// [`ManagerApp::check_data_folder_unshared`] for every listed machine in
-    /// `slugs`, before any is deleted.
+    /// `slugs`, before any is deleted. [`ManagerApp::delete_machine`] checks
+    /// again on purpose: it also guards a single delete.
     fn check_batch_unshared(&self, slugs: &[String]) -> Result<(), String> {
         let Some(root) = self.artifacts_root.as_deref() else {
             return Ok(());
@@ -278,6 +301,19 @@ fn live_paths(vm: &CocoApp) -> impl Iterator<Item = &Path> {
         .chain([&vm.tape_path, &vm.cart_path, &vm.print_capture_path])
         .flatten()
         .map(PathBuf::as_path)
+}
+
+/// Turn `depends` (`depends[j][i]`: `j` depends on `i`) into its transitive
+/// closure, so `j` depends on everything it reaches through others.
+fn close_transitively(depends: &mut [Vec<bool>]) {
+    for via in 0..depends.len() {
+        let reached = depends[via].clone();
+        for row in depends.iter_mut().filter(|row| row[via]) {
+            for (cell, &reach) in row.iter_mut().zip(&reached) {
+                *cell |= reach;
+            }
+        }
+    }
 }
 
 /// `path` with `.` dropped and each `..` cancelling the component before it,

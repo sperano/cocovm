@@ -348,9 +348,9 @@ fn failed_borrower_delete_keeps_the_folder_it_uses() {
     );
 }
 
-/// When two batch members use each other's folders, no order protects
-/// both, so a member whose folder a machine outside the batch uses refuses
-/// the whole batch before anything is removed.
+/// A member whose folder a machine outside the batch uses refuses the whole
+/// batch before anything is removed, even one ordered before it: here the
+/// two members use each other's folders, so the other would go first.
 #[test]
 fn batch_with_a_folder_used_outside_it_deletes_nothing() {
     let machines_dir = TempDir::new("delete-cycle-defs");
@@ -381,4 +381,70 @@ fn batch_with_a_folder_used_outside_it_deletes_nothing() {
     assert_eq!(manager.entries.len(), 3);
     assert_eq!(fs::read(&shared_disk).expect("disk survives"), DISK_BYTES);
     assert_eq!(fs::read(&borrower_disk).expect("disk survives"), DISK_BYTES);
+}
+
+/// A manager under `artifacts_root` listing one machine per `(slug, uses)`,
+/// each mounting a disk from the data folder of every slug in `uses`.
+fn manager_with_users(artifacts_root: &Path, machines: &[(&str, &[&str])]) -> ManagerApp {
+    let entries = machines
+        .iter()
+        .map(|&(slug, uses)| {
+            let mut def = test_def();
+            def.media.disk0 = uses.first().map(|used| folder_disk(artifacts_root, used));
+            def.media.disk1 = uses.get(1).map(|used| folder_disk(artifacts_root, used));
+            MachineEntry::new(slug.to_string(), def)
+        })
+        .collect();
+    ManagerApp::new(
+        None,
+        None,
+        Some(artifacts_root.to_path_buf()),
+        entries,
+        None,
+    )
+}
+
+/// The absolute path of [`DISK_FILE`] in `slug`'s data folder.
+fn folder_disk(artifacts_root: &Path, slug: &str) -> String {
+    artifacts_root
+        .join(slug)
+        .join(DISK_FILE)
+        .display()
+        .to_string()
+}
+
+fn slugs(names: &[&str]) -> Vec<String> {
+    names.iter().map(ToString::to_string).collect()
+}
+
+/// A borrower goes before the machine whose folder it uses, also through
+/// another member; unrelated members keep their order.
+#[test]
+fn dependents_first_puts_borrowers_before_their_folders() {
+    let root = Path::new("/artifacts");
+    let manager = manager_with_users(
+        root,
+        &[("a", &[]), ("b", &["a"]), ("c", &["b"]), ("d", &[])],
+    );
+
+    let order = manager.dependents_first(&slugs(&["a", "b", "c", "d"]));
+
+    assert_eq!(order, slugs(&["c", "b", "a", "d"]));
+}
+
+/// Members that use each other's folders go in batch order, but only once
+/// nothing else left uses them: a member a cycle uses waits for the cycle.
+#[test]
+fn dependents_first_orders_a_cycle_before_what_it_uses() {
+    let root = Path::new("/artifacts");
+    let manager = manager_with_users(root, &[("c", &[]), ("a", &["b", "c"]), ("b", &["a"])]);
+
+    assert_eq!(
+        manager.dependents_first(&slugs(&["a", "b"])),
+        slugs(&["a", "b"])
+    );
+    assert_eq!(
+        manager.dependents_first(&slugs(&["c", "a", "b"])),
+        slugs(&["a", "b", "c"])
+    );
 }
