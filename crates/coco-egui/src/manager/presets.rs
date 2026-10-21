@@ -8,7 +8,9 @@
 //! touching anyone's existing machines. Templates use only what the app's
 //! asset bundle already ships (the DOS ROMs `machine_def::DosRom` names).
 
-use std::path::Path;
+use std::ffi::OsString;
+use std::fs;
+use std::path::{Path, PathBuf};
 
 use coco_core::{MachineConfig, MachineVariant, MemorySize};
 
@@ -17,6 +19,13 @@ use crate::machine_def::{self, CartridgeDTO, DosRom, MachineDef};
 
 /// Floppy drive of the blank disk a Disk BASIC template mounts.
 const BLANK_DISK_DRIVE: usize = 0;
+
+/// Appended to the machines directory's name (behind a leading dot) to name
+/// the sibling directory [`seed_first_run`] fills before moving it into place.
+const SEED_STAGING_SUFFIX: &str = ".seeding";
+
+/// Extension of a saved definition (`machine_def::def_path`).
+const DEF_EXTENSION: &str = "toml";
 
 /// A built-in machine template.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -130,12 +139,19 @@ pub(super) fn install(
     created: Option<String>,
 ) -> Result<MachineDef, String> {
     let def = preset.def(created);
+    place_media(preset, artifacts_root, slug)?;
+    machine_def::save(machines_dir, slug, &def)?;
+    Ok(def)
+}
+
+/// Create `preset`'s blank media in machine `slug`'s artifact dir under
+/// `artifacts_root`.
+fn place_media(preset: Preset, artifacts_root: Option<&Path>, slug: &str) -> Result<(), String> {
     if preset.has_blank_disk() {
         let root = artifacts_root.ok_or(super::NO_DATA_DIR)?;
         place_blank_file(root, slug, &blank_disk_file(BLANK_DISK_DRIVE))?;
     }
-    machine_def::save(machines_dir, slug, &def)?;
-    Ok(def)
+    Ok(())
 }
 
 /// On a real first run — `machines_dir` does not exist yet — write the
@@ -144,6 +160,12 @@ pub(super) fn install(
 /// machines the user deleted stay deleted. A slug whose artifact dir
 /// survived (data kept, config removed) gets a suffix, so no starter
 /// machine starts on an old disk.
+///
+/// The machines are written into a staging directory that is renamed to
+/// `machines_dir` only once all of them are in it, so a failure (or a crash)
+/// partway never leaves a `machines_dir` that would stop the next launch
+/// from seeding the rest. A failure discards the staging directory; one
+/// left by a crash is discarded before seeding starts.
 pub(super) fn seed_first_run(
     machines_dir: &Path,
     artifacts_root: Option<&Path>,
@@ -153,13 +175,77 @@ pub(super) fn seed_first_run(
     if machines_dir.try_exists().unwrap_or(true) {
         return Ok(());
     }
+    let staging = staging_dir(machines_dir)?;
+    discard_staging(&staging, artifacts_root)?;
+    let seeded = stage(&staging, artifacts_root, created).and_then(|()| {
+        fs::rename(&staging, machines_dir).map_err(|e| format!("{}: {e}", machines_dir.display()))
+    });
+    if seeded.is_err() {
+        // Best effort: whatever survives is discarded on the next launch.
+        let _ = discard_staging(&staging, artifacts_root);
+    }
+    seeded
+}
+
+/// The staging directory [`seed_first_run`] fills: `.<name>.seeding` next to
+/// `machines_dir`, so the final rename stays on one file system.
+fn staging_dir(machines_dir: &Path) -> Result<PathBuf, String> {
+    let name = machines_dir
+        .file_name()
+        .ok_or_else(|| format!("{}: no directory name", machines_dir.display()))?;
+    let mut staged = OsString::from(".");
+    staged.push(name);
+    staged.push(SEED_STAGING_SUFFIX);
+    Ok(machines_dir.with_file_name(staged))
+}
+
+/// Write the [`Preset::FIRST_RUN`] machines into `staging`. Each definition
+/// is saved before its blank media is placed, so [`discard_staging`] finds
+/// every artifact dir this created through the definitions left behind.
+fn stage(
+    staging: &Path,
+    artifacts_root: Option<&Path>,
+    created: Option<String>,
+) -> Result<(), String> {
     let taken =
-        |candidate: &str| machine_def::slug_on_disk(Some(machines_dir), artifacts_root, candidate);
+        |candidate: &str| machine_def::slug_on_disk(Some(staging), artifacts_root, candidate);
     for preset in Preset::FIRST_RUN {
         let slug = machine_def::unique_slug(&machine_def::slugify(preset.name()), &taken);
-        install(preset, machines_dir, artifacts_root, &slug, created.clone())?;
+        machine_def::save(staging, &slug, &preset.def(created.clone()))?;
+        place_media(preset, artifacts_root, &slug)?;
     }
     Ok(())
+}
+
+/// Remove `staging` and, for each definition in it, the blank media
+/// [`stage`] placed. A missing `staging` is fine.
+fn discard_staging(staging: &Path, artifacts_root: Option<&Path>) -> Result<(), String> {
+    let entries = match fs::read_dir(staging) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(format!("{}: {e}", staging.display())),
+    };
+    if let Some(root) = artifacts_root {
+        for path in entries.flatten().map(|entry| entry.path()) {
+            if path.extension().and_then(|ext| ext.to_str()) == Some(DEF_EXTENSION)
+                && let Some(slug) = path.file_stem().and_then(|stem| stem.to_str())
+            {
+                discard_blank_media(&root.join(slug));
+            }
+        }
+    }
+    fs::remove_dir_all(staging).map_err(|e| format!("{}: {e}", staging.display()))
+}
+
+/// Remove the blank disk in `artifact_dir` while it is still empty, then the
+/// dir itself while it is empty, so nothing the user wrote is ever deleted.
+/// Best effort: what stays only makes the slug count as taken.
+fn discard_blank_media(artifact_dir: &Path) {
+    let disk = artifact_dir.join(blank_disk_file(BLANK_DISK_DRIVE));
+    if fs::metadata(&disk).is_ok_and(|meta| meta.is_file() && meta.len() == 0) {
+        let _ = fs::remove_file(&disk);
+    }
+    let _ = fs::remove_dir(artifact_dir);
 }
 
 #[cfg(test)]

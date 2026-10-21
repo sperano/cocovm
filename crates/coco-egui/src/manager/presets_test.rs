@@ -228,6 +228,57 @@ fn existing_machines_dir_is_not_seeded() {
     assert_eq!(fs::read_dir(artifacts.path()).unwrap().count(), 0);
 }
 
+/// A failure partway through seeding leaves neither the machines directory
+/// nor the staging directory behind, so the next launch seeds every starter
+/// machine. A dangling symlink at the CoCo 2 machine's artifact dir counts as
+/// free to `slug_on_disk` but cannot be created, so the CoCo 3 machine is
+/// staged first and the CoCo 2 one then fails.
+#[cfg(unix)]
+#[test]
+fn failed_seeding_is_retried_on_the_next_launch() {
+    let config = TempDir::new("preset-seed-retry-config");
+    let artifacts = TempDir::new("preset-seed-retry-artifacts");
+    let machines = config.path().join("machines");
+    let blocked = artifacts.path().join("coco-2-disk-basic");
+    std::os::unix::fs::symlink(artifacts.path().join("missing"), &blocked).unwrap();
+
+    seed_first_run(&machines, Some(artifacts.path()), created()).unwrap_err();
+
+    assert!(!machines.exists());
+    assert!(!staging_dir(&machines).unwrap().exists());
+    assert!(!artifacts.path().join("coco-3-disk-basic").exists());
+    fs::remove_file(&blocked).unwrap();
+    seed_first_run(&machines, Some(artifacts.path()), created()).expect("retry succeeds");
+    let loaded = machine_def::load_all(&machines).expect("seeded machines load");
+    let slugs: Vec<&str> = loaded.iter().map(|(slug, _)| slug.as_str()).collect();
+    assert_eq!(slugs, ["coco-2-disk-basic", "coco-3-disk-basic"]);
+}
+
+/// A staging directory left by a crash is discarded with the empty blank
+/// disks it placed, so the starter machines get their plain slugs back. A
+/// staged machine's disk that holds data is kept, and its slug skipped.
+#[test]
+fn seeding_discards_a_crashed_run() {
+    let config = TempDir::new("preset-seed-crash-config");
+    let artifacts = TempDir::new("preset-seed-crash-artifacts");
+    let machines = config.path().join("machines");
+    let staging = staging_dir(&machines).unwrap();
+    for preset in Preset::FIRST_RUN {
+        let slug = machine_def::slugify(preset.name());
+        install(preset, &staging, Some(artifacts.path()), &slug, None).unwrap();
+    }
+    let kept = artifacts.path().join("coco-2-disk-basic").join("disk0.dsk");
+    fs::write(&kept, b"user data").unwrap();
+
+    seed_first_run(&machines, Some(artifacts.path()), created()).expect("seeding succeeds");
+
+    assert!(!staging.exists());
+    let loaded = machine_def::load_all(&machines).expect("seeded machines load");
+    let slugs: Vec<&str> = loaded.iter().map(|(slug, _)| slug.as_str()).collect();
+    assert_eq!(slugs, ["coco-2-disk-basic-2", "coco-3-disk-basic"]);
+    assert_eq!(fs::read(&kept).unwrap(), b"user data");
+}
+
 /// Each template boots through the production launch path with the
 /// installed ROMs: its DOS ROM loads and its blank floppy mounts. The
 /// relative `disk0` is pointed at the placed file, since launch resolves it
