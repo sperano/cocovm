@@ -267,3 +267,34 @@ fn deleting_machine_with_its_borrower_succeeds() {
     assert!(manager.pending_delete.is_empty());
     assert!(!artifacts_root.path().join(TEST_SLUG).exists());
 }
+
+/// A running machine counts the media its VM has mounted now, not only what
+/// its definition names: a disk inserted at runtime from the other machine's
+/// data folder refuses the delete too.
+#[test]
+fn deleting_machine_whose_files_a_running_machine_mounted_is_refused() {
+    let machines_dir = TempDir::new("delete-live-defs");
+    let artifacts_root = TempDir::new("delete-live-root");
+    let shared_disk = artifacts_root.path().join(TEST_SLUG).join(DISK_FILE);
+    let mut manager = manager_with_artifacts(machines_dir.path(), artifacts_root.path());
+    let mut borrower = test_def();
+    borrower.name = "Borrower".to_string();
+    manager
+        .entries
+        .push(MachineEntry::new(BORROWER_SLUG.to_string(), borrower));
+    manager.start_vm(1);
+    assert!(
+        manager.entries[1].vm.is_some(),
+        "launch should succeed: {:?}",
+        manager.entries[1].launch_error
+    );
+    manager.entries[1].vm.as_mut().unwrap().disk_paths[1] = Some(shared_disk.clone());
+
+    let error = manager
+        .delete_machine(0)
+        .expect_err("the delete must be refused");
+
+    assert!(error.contains("“Borrower”"), "{error}");
+    assert_eq!(manager.entries.len(), 2);
+    assert_eq!(fs::read(&shared_disk).expect("disk survives"), DISK_BYTES);
+}

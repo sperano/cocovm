@@ -11,9 +11,9 @@ use std::path::{Component, Path, PathBuf};
 
 use eframe::egui;
 
-use crate::machine_def;
+use crate::{CocoApp, machine_def};
 
-use super::{DETAIL_SECTION_GAP, ManagerApp, NO_CONFIG_DIR};
+use super::{DETAIL_SECTION_GAP, MachineEntry, ManagerApp, NO_CONFIG_DIR};
 
 impl ManagerApp {
     /// The confirmation modal behind "Delete…", drawn once per `update()`
@@ -161,8 +161,9 @@ impl ManagerApp {
     /// Refuse to delete `entries[index]` while a machine outside the pending
     /// batch names a file or folder inside its `artifact_dir` (by absolute
     /// path, or a relative one climbing out with `..`): removing the dir
-    /// would take that file from the other machine. Paths are compared
-    /// lexically, without following symlinks.
+    /// would take that file from the other machine. A running machine counts
+    /// what it has mounted now as well as what its definition names. Paths
+    /// are compared lexically, without following symlinks.
     fn check_data_folder_unshared(&self, index: usize, artifact_dir: &Path) -> Result<(), String> {
         let Some(root) = self.artifacts_root.as_deref() else {
             return Ok(());
@@ -173,15 +174,7 @@ impl ManagerApp {
             .entries
             .iter()
             .filter(|e| e.slug != deleted.slug && !self.pending_delete.contains(&e.slug))
-            .filter(|e| {
-                // Resolved like `machine_def::resolve_media_path`, against the
-                // injected root.
-                let own_dir = root.join(&e.slug);
-                e.def
-                    .host_paths()
-                    .into_iter()
-                    .any(|raw| lexically_normalized(&own_dir.join(raw)).starts_with(&dir))
-            })
+            .filter(|e| uses_folder(e, root, &dir))
             .map(|e| format!("“{}”", e.def.name))
             .collect();
         if users.is_empty() {
@@ -200,6 +193,37 @@ impl ManagerApp {
             users.join(", "),
         ))
     }
+}
+
+/// Whether `entry` names a path inside `dir` (lexically normalized) in its
+/// definition or, while running, in the media its VM has mounted: a runtime
+/// Insert can mount a file the definition doesn't name.
+fn uses_folder(entry: &MachineEntry, root: &Path, dir: &Path) -> bool {
+    // Resolved like `machine_def::resolve_media_path`, against the injected
+    // root.
+    let own_dir = root.join(&entry.slug);
+    let inside = |path: &Path| lexically_normalized(&own_dir.join(path)).starts_with(dir);
+    entry
+        .def
+        .host_paths()
+        .into_iter()
+        .any(|raw| inside(Path::new(raw)))
+        || entry
+            .vm
+            .as_deref()
+            .is_some_and(|vm| live_paths(vm).any(inside))
+}
+
+/// The files `vm` has mounted now: disks, hard disks, DriveWire disks, tape,
+/// and cartridge.
+fn live_paths(vm: &CocoApp) -> impl Iterator<Item = &Path> {
+    vm.disk_paths
+        .iter()
+        .chain(&vm.vhd_paths)
+        .chain(&vm.dw_paths)
+        .chain([&vm.tape_path, &vm.cart_path])
+        .flatten()
+        .map(PathBuf::as_path)
 }
 
 /// `path` with `.` dropped and each `..` cancelling the component before it,
