@@ -214,14 +214,14 @@ fn uses_folder(entry: &MachineEntry, root: &Path, dir: &Path) -> bool {
             .is_some_and(|vm| live_paths(vm).any(inside))
 }
 
-/// The files `vm` has mounted now: disks, hard disks, DriveWire disks, tape,
-/// and cartridge.
+/// The files `vm` has mounted or writes now: disks, hard disks, DriveWire
+/// disks, tape, cartridge, and print capture.
 fn live_paths(vm: &CocoApp) -> impl Iterator<Item = &Path> {
     vm.disk_paths
         .iter()
         .chain(&vm.vhd_paths)
         .chain(&vm.dw_paths)
-        .chain([&vm.tape_path, &vm.cart_path])
+        .chain([&vm.tape_path, &vm.cart_path, &vm.print_capture_path])
         .flatten()
         .map(PathBuf::as_path)
 }
