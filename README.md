@@ -63,6 +63,11 @@ asset bundle. On Linux and macOS, CoCoVM installs these files under
 respective owners and aren't covered by the source-code licenses in this
 repository. See [NOTICE.md](NOTICE.md) for details.
 
+The first launch also adds two starter machines: a CoCo 3 and a CoCo 2, each
+with Disk BASIC and a blank disk in drive 0. To create another machine from a
+template, click the arrow next to **New**. The templates are the two starter
+machines and a CoCo 3 that runs HDB-DOS over the built-in DriveWire server.
+
 ## Build from source
 
 See [BUILD.md](BUILD.md) for macOS, Debian or Ubuntu Linux, and Windows setup,

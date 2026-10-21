@@ -11,6 +11,7 @@ use std::path::PathBuf;
 
 use crate::machine_def;
 
+use super::presets::{self, Preset};
 use super::{
     MachineEntry, ManagerApp, NO_CONFIG_DIR, NO_DATA_DIR, SUSPEND_STATE_FILE, THUMBNAIL_FILE,
     suspend_state_path,
@@ -22,16 +23,37 @@ fn default_new_name() -> String {
     crate::machine_label(MachineConfig::default().variant).to_string()
 }
 
+/// Today's date in `[created]`'s format, for a machine created now.
+pub(super) fn created_today() -> Option<String> {
+    Some(
+        chrono::Local::now()
+            .format(machine_def::DATE_FORMAT)
+            .to_string(),
+    )
+}
+
 impl ManagerApp {
     /// "New…" (toolbar button and ⌘N): create a default machine right now —
     /// saved to disk, inserted in the list, and selected with the Name field
     /// focused, instead of opening a dialog. Does NOT boot anything.
     pub(super) fn create_machine_now(&mut self) {
+        self.create_machine(None);
+    }
+
+    /// The New menu's template items: [`Self::create_machine_now`], but the
+    /// new machine starts as `preset` instead of the default CoCo 3.
+    pub(super) fn create_machine_from_preset(&mut self, preset: Preset) {
+        self.create_machine(Some(preset));
+    }
+
+    /// Create, save, insert, and select a machine built from `preset`, or the
+    /// default machine for `None`.
+    fn create_machine(&mut self, preset: Option<Preset>) {
         let Some(dir) = self.machines_dir.clone() else {
             self.save_error = Some(NO_CONFIG_DIR.to_string());
             return;
         };
-        let name = default_new_name();
+        let name = preset.map_or_else(default_new_name, |preset| preset.name().to_string());
         // Checks both the in-memory list and the directory itself, since
         // `entries` misses a file written by another instance.
         let taken = |candidate: &str| {
@@ -39,14 +61,25 @@ impl ManagerApp {
                 || machine_def::def_path(&dir, candidate).exists()
         };
         let slug = machine_def::unique_slug(&machine_def::slugify(&name), &taken);
-        let created = Some(
-            chrono::Local::now()
-                .format(machine_def::DATE_FORMAT)
-                .to_string(),
-        );
-        let def = machine_def::MachineDef::from_config(name, created, &MachineConfig::default());
-        match machine_def::save(&dir, &slug, &def) {
-            Ok(()) => {
+        let saved = match preset {
+            Some(preset) => presets::install(
+                preset,
+                &dir,
+                self.artifacts_root.as_deref(),
+                &slug,
+                created_today(),
+            ),
+            None => {
+                let def = machine_def::MachineDef::from_config(
+                    name,
+                    created_today(),
+                    &MachineConfig::default(),
+                );
+                machine_def::save(&dir, &slug, &def).map(|()| def)
+            }
+        };
+        match saved {
+            Ok(def) => {
                 self.entries.push(MachineEntry::new(slug, def));
                 let index = self.entries.len() - 1;
                 self.selection.set_single(index);

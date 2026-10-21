@@ -40,6 +40,7 @@ pub(crate) mod list;
 mod live_drivewire;
 #[cfg(feature = "perf")]
 mod perf_scenarios;
+pub(crate) mod presets;
 mod rename;
 pub(crate) mod reveal;
 mod roms;
@@ -48,7 +49,7 @@ mod selection;
 mod settings;
 mod sort;
 mod thumbnails;
-mod toolbar;
+pub(crate) mod toolbar;
 mod vm_windows;
 pub(crate) mod welcome;
 mod welcome_image;
