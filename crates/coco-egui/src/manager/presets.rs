@@ -205,21 +205,25 @@ fn machines_dir_present(machines_dir: &Path) -> bool {
 /// Open the `.<name>.seeding.lock` file next to `machines_dir` and wait for
 /// an exclusive lock on it; dropping the file releases the lock, and so does
 /// a crash. The file is never removed: an instance still waiting on a
-/// removed file would lock it while a third instance locks a new one.
+/// removed file would lock it while a third instance locks a new one. On a
+/// file system without file locks (some network mounts) seeding goes ahead
+/// unlocked rather than never seeding there.
 fn lock_seeding(machines_dir: &Path) -> Result<File, String> {
     let path = sibling_path(machines_dir, SEED_LOCK_SUFFIX)?;
-    let error = |e: std::io::Error| format!("{}: {e}", path.display());
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(error)?;
+        fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
     }
     let file = OpenOptions::new()
         .create(true)
         .truncate(false)
         .write(true)
         .open(&path)
-        .map_err(error)?;
-    file.lock().map_err(error)?;
-    Ok(file)
+        .map_err(|e| format!("{}: {e}", path.display()))?;
+    match file.lock() {
+        Ok(()) => Ok(file),
+        Err(e) if e.kind() == std::io::ErrorKind::Unsupported => Ok(file),
+        Err(e) => Err(format!("{}: locking: {e}", path.display())),
+    }
 }
 
 /// The staging directory [`seed_first_run`] fills: `.<name>.seeding` next to

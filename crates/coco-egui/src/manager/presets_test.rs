@@ -1,4 +1,6 @@
 use std::fs;
+use std::sync::Barrier;
+use std::thread;
 
 use coco_core::{MachineVariant, MemorySize, MonitorType, VDGVariant};
 
@@ -294,7 +296,7 @@ fn seeding_waits_for_another_instance() {
     let machines = config.path().join("machines");
     let lock = lock_seeding(&machines).expect("lock taken");
 
-    let waiting = std::thread::scope(|scope| {
+    let waiting = thread::scope(|scope| {
         let launch = scope.spawn(|| seed_first_run(&machines, Some(artifacts.path()), created()));
         fs::create_dir(&machines).unwrap();
         drop(lock);
@@ -313,9 +315,9 @@ fn concurrent_first_runs_seed_once() {
     let config = TempDir::new("preset-seed-race-config");
     let artifacts = TempDir::new("preset-seed-race-artifacts");
     let machines = config.path().join("machines");
-    let start = std::sync::Barrier::new(CONCURRENT_LAUNCHES);
+    let start = Barrier::new(CONCURRENT_LAUNCHES);
 
-    let results: Vec<_> = std::thread::scope(|scope| {
+    let results: Vec<_> = thread::scope(|scope| {
         let launches: Vec<_> = (0..CONCURRENT_LAUNCHES)
             .map(|_| {
                 scope.spawn(|| {
