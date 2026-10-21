@@ -298,3 +298,87 @@ fn deleting_machine_whose_files_a_running_machine_mounted_is_refused() {
     assert_eq!(manager.entries.len(), 2);
     assert_eq!(fs::read(&shared_disk).expect("disk survives"), DISK_BYTES);
 }
+
+/// Slug of a machine outside the batch that mounts a disk from
+/// [`BORROWER_SLUG`]'s data folder.
+const OUTSIDER_SLUG: &str = "outsider";
+
+/// Writes [`DISK_FILE`] into `slug`'s data folder under `artifacts_root`
+/// and returns its path.
+fn write_disk(artifacts_root: &Path, slug: &str) -> PathBuf {
+    let disk = artifacts_root.join(slug).join(DISK_FILE);
+    fs::create_dir_all(disk.parent().unwrap()).expect("create artifact dir");
+    fs::write(&disk, DISK_BYTES).expect("write disk");
+    disk
+}
+
+/// A batch deletes a borrower before the machine whose files it uses, so a
+/// borrower that fails to go stops the batch with those files intact.
+#[cfg(unix)]
+#[test]
+fn failed_borrower_delete_keeps_the_folder_it_uses() {
+    let machines_dir = TempDir::new("delete-order-defs");
+    let artifacts_root = TempDir::new("delete-order-root");
+    let shared_disk = artifacts_root.path().join(TEST_SLUG).join(DISK_FILE);
+    let mut manager = manager_with_borrower(
+        machines_dir.path(),
+        artifacts_root.path(),
+        shared_disk.display().to_string(),
+    );
+    let borrower_dir = write_disk(artifacts_root.path(), BORROWER_SLUG)
+        .parent()
+        .unwrap()
+        .to_path_buf();
+    manager.pending_delete = vec![TEST_SLUG.to_string(), BORROWER_SLUG.to_string()];
+
+    {
+        let _read_only = ReadOnly::new(&borrower_dir);
+        manager.commit_pending_delete();
+    }
+
+    assert!(
+        manager.delete_error.is_some(),
+        "the failure must be reported"
+    );
+    assert_eq!(manager.entries.len(), 2);
+    assert_eq!(fs::read(&shared_disk).expect("disk survives"), DISK_BYTES);
+    assert_eq!(
+        manager.pending_delete,
+        [BORROWER_SLUG.to_string(), TEST_SLUG.to_string()]
+    );
+}
+
+/// When two batch members use each other's folders, no order protects
+/// both, so a member whose folder a machine outside the batch uses refuses
+/// the whole batch before anything is removed.
+#[test]
+fn batch_with_a_folder_used_outside_it_deletes_nothing() {
+    let machines_dir = TempDir::new("delete-cycle-defs");
+    let artifacts_root = TempDir::new("delete-cycle-root");
+    let shared_disk = artifacts_root.path().join(TEST_SLUG).join(DISK_FILE);
+    let mut manager = manager_with_borrower(
+        machines_dir.path(),
+        artifacts_root.path(),
+        shared_disk.display().to_string(),
+    );
+    let borrower_disk = write_disk(artifacts_root.path(), BORROWER_SLUG);
+    manager.entries[0].def.media.disk1 = Some(borrower_disk.display().to_string());
+    let mut outsider = test_def();
+    outsider.name = "Outsider".to_string();
+    outsider.media.disk0 = Some(borrower_disk.display().to_string());
+    manager
+        .entries
+        .push(MachineEntry::new(OUTSIDER_SLUG.to_string(), outsider));
+    manager.pending_delete = vec![TEST_SLUG.to_string(), BORROWER_SLUG.to_string()];
+
+    manager.commit_pending_delete();
+
+    let error = manager
+        .delete_error
+        .as_deref()
+        .expect("the batch is refused");
+    assert!(error.contains("“Outsider”"), "{error}");
+    assert_eq!(manager.entries.len(), 3);
+    assert_eq!(fs::read(&shared_disk).expect("disk survives"), DISK_BYTES);
+    assert_eq!(fs::read(&borrower_disk).expect("disk survives"), DISK_BYTES);
+}

@@ -93,16 +93,22 @@ impl ManagerApp {
     }
 
     /// Confirmed delete: works through [`ManagerApp::pending_delete`] in
-    /// order, resolving each slug to its current index right before
-    /// deleting it, since each removal shifts indices after it. On the
-    /// first failure, the failed slug and everything after it go back into
-    /// `pending_delete` so the still-open modal can retry.
+    /// [`ManagerApp::dependents_first`] order, resolving each slug to its
+    /// current index right before deleting it, since each removal shifts
+    /// indices after it. On the first failure, the failed slug and
+    /// everything after it go back into `pending_delete` so the still-open
+    /// modal can retry. A batch whose data folder another machine uses is
+    /// refused before anything is deleted.
     ///
     /// `pending_delete` keeps the whole batch until the loop ends, so
     /// [`ManagerApp::check_data_folder_unshared`] can tell the batch's
     /// machines from the ones that stay.
     fn commit_pending_delete(&mut self) {
-        let mut slugs = self.pending_delete.clone();
+        let mut slugs = self.dependents_first(&self.pending_delete);
+        if let Err(e) = self.check_batch_unshared(&slugs) {
+            self.delete_error = Some(e);
+            return;
+        }
         for i in 0..slugs.len() {
             let Some(index) = self.entries.iter().position(|e| e.slug == slugs[i]) else {
                 continue; // already gone
@@ -115,6 +121,54 @@ impl ManagerApp {
         }
         self.pending_delete.clear();
         self.delete_error = None;
+    }
+
+    /// `slugs` reordered so a machine that uses another batch member's data
+    /// folder is deleted before that member: a borrower whose delete fails
+    /// stops the batch while the folder it uses is still there. In a cycle
+    /// (each uses the other's folder) no order protects both; the earliest
+    /// in `slugs` goes first.
+    fn dependents_first(&self, slugs: &[String]) -> Vec<String> {
+        let Some(root) = self.artifacts_root.as_deref() else {
+            return slugs.to_vec();
+        };
+        let mut remaining = slugs.to_vec();
+        let mut ordered = Vec::with_capacity(slugs.len());
+        while !remaining.is_empty() {
+            let next = remaining
+                .iter()
+                .position(|slug| !self.folder_used_by_any(root, slug, &remaining))
+                .unwrap_or(0);
+            ordered.push(remaining.remove(next));
+        }
+        ordered
+    }
+
+    /// Whether a machine in `users` other than `slug` itself uses `slug`'s
+    /// data folder under `root`.
+    fn folder_used_by_any(&self, root: &Path, slug: &str, users: &[String]) -> bool {
+        let Ok(dir) = artifact_dir(root, slug) else {
+            return false; // refused by the delete itself
+        };
+        let dir = lexically_normalized(&dir);
+        self.entries
+            .iter()
+            .filter(|e| e.slug != slug && users.contains(&e.slug))
+            .any(|e| uses_folder(e, root, &dir))
+    }
+
+    /// [`ManagerApp::check_data_folder_unshared`] for every listed machine in
+    /// `slugs`, before any is deleted.
+    fn check_batch_unshared(&self, slugs: &[String]) -> Result<(), String> {
+        let Some(root) = self.artifacts_root.as_deref() else {
+            return Ok(());
+        };
+        for slug in slugs {
+            if let Some(index) = self.entries.iter().position(|e| &e.slug == slug) {
+                self.check_data_folder_unshared(index, &artifact_dir(root, slug)?)?;
+            }
+        }
+        Ok(())
     }
 
     /// Delete `entries[index]`: stop its VM if running, remove its artifact
