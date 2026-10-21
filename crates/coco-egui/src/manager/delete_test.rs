@@ -201,14 +201,16 @@ fn manager_with_borrower(machines_dir: &Path, artifacts_root: &Path, disk0: Stri
 /// refused before anything is removed.
 #[test]
 fn deleting_machine_whose_files_another_machine_uses_is_refused() {
-    for (label, disk0) in [
-        ("absolute", None),
-        ("relative", Some(format!("../{TEST_SLUG}/./{DISK_FILE}"))),
-    ] {
+    for absolute in [true, false] {
+        let label = if absolute { "absolute" } else { "relative" };
         let machines_dir = TempDir::new("delete-shared-defs");
         let artifacts_root = TempDir::new("delete-shared-root");
         let shared_disk = artifacts_root.path().join(TEST_SLUG).join(DISK_FILE);
-        let disk0 = disk0.unwrap_or_else(|| shared_disk.display().to_string());
+        let disk0 = if absolute {
+            shared_disk.display().to_string()
+        } else {
+            format!("../{TEST_SLUG}/./{DISK_FILE}")
+        };
         let mut manager = manager_with_borrower(machines_dir.path(), artifacts_root.path(), disk0);
 
         let error = manager

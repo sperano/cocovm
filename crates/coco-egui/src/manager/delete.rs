@@ -174,6 +174,8 @@ impl ManagerApp {
             .iter()
             .filter(|e| e.slug != deleted.slug && !self.pending_delete.contains(&e.slug))
             .filter(|e| {
+                // Resolved like `machine_def::resolve_media_path`, against the
+                // injected root.
                 let own_dir = root.join(&e.slug);
                 e.def
                     .host_paths()
@@ -201,7 +203,8 @@ impl ManagerApp {
 }
 
 /// `path` with `.` dropped and each `..` cancelling the component before it,
-/// without touching the file system (the files may not exist).
+/// without touching the file system (the files may not exist). Meant for
+/// absolute paths: a leading `..` in a relative one is dropped.
 fn lexically_normalized(path: &Path) -> PathBuf {
     let mut normalized = PathBuf::new();
     for component in path.components() {

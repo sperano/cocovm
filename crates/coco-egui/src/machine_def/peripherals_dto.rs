@@ -137,7 +137,15 @@ impl CartridgeDTO {
                 vec![path]
             }
             Self::MPI { slots, .. } => slots.iter().filter_map(SlotDTO::rom_path).collect(),
-            _ => Vec::new(),
+            // Listed, not `_`: a new variant with a path must not slip past
+            // the delete check that relies on this.
+            Self::None
+            | Self::FD502 { .. }
+            | Self::RTC
+            | Self::RS232 { .. }
+            | Self::Orch90
+            | Self::SoundSpeech
+            | Self::CoCoMax => Vec::new(),
         }
     }
 }
@@ -149,7 +157,13 @@ impl SlotDTO {
             Self::ROMPak { path } | Self::BankedROMPak { path } | Self::GamesMaster { path } => {
                 Some(path)
             }
-            _ => None,
+            Self::Empty
+            | Self::FD502 { .. }
+            | Self::RTC
+            | Self::RS232 { .. }
+            | Self::Orch90
+            | Self::SoundSpeech
+            | Self::CoCoMax => None,
         }
     }
 }
