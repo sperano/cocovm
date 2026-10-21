@@ -4,14 +4,15 @@
 
 use std::path::Path;
 
-use super::MachineDef;
+use super::{MachineDef, PrintOutputDTO};
 
 impl MachineDef {
     /// Every host file or folder this definition names that resolves like a
     /// `[media]` path ([`super::resolve_media_path`]), as written: `[media]`, the
-    /// DriveWire disks, shares and print folder, and cartridge ROM images.
-    /// `[hardware].rom` counts only when absolute, since a relative one names
-    /// a file in the working directory, not in the artifact dir.
+    /// DriveWire disks, shares and print folder (only when print jobs go
+    /// there), and cartridge ROM images. `[hardware].rom` counts only when
+    /// absolute, since a relative one names a file in the working directory,
+    /// not in the artifact dir.
     pub fn host_paths(&self) -> Vec<&str> {
         let media = &self.media;
         let mut paths: Vec<&str> = [
@@ -27,7 +28,10 @@ impl MachineDef {
         let drivewire = &self.drivewire;
         paths.extend(drivewire.disk_paths().into_iter().flatten());
         paths.extend(drivewire.shares.iter().map(|share| share.path.as_str()));
-        paths.push(&drivewire.printer.folder);
+        // Launch ignores the folder unless print jobs go there.
+        if drivewire.printer.output == PrintOutputDTO::Folder {
+            paths.push(&drivewire.printer.folder);
+        }
         paths.extend(self.peripherals.cartridge.rom_paths());
         paths.extend(
             self.hardware
