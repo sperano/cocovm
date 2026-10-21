@@ -205,9 +205,9 @@ fn machines_dir_present(machines_dir: &Path) -> bool {
 /// Open the `.<name>.seeding.lock` file next to `machines_dir` and wait for
 /// an exclusive lock on it; dropping the file releases the lock, and so does
 /// a crash. The file is never removed: an instance still waiting on a
-/// removed file would lock it while a third instance locks a new one. On a
-/// file system without file locks (some network mounts) seeding goes ahead
-/// unlocked rather than never seeding there.
+/// removed file would lock it while a third instance locks a new one. Where
+/// std reports file locks as unsupported, seeding goes ahead unlocked rather
+/// than never seeding there.
 fn lock_seeding(machines_dir: &Path) -> Result<File, String> {
     let path = sibling_path(machines_dir, SEED_LOCK_SUFFIX)?;
     if let Some(parent) = path.parent() {
