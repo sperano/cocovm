@@ -198,9 +198,11 @@ pub fn slugify(name: &str) -> String {
 }
 
 /// Whether `slug` already has a definition in `machines_dir` or an artifact
-/// dir under `artifacts_root`. Deleting a machine leaves its artifact dir
-/// behind (`manager::delete`), so a new machine reusing the slug would
-/// inherit its disk images and suspend state.
+/// dir under `artifacts_root`. Deleting a machine removes both
+/// (`manager::delete`), but an artifact dir can still outlive its
+/// definition (a delete from an older build, a hand-removed `.toml`), and a
+/// new machine reusing the slug would inherit its disk images and suspend
+/// state.
 pub fn slug_on_disk(
     machines_dir: Option<&Path>,
     artifacts_root: Option<&Path>,

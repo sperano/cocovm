@@ -6,6 +6,7 @@
 //! rename lifecycle.
 
 use std::fs;
+use std::path::{Component, Path};
 
 use eframe::egui;
 
@@ -68,8 +69,9 @@ impl ManagerApp {
         }
         ui.add_space(DETAIL_SECTION_GAP);
         ui.label(
-            "The machine's definition is removed. Its disk, tape, and other \
-             media files stay on disk.",
+            "The machine's definition and its data folder are removed, \
+             including the disks, tapes, and suspend state stored there. \
+             Media files elsewhere stay on disk.",
         );
         draw_delete_warnings(ui, names.len() > 1, running, suspended);
         if let Some(err) = &self.delete_error {
@@ -109,16 +111,23 @@ impl ManagerApp {
         self.delete_error = None;
     }
 
-    /// Delete `entries[index]`: stop its VM if running, remove its
-    /// `<slug>.toml`, drop the row, and fix up selection/edit state.
-    /// Media/artifact files are deliberately left on disk.
+    /// Delete `entries[index]`: stop its VM if running, remove its artifact
+    /// dir and then its `<slug>.toml`, drop the row, and fix up
+    /// selection/edit state. Media outside the artifact dir stays on disk.
+    /// The definition goes last, so a failed removal leaves the machine
+    /// listed for the modal's retry instead of orphaning its artifact dir.
     fn delete_machine(&mut self, index: usize) -> Result<(), String> {
         let Some(dir) = self.machines_dir.clone() else {
             return Err(NO_CONFIG_DIR.to_string());
         };
         let slug = self.entries[index].slug.clone();
         let path = machine_def::def_path(&dir, &slug);
+        // Stopping flushes dirty disk images, which may live in the artifact
+        // dir, so it must finish before that dir goes.
         self.stop_vm(index);
+        if let Some(root) = &self.artifacts_root {
+            remove_artifact_dir(root, &slug)?;
+        }
         // A file already gone is fine — the goal state is reached either way.
         match fs::remove_file(&path) {
             Ok(()) => {}
@@ -131,6 +140,27 @@ impl ManagerApp {
             self.edit = None;
         }
         Ok(())
+    }
+}
+
+/// Remove `slug`'s artifact dir under `root` with everything in it. A dir
+/// already gone is fine, like the definition file. A slug that isn't a
+/// single plain path component (`load_all` never yields one) is refused
+/// rather than joined, so the removal can never reach `root` itself or
+/// beyond it.
+fn remove_artifact_dir(root: &Path, slug: &str) -> Result<(), String> {
+    let mut components = Path::new(slug).components();
+    if !matches!(
+        (components.next(), components.next()),
+        (Some(Component::Normal(_)), None)
+    ) {
+        return Err(format!("refusing to delete the data folder of {slug:?}"));
+    }
+    let dir = root.join(slug);
+    match fs::remove_dir_all(&dir) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(format!("{}: {e}", dir.display())),
     }
 }
 
