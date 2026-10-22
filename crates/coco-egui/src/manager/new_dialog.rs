@@ -5,8 +5,9 @@
 //!
 //! The NitrOS-9 EOU template needs downloaded images: while they are
 //! missing, its choice is off and the dialog offers their download beneath
-//! it (`manager/eou_menu.rs`); while a machine made from it is being
-//! written, a spinner shows there instead (`manager/eou_install.rs`).
+//! it (`manager/eou_menu.rs`). Create closes the dialog at once; reopened
+//! while a machine made from that template is still being written, the
+//! dialog shows a spinner there instead (`manager/eou_install.rs`).
 
 use eframe::egui;
 
@@ -18,11 +19,14 @@ pub(crate) const NEW_DIALOG_TITLE: &str = "New Machine";
 /// The choice that creates the default machine rather than a template.
 pub(crate) const EMPTY_LABEL: &str = "Empty machine";
 /// What [`EMPTY_LABEL`] creates: `MachineConfig::default` with
-/// `PeripheralsDTO::default`'s empty cartridge slot.
+/// `PeripheralsDTO::default`'s empty cartridge slot (pinned by this
+/// module's tests).
 const EMPTY_DESCRIPTION: &str = "CoCo 3 with 512K and an RGB monitor, no cartridge, and no \
     disks, to set up yourself";
 /// The confirm button.
 pub(crate) const CREATE_LABEL: &str = "Create";
+/// The dismiss button.
+pub(crate) const CANCEL_LABEL: &str = "Cancel";
 /// Disabled-hover text of Create when the chosen template can't be created.
 const UNAVAILABLE_HOVER: &str = "This template can't be created right now";
 
@@ -32,16 +36,26 @@ const DIALOG_WIDTH: f32 = 440.0;
 /// Vertical gap between two choices.
 const CHOICE_GAP: f32 = 6.0;
 
-/// The open dialog: the chosen template, `None` for an empty machine.
+/// The kind of machine the dialog creates.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+enum Choice {
+    /// The default machine (`ManagerApp::create_machine_now`).
+    #[default]
+    Empty,
+    /// A machine built from a built-in template.
+    Template(Preset),
+}
+
+/// The open dialog and its current choice.
 #[derive(Debug, Default)]
-pub(crate) struct NewDialog {
-    template: Option<Preset>,
+pub(super) struct NewDialog {
+    choice: Choice,
 }
 
 /// What the dialog's buttons asked for this frame.
 enum NewAction {
-    None,
-    Create(Option<Preset>),
+    Idle,
+    Create(Choice),
     Cancel,
 }
 
@@ -59,16 +73,15 @@ impl ManagerApp {
         let Some(mut dialog) = self.new_dialog.take() else {
             return;
         };
-        let mut action = NewAction::None;
+        let mut action = NewAction::Idle;
         let modal = egui::Modal::new(egui::Id::new("new_machine_dialog")).show(ctx, |ui| {
             action = self.new_dialog_body(ui, &mut dialog);
         });
         match action {
-            NewAction::Create(None) => self.create_machine_now(),
-            NewAction::Create(Some(preset)) => self.create_machine_from_preset(preset),
-            NewAction::Cancel => {}
-            NewAction::None if modal.should_close() => {}
-            NewAction::None => self.new_dialog = Some(dialog),
+            NewAction::Create(Choice::Empty) => self.create_machine_now(),
+            NewAction::Create(Choice::Template(preset)) => self.create_machine_from_preset(preset),
+            NewAction::Idle if !modal.should_close() => self.new_dialog = Some(dialog),
+            NewAction::Idle | NewAction::Cancel => {}
         }
     }
 
@@ -78,31 +91,33 @@ impl ManagerApp {
         ui.set_width(DIALOG_WIDTH);
         ui.heading(NEW_DIALOG_TITLE);
         ui.add_space(DETAIL_SECTION_GAP);
-        choice(
+        radio_choice(
             ui,
-            &mut dialog.template,
-            None,
-            (EMPTY_LABEL, EMPTY_DESCRIPTION),
+            &mut dialog.choice,
+            Choice::Empty,
+            EMPTY_LABEL,
+            EMPTY_DESCRIPTION,
             true,
         );
         for preset in Preset::ALL {
             ui.add_space(CHOICE_GAP);
-            self.template_choice(ui, &mut dialog.template, preset);
+            self.template_choice(ui, &mut dialog.choice, preset);
         }
         ui.add_space(DETAIL_SECTION_GAP);
-        let creatable = dialog
-            .template
-            .is_none_or(|preset| self.template_creatable(preset));
-        let mut action = NewAction::None;
+        let creatable = match dialog.choice {
+            Choice::Empty => true,
+            Choice::Template(preset) => self.template_creatable(preset),
+        };
+        let mut action = NewAction::Idle;
         ui.horizontal(|ui| {
             if ui
                 .add_enabled(creatable, egui::Button::new(CREATE_LABEL))
                 .on_disabled_hover_text(UNAVAILABLE_HOVER)
                 .clicked()
             {
-                action = NewAction::Create(dialog.template);
+                action = NewAction::Create(dialog.choice);
             }
-            if ui.button("Cancel").clicked() {
+            if ui.button(CANCEL_LABEL).clicked() {
                 action = NewAction::Cancel;
             }
         });
@@ -111,13 +126,14 @@ impl ManagerApp {
 
     /// `preset`'s choice, off while it can't be created, with the NitrOS-9
     /// EOU install's spinner or the download of its images beneath it.
-    fn template_choice(&mut self, ui: &mut egui::Ui, chosen: &mut Option<Preset>, preset: Preset) {
+    fn template_choice(&mut self, ui: &mut egui::Ui, chosen: &mut Choice, preset: Preset) {
         let creatable = self.template_creatable(preset);
-        choice(
+        radio_choice(
             ui,
             chosen,
-            Some(preset),
-            (preset.name(), preset.description()),
+            Choice::Template(preset),
+            preset.name(),
+            preset.description(),
             creatable,
         );
         if creatable {
@@ -146,13 +162,14 @@ impl ManagerApp {
     }
 }
 
-/// One radio choice, setting `chosen` to `value`, with its `(label,
-/// description)` beneath it in weak text.
-fn choice(
+/// One radio choice, setting `chosen` to `value`, with its `description`
+/// beneath it in weak text.
+fn radio_choice(
     ui: &mut egui::Ui,
-    chosen: &mut Option<Preset>,
-    value: Option<Preset>,
-    (label, description): (&str, &str),
+    chosen: &mut Choice,
+    value: Choice,
+    label: &str,
+    description: &str,
     enabled: bool,
 ) {
     ui.add_enabled_ui(enabled, |ui| {
@@ -162,3 +179,7 @@ fn choice(
         });
     });
 }
+
+#[cfg(test)]
+#[path = "new_dialog_test.rs"]
+mod tests;

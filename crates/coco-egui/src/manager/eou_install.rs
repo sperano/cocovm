@@ -2,8 +2,8 @@
 //! copies the template's 128 MB system disk, which takes a fraction of a
 //! second on an SSD but can freeze the window for seconds on a hard disk or
 //! a network home directory. So the New Machine dialog runs the install on a
-//! thread of its own, shows a spinner beneath the template meanwhile, and
-//! inserts the machine once it is saved.
+//! thread of its own, shows a spinner beneath the template when reopened
+//! meanwhile, and inserts the machine once it is saved.
 
 use std::fs;
 use std::io;

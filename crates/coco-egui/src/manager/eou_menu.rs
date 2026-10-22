@@ -1,8 +1,8 @@
-//! The New Machine dialog's NitrOS-9 EOU download while its images are missing: an
-//! install that predates the template, or one whose first-run download of
-//! them is still running (the asset dialog hands it over) or failed. The
-//! entry downloads the images in the background with a progress bar; once
-//! they are in, the dialog offers the template itself.
+//! The New Machine dialog's NitrOS-9 EOU download while its images are
+//! missing: an install that predates the template, or one whose first-run
+//! download of them is still running (the asset dialog hands it over) or
+//! failed. The entry downloads the images in the background with a progress
+//! bar; once they are in, the dialog offers the template itself.
 
 use eframe::egui;
 

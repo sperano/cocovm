@@ -2,11 +2,12 @@
 //! chosen, it lists every built-in template beside that, and Create makes
 //! the chosen machine on the spot.
 
+use eframe::egui;
 use egui_kittest::kittest::{NodeT, Queryable};
 
 use crate::machine_def::tests::TempDir;
 use crate::manager::eou_install::{COPYING_TEXT, PendingInstall};
-use crate::manager::new_dialog::{CREATE_LABEL, EMPTY_LABEL, NEW_DIALOG_TITLE};
+use crate::manager::new_dialog::{CANCEL_LABEL, CREATE_LABEL, EMPTY_LABEL, NEW_DIALOG_TITLE};
 use crate::manager::presets::Preset;
 use crate::nitros9::EOU_IMAGES;
 
@@ -82,11 +83,47 @@ fn new_dialog_cancel_creates_nothing() {
 
     click(&mut harness, "New");
     click(&mut harness, Preset::CoCo3DiskBasic.name());
-    click(&mut harness, "Cancel");
+    click(&mut harness, CANCEL_LABEL);
 
     assert!(harness.query_by_label(NEW_DIALOG_TITLE).is_none());
     assert!(harness.state().entries.is_empty());
     assert_eq!(std::fs::read_dir(machines.path()).unwrap().count(), 0);
+}
+
+/// Esc closes the dialog without creating anything.
+#[test]
+fn new_dialog_escape_creates_nothing() {
+    let machines = TempDir::new("new-dialog-escape-machines");
+    let mut harness = manager_harness(Some(machines.path().to_path_buf()), Vec::new());
+
+    click(&mut harness, "New");
+    harness.key_press(egui::Key::Escape);
+    harness.step();
+
+    assert!(harness.query_by_label(NEW_DIALOG_TITLE).is_none());
+    assert!(harness.state().entries.is_empty());
+}
+
+/// The New machine hotkey leaves an open dialog's choice alone.
+#[test]
+fn new_hotkey_keeps_the_open_dialogs_choice() {
+    let machines = TempDir::new("new-dialog-hotkey-machines");
+    let artifacts = TempDir::new("new-dialog-hotkey-artifacts");
+    let mut harness = manager_harness_with_artifacts(
+        Some(machines.path().to_path_buf()),
+        Some(artifacts.path().to_path_buf()),
+        Vec::new(),
+    );
+
+    click(&mut harness, "New");
+    click(&mut harness, Preset::CoCo2DiskBasic.name());
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::N);
+    harness.step();
+    click(&mut harness, CREATE_LABEL);
+
+    let state = harness.state();
+    assert_eq!(state.entries.len(), 1);
+    assert_eq!(state.entries[0].def.name, Preset::CoCo2DiskBasic.name());
 }
 
 /// Without the NitrOS-9 EOU images, the dialog turns the template off and
