@@ -32,7 +32,7 @@ impl Source {
     pub(crate) const fn label(self) -> &'static str {
         match self {
             Self::Bundle => "ROMs, cartridges, and images",
-            Self::Eou => "NitrOS-9 Ease of Use 1.0.1",
+            Self::Eou => crate::nitros9::EOU_TITLE,
         }
     }
 
@@ -68,7 +68,7 @@ impl Source {
             }
             Self::Eou => crate::nitros9::download_eou(
                 crate::nitros9::EOU_URL,
-                &install_dir.join(crate::paths::EOU_DIR_NAME),
+                &install_dir.join(crate::nitros9::EOU_DIR_NAME),
                 progress,
             ),
         }
@@ -183,7 +183,7 @@ impl Download {
 }
 
 /// `bytes` as megabytes with one decimal: "58.2 MB".
-fn megabytes(bytes: u64) -> String {
+pub(crate) fn megabytes(bytes: u64) -> String {
     format!("{:.1} MB", bytes as f64 / BYTES_PER_MB)
 }
 

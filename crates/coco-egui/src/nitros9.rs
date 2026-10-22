@@ -14,11 +14,31 @@ use sha2::{Digest, Sha256};
 
 use crate::download::{self, Progress};
 
-/// L. Curtis Boyle's EOU 1.0.1 release for the 6809 (the CoCo 3's stock CPU).
+/// The EOU release [`EOU_URL`] serves, as a literal so `concat!` can build
+/// the names that carry it.
+macro_rules! eou_version {
+    () => {
+        "1.0.1"
+    };
+}
+pub(crate) use eou_version;
+
+/// The release's name, as the asset dialog shows it.
+pub(crate) const EOU_TITLE: &str = concat!("NitrOS-9 Ease of Use ", eou_version!());
+
+/// Name of `paths::eou_dir` under the assets directory. Versioned, so a
+/// later EOU release lands in a fresh directory and gets downloaded again.
+pub(crate) const EOU_DIR_NAME: &str = concat!("nitros9-eou-", eou_version!());
+
+/// L. Curtis Boyle's EOU release for the 6809 (the CoCo 3's stock CPU).
 pub(crate) const EOU_URL: &str =
     "https://www.lcurtisboyle.com/nitros9/EOU_Version1_0_1_(6809_ONLY)_04-07-2024.zip";
 
-/// SHA-256 of the archive at [`EOU_URL`] (58,226,559 bytes, served with
+/// Size of the archive at [`EOU_URL`], as its `Content-Length` reported on
+/// 2026-10-22; the asset dialog quotes it before the download starts.
+pub(crate) const EOU_ARCHIVE_BYTES: u64 = 58_226_559;
+
+/// SHA-256 of the archive at [`EOU_URL`] ([`EOU_ARCHIVE_BYTES`], served with
 /// `Last-Modified: Wed, 02 Oct 2024 17:22:45 GMT`). An archive that doesn't
 /// match installs nothing, so a changed or truncated download never ends up
 /// in a machine.
@@ -74,7 +94,7 @@ pub(crate) fn unpack_eou(
     let verified = extract_images(&mut reader, dest).and_then(|()| {
         // The central directory follows the last entry; hash it too.
         io::copy(&mut reader, &mut io::sink())?;
-        let digest = reader.hex_digest();
+        let digest = reader.into_hex_digest();
         if digest == sha256 {
             Ok(())
         } else {
@@ -82,10 +102,10 @@ pub(crate) fn unpack_eou(
         }
     });
     let installed = verified.and_then(|()| {
-        EOU_IMAGES
-            .into_iter()
-            .try_for_each(|name| fs::rename(partial_path(dest, name), dest.join(name)))
-            .map_err(Into::into)
+        EOU_IMAGES.into_iter().try_for_each(|name| {
+            let target = dest.join(name);
+            fs::rename(partial_path(dest, name), &target).map_err(|e| path_error(&target, e))
+        })
     });
     if installed.is_err() {
         for name in EOU_IMAGES {
@@ -101,10 +121,15 @@ pub(crate) fn unpack_eou(
 fn extract_images(reader: &mut impl Read, dest: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let mut found = Vec::with_capacity(EOU_IMAGES.len());
     while let Some(mut entry) = zip::read::read_zipfile_from_stream(reader)? {
-        let entry_name = entry.name()?.into_owned();
-        if let Some(name) = EOU_IMAGES.into_iter().find(|&name| name == entry_name) {
-            let mut file = File::create(partial_path(dest, name))?;
-            io::copy(&mut entry, &mut file)?;
+        let wanted = {
+            let entry_name = entry.name()?;
+            EOU_IMAGES.into_iter().find(|&name| name == entry_name)
+        };
+        if let Some(name) = wanted {
+            let path = partial_path(dest, name);
+            File::create(&path)
+                .and_then(|mut file| io::copy(&mut entry, &mut file))
+                .map_err(|e| path_error(&path, e))?;
             found.push(name);
         }
         // Dropping `entry` skips whatever of it is left unread.
@@ -113,6 +138,11 @@ fn extract_images(reader: &mut impl Read, dest: &Path) -> Result<(), Box<dyn std
         Some(name) => Err(format!("the NitrOS-9 EOU archive has no {name}").into()),
         None => Ok(()),
     }
+}
+
+/// `error` from an operation on `path`, naming the path.
+fn path_error(path: &Path, error: io::Error) -> Box<dyn std::error::Error> {
+    format!("{}: {error}", path.display()).into()
 }
 
 /// Where `name` is written under `dest` until the archive checks out.
@@ -134,9 +164,9 @@ impl<R> HashingReader<R> {
         }
     }
 
-    /// Lowercase hex SHA-256 of everything read so far.
-    fn hex_digest(&self) -> String {
-        format!("{:x}", self.hasher.clone().finalize())
+    /// Lowercase hex SHA-256 of everything read.
+    fn into_hex_digest(self) -> String {
+        format!("{:x}", self.hasher.finalize())
     }
 }
 

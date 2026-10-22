@@ -25,7 +25,8 @@ impl Progress {
 
     /// Bytes expected in all, when the server said.
     pub(crate) fn total(&self) -> Option<u64> {
-        Some(self.total.load(Ordering::Relaxed)).filter(|&total| total > 0)
+        let total = self.total.load(Ordering::Relaxed);
+        (total > 0).then_some(total)
     }
 
     /// [`Self::received`] as a share of [`Self::total`], in `0.0..=1.0`;
@@ -35,10 +36,12 @@ impl Progress {
             .map(|total| (self.received() as f64 / total as f64).min(1.0) as f32)
     }
 
+    /// Expect `total` bytes in all; `None` (stored as 0) when unknown.
     pub(crate) fn set_total(&self, total: Option<u64>) {
         self.total.store(total.unwrap_or(0), Ordering::Relaxed);
     }
 
+    /// Count `bytes` more as received.
     pub(crate) fn add(&self, bytes: u64) {
         self.received.fetch_add(bytes, Ordering::Relaxed);
     }

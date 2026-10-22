@@ -18,7 +18,7 @@ use coco_core::{MachineConfig, MachineVariant, MemorySize};
 
 use super::detail_map::{blank_disk_file, place_blank_file};
 use crate::machine_def::{self, CartridgeDTO, DosRom, MachineDef};
-use crate::nitros9::{EOU_BOOT_DISK, EOU_IMAGES, EOU_SYSTEM_VHD, missing_eou_images};
+use crate::nitros9::{EOU_BOOT_DISK, EOU_IMAGES, EOU_SYSTEM_VHD, eou_version, missing_eou_images};
 
 /// Why the NitrOS-9 EOU template can't be created: its images were never
 /// downloaded (the asset dialog's Skip) or are gone.
@@ -93,11 +93,12 @@ impl Preset {
                 "CoCo 2 with 64K and the MC6847T1 VDG, an FD-502 disk controller running \
                 Disk BASIC 1.1, and a blank disk in drive 0"
             }
-            Self::NitrOS9Eou => {
-                "CoCo 3 with 512K and an RGB monitor running NitrOS-9 Ease of Use 1.0.1: \
-                its boot disk in drive 0 and its system hard disk on the VHD interface. \
-                Type DOS to boot"
-            }
+            Self::NitrOS9Eou => concat!(
+                "CoCo 3 with 512K and an RGB monitor running NitrOS-9 Ease of Use ",
+                eou_version!(),
+                ": its boot disk in drive 0 and its system hard disk on the VHD \
+                interface. Type DOS to boot"
+            ),
         }
     }
 
@@ -178,12 +179,15 @@ pub(super) fn install(
 ) -> Result<MachineDef, String> {
     let def = preset.def(created);
     place_media(preset, dirs.artifacts_root, slug)?;
-    if preset == Preset::NitrOS9Eou {
-        let root = dirs.artifacts_root.ok_or(super::NO_DATA_DIR)?;
-        let eou_dir = dirs.eou_dir.ok_or(EOU_NOT_DOWNLOADED)?;
-        copy_eou_images(eou_dir, &root.join(slug))?;
-    }
-    machine_def::save(dirs.machines_dir, slug, &def)?;
+    let eou_copies = (preset == Preset::NitrOS9Eou)
+        .then(|| place_eou_images(dirs, slug))
+        .transpose()?;
+    machine_def::save(dirs.machines_dir, slug, &def).inspect_err(|_| {
+        // A 128 MB copy no definition points at is worth reclaiming.
+        if let Some(artifact_dir) = &eou_copies {
+            discard_eou_images(artifact_dir);
+        }
+    })?;
     Ok(def)
 }
 
@@ -207,9 +211,23 @@ fn place_media(preset: Preset, artifacts_root: Option<&Path>, slug: &str) -> Res
     Ok(())
 }
 
+/// Copy the downloaded [`EOU_IMAGES`] into machine `slug`'s artifact dir,
+/// which it returns.
+fn place_eou_images(dirs: &InstallDirs<'_>, slug: &str) -> Result<PathBuf, String> {
+    let root = dirs.artifacts_root.ok_or(super::NO_DATA_DIR)?;
+    let eou_dir = dirs.eou_dir.ok_or(EOU_NOT_DOWNLOADED)?;
+    let artifact_dir = root.join(slug);
+    copy_eou_images(eou_dir, &artifact_dir)?;
+    Ok(artifact_dir)
+}
+
 /// Copy the [`EOU_IMAGES`] from `eou_dir` into `artifact_dir`, so the new
 /// machine writes to its own system disk and never to the downloaded one.
 /// A failure removes the copies it made.
+///
+/// Runs on the caller's thread, which for the New menu is the UI's: the
+/// 128 MB VHD takes a fraction of a second on an SSD, and less where
+/// `fs::copy` can clone the file instead (APFS, Btrfs, XFS).
 fn copy_eou_images(eou_dir: &Path, artifact_dir: &Path) -> Result<(), String> {
     if !missing_eou_images(eou_dir).is_empty() {
         return Err(EOU_NOT_DOWNLOADED.to_string());
@@ -222,13 +240,18 @@ fn copy_eou_images(eou_dir: &Path, artifact_dir: &Path) -> Result<(), String> {
             .map_err(|e| format!("{}: {e}", target.display()))
     });
     if copied.is_err() {
-        for name in EOU_IMAGES {
-            // Best effort: what stays only makes the slug count as taken.
-            let _ = fs::remove_file(artifact_dir.join(name));
-        }
-        let _ = fs::remove_dir(artifact_dir);
+        discard_eou_images(artifact_dir);
     }
     copied
+}
+
+/// Remove the [`EOU_IMAGES`] from `artifact_dir`, then the dir itself while
+/// it is empty. Best effort: what stays only makes the slug count as taken.
+fn discard_eou_images(artifact_dir: &Path) {
+    for name in EOU_IMAGES {
+        let _ = fs::remove_file(artifact_dir.join(name));
+    }
+    let _ = fs::remove_dir(artifact_dir);
 }
 
 /// On a real first run — `machines_dir` does not exist yet — write the

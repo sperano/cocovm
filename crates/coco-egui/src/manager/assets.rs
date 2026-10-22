@@ -10,16 +10,17 @@ use std::time::Duration;
 
 use eframe::egui;
 
-use super::asset_downloads::{Download, Source};
+use super::asset_downloads::{Download, Source, megabytes};
 use super::{ManagerApp, WINDOW_SIZE};
+use crate::nitros9::{EOU_ARCHIVE_BYTES, EOU_TITLE};
 
 /// What the dialog asks before fetching anything.
 const PROMPT_TEXT: &str =
     "Download the ROMs, cartridges, and images CoCoVM needs to start your machines.";
 
-/// Shown under [`PROMPT_TEXT`] while the NitrOS-9 EOU images are missing:
-/// they come from a third-party site and add most of the download.
-const EOU_NOTE: &str = "Includes NitrOS-9 Ease of Use 1.0.1 (58 MB) from lcurtisboyle.com.";
+/// Host of `nitros9::EOU_URL`, named under [`PROMPT_TEXT`]: the EOU images
+/// come from a third-party site and add most of the download.
+const EOU_HOST: &str = "lcurtisboyle.com";
 
 /// Window size while the dialog is the only content: room for a progress
 /// bar per [`Source`], with a failure message under them.
@@ -107,7 +108,9 @@ impl AssetDialog {
         if !self.downloading() {
             return false;
         }
-        self.downloads.iter_mut().for_each(Download::poll);
+        for download in &mut self.downloads {
+            download.poll();
+        }
         if self.downloading() {
             return false;
         }
@@ -231,7 +234,11 @@ impl AssetDialog {
                 .color(ui.visuals().strong_text_color()),
         );
         if self.pending.contains(&Source::Eou) {
-            ui.label(egui::RichText::new(EOU_NOTE).color(secondary_color(ui)));
+            let note = format!(
+                "Includes {EOU_TITLE} ({}) from {EOU_HOST}.",
+                megabytes(EOU_ARCHIVE_BYTES)
+            );
+            ui.label(egui::RichText::new(note).color(secondary_color(ui)));
         }
         if !self.downloads.is_empty() {
             ui.add_space(TEXT_GAP);
@@ -241,8 +248,10 @@ impl AssetDialog {
         }
         if let Some(err) = &self.error {
             ui.add_space(TEXT_GAP);
+            // Only optional sources are left when skippable, and EOU is the
+            // only optional one.
             let message = if self.skippable {
-                "NitrOS-9 download failed. Try again, or skip it for now."
+                "The NitrOS-9 download failed. Try again, or skip it for now."
             } else {
                 "Download failed. Try again."
             };
