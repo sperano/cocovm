@@ -58,7 +58,11 @@ Windows executable runs from any folder.
 
 The source repository doesn't contain copyrighted ROM images. On first launch,
 CoCoVM lists any missing runtime assets and asks before downloading the separate
-asset bundle. On Linux and macOS, CoCoVM installs these files under
+asset bundle. The same step downloads the NitrOS-9 Ease of Use 1.0.1 disk images
+from [lcurtisboyle.com](https://www.lcurtisboyle.com/nitros9/), and a progress
+bar tracks each download. CoCoVM opens without waiting for the NitrOS-9 download,
+which continues in the background; the template menu shows its progress and
+offers a retry if it fails. On Linux and macOS, CoCoVM installs these files under
 `~/.local/share/cocovm/assets/`. ROM images remain copyrighted by their
 respective owners and aren't covered by the source-code licenses in this
 repository. See [NOTICE.md](NOTICE.md) for details.
@@ -66,7 +70,10 @@ repository. See [NOTICE.md](NOTICE.md) for details.
 The first launch also adds two starter machines: a CoCo 3 and a CoCo 2, each
 with Disk BASIC and a blank disk in drive 0. To create another machine from a
 template, click the arrow next to **New**. The templates are the two starter
-machines and a CoCo 3 that runs HDB-DOS over the built-in DriveWire server.
+machines, a CoCo 3 that runs HDB-DOS over the built-in DriveWire server, and a
+CoCo 3 that runs NitrOS-9 Ease of Use from its own copy of the downloaded disk
+images. To boot NitrOS-9, type `DOS` at the BASIC prompt. Until the NitrOS-9
+images are downloaded, the template menu offers to download them instead.
 
 ## Build from source
 
@@ -106,10 +113,15 @@ The most important settings are:
 | Log level | `--log-level` | `COCOVM_LOG_LEVEL` | `warn` |
 | MCP server port | `--control-port` | `COCOVM_CONTROL_PORT` | `6809` |
 | Asset bundle URL | `--assets-url` | `COCOVM_ASSETS_URL` | Built-in bundle |
+| NitrOS-9 Ease of Use archive URL | `--eou-url` | `COCOVM_EOU_URL` | lcurtisboyle.com |
 | Icon-only toolbars | `--toolbar-icons-only` | `COCOVM_TOOLBAR_ICONS_ONLY` | `false` |
 | Icon-only status bar | `--status-bar-icons-only` | `COCOVM_STATUS_BAR_ICONS_ONLY` | `false` |
 
 Set the control port to `0` to disable the MCP server.
+
+A NitrOS-9 Ease of Use URL must serve the same archive as the default one,
+for example a mirror. CoCoVM checks the archive's SHA-256 and installs nothing
+if it doesn't match.
 
 To change a hotkey, open the settings dialog, click the hotkey's current key,
 and then press the new key. The rebindable hotkeys are the key layout window

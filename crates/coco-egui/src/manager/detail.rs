@@ -279,6 +279,27 @@ impl ManagerApp {
         self.draw_detail_ok(ui, index, slug, def);
     }
 
+    /// A fresh [`EditState`] for entry `slug`'s definition `def`.
+    pub(super) fn seed_edit(&self, slug: &str, def: &machine_def::MachineDef) -> EditState {
+        let mut form = detail_map::seed_form(def);
+        form.normalize();
+        // The auto-save baseline is the seeded form's own repack — see
+        // `EditState::packed`'s doc for why it must not be `def`
+        // itself. A freshly seeded form holds no Blank picks and at
+        // most one pak, so this pack can't fail or touch a file.
+        let packed = self
+            .pack_def(def, slug, &mut form)
+            .expect("a seeded form always packs");
+        EditState {
+            slug: slug.to_string(),
+            name: def.name.clone(),
+            form,
+            roms: roms::rom_rows(&packed, slug, self.roms_dir.as_deref()),
+            packed,
+            tab: DetailTab::default(),
+        }
+    }
+
     /// The editable form for a successfully-parsed definition. Split out of
     /// [`Self::draw_detail`] so the `Ok` branch can freely borrow the rest of
     /// `self` (`self.machines_dir`, `self.entries`) while `self.edit` is
@@ -292,23 +313,7 @@ impl ManagerApp {
         def: machine_def::MachineDef,
     ) {
         if self.edit.as_ref().is_none_or(|e| e.slug != slug) {
-            let mut form = detail_map::seed_form(&def);
-            form.normalize();
-            // The auto-save baseline is the seeded form's own repack — see
-            // `EditState::packed`'s doc for why it must not be `def`
-            // itself. A freshly seeded form holds no Blank picks and at
-            // most one pak, so this pack can't fail or touch a file.
-            let packed = self
-                .pack_def(&def, &slug, &mut form)
-                .expect("a seeded form always packs");
-            self.edit = Some(EditState {
-                slug: slug.clone(),
-                name: def.name.clone(),
-                form,
-                roms: roms::rom_rows(&packed, &slug, self.roms_dir.as_deref()),
-                packed,
-                tab: DetailTab::default(),
-            });
+            self.edit = Some(self.seed_edit(&slug, &def));
             self.save_error = None;
         }
         let mut edit = self.edit.take().expect("just ensured above");

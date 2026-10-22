@@ -112,5 +112,9 @@ also reproduced in `crates/tms7000/NOTICE`, which ships with the crate.
 - `~/.local/share/cocovm/assets/roms/` — copyrighted Tandy/Microsoft ROM images
   (`coco3.rom`, `disk11.rom`, …), installed outside the repo by the app's
   first-run asset download.
+- `~/.local/share/cocovm/assets/nitros9-eou-1.0.1/` — the NitrOS-9 Ease of
+  Use 1.0.1 disk images (`68EMU.dsk`, `68SDC.VHD`). They aren't in the asset
+  bundle: CoCoVM downloads L. Curtis Boyle's release archive separately from
+  lcurtisboyle.com and keeps the two images. CoCoVM never redistributes them.
 - `docs/*.pdf` — copyrighted reference PDFs, excluded via `.gitignore`
   (as is any repo-root `roms/`, as a safety net).

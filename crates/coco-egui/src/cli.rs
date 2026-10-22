@@ -7,8 +7,9 @@ use tracing_subscriber::filter::LevelFilter;
 /// `main.rs`); naming a machine's slug starts that machine's VM as the
 /// manager opens, so a saved machine can be launched without finding its row
 /// in the list. The rest are the log level, the control listener's port, the
-/// asset bundle's URL, the toolbar and status-bar caption toggles, the
-/// welcome-image cycle, and the startup update check.
+/// asset bundle's and the NitrOS-9 EOU archive's URLs, the toolbar and
+/// status-bar caption toggles, the welcome-image cycle, and the startup
+/// update check.
 /// Every settings field is `Option`: `None` means "not given here", so
 /// `config::resolve` can fall through to `config.toml` and then the built-in
 /// default (`config.rs`'s precedence chain). clap's own `env` fallback already
@@ -39,6 +40,13 @@ pub(crate) struct Cli {
     /// image directories — `manager/assets.rs`).
     #[arg(long, env = "COCOVM_ASSETS_URL")]
     pub(crate) assets_url: Option<String>,
+
+    /// URL of the NitrOS-9 Ease of Use release archive the NitrOS-9 EOU
+    /// template's disk images come from (`nitros9.rs`). A mirror must serve
+    /// the same archive: the download still has to match its built-in
+    /// SHA-256.
+    #[arg(long, env = "COCOVM_EOU_URL")]
+    pub(crate) eou_url: Option<String>,
 
     /// Draw every toolbar tile (manager and VM window) as icon-only, with
     /// its caption moved into the hover text. Bare `--toolbar-icons-only`

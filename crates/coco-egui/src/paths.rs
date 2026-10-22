@@ -61,6 +61,13 @@ pub fn cartridges_dir() -> Option<PathBuf> {
     assets_dir().map(|d| d.join("cartridges"))
 }
 
+/// Directory for the NitrOS-9 EOU images the asset dialog downloads next to
+/// the bundle (`~/.local/share/cocovm/assets/nitros9-eou-1.0.1` on
+/// Linux/macOS; `nitros9.rs`).
+pub fn eou_dir() -> Option<PathBuf> {
+    assets_dir().map(|d| d.join(crate::nitros9::EOU_DIR_NAME))
+}
+
 #[cfg(test)]
 #[path = "paths_test.rs"]
 mod tests;

@@ -87,6 +87,9 @@ impl ManagerApp {
                 toolbar_menu_tile(ui, TEMPLATES_LABEL, icons_only).on_hover_text(TEMPLATES_HOVER);
             egui::Popup::menu(&templates)
                 .id(ui.id().with("new_menu"))
+                // Stays open on the NitrOS-9 EOU download's click, so its
+                // progress bar shows; the template items close it themselves.
+                .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
                 .show(|ui| self.new_menu_ui(ui));
 
             if toolbar_button(ui, PLAY_GLYPH, START_LABEL, flags.any_startable, icons_only)
@@ -138,9 +141,20 @@ impl ManagerApp {
         });
     }
 
-    /// The New menu: one item per built-in template.
+    /// The New menu: one item per built-in template. A template whose
+    /// downloaded images are missing (only NitrOS-9 EOU's can be) offers to
+    /// download them instead, and NitrOS-9 EOU shows a spinner while a
+    /// machine made from it is being written.
     fn new_menu_ui(&mut self, ui: &mut egui::Ui) {
         for preset in Preset::ALL {
+            if preset == Preset::NitrOS9Eou && self.eou_install.is_some() {
+                super::eou_install::eou_install_ui(ui);
+                continue;
+            }
+            if !preset.available(self.eou_dir.as_deref()) {
+                self.eou_download_ui(ui);
+                continue;
+            }
             if ui
                 .button(preset.name())
                 .on_hover_text(preset.description())
