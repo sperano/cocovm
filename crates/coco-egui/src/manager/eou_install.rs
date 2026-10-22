@@ -5,7 +5,9 @@
 //! its own, shows a spinner in place of the template meanwhile, and inserts
 //! the machine once it is saved.
 
-use std::path::PathBuf;
+use std::fs;
+use std::io;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 
 use eframe::egui;
@@ -14,8 +16,8 @@ use super::asset_downloads::PROGRESS_REPAINT_INTERVAL;
 use super::lifecycle::created_today;
 use super::presets::{self, Preset};
 use super::selection::SelectionSnapshot;
-use super::{MachineEntry, ManagerApp};
-use crate::machine_def::MachineDef;
+use super::{MachineEntry, ManagerApp, NO_DATA_DIR};
+use crate::machine_def::{self, MachineDef};
 
 /// The New menu's text while the install runs.
 pub(crate) const COPYING_TEXT: &str = "Copying the NitrOS-9 EOU disk images…";
@@ -48,14 +50,21 @@ impl PendingInstall {
 }
 
 impl ManagerApp {
-    /// Install the NitrOS-9 EOU template as machine `slug` under
-    /// `machines_dir` on a new thread; [`Self::poll_eou_install`] inserts it.
-    /// Does nothing while another install runs (the New menu hides the
-    /// template meanwhile).
-    pub(super) fn start_eou_install(&mut self, machines_dir: PathBuf, slug: String) {
+    /// Install the NitrOS-9 EOU template under `machines_dir` on a new
+    /// thread, as the first free slug from `base` ([`Self::claim_eou_slug`]);
+    /// [`Self::poll_eou_install`] inserts it. Does nothing while another
+    /// install runs (the New menu hides the template meanwhile).
+    pub(super) fn start_eou_install(&mut self, machines_dir: PathBuf, base: &str) {
         if self.eou_install.is_some() {
             return;
         }
+        let slug = match self.claim_eou_slug(&machines_dir, base) {
+            Ok(slug) => slug,
+            Err(e) => {
+                self.save_error = Some(e);
+                return;
+            }
+        };
         let artifacts_root = self.artifacts_root.clone();
         let eou_dir = self.eou_dir.clone();
         let created = Some(created_today());
@@ -78,6 +87,31 @@ impl ManagerApp {
             selection: self.selection.snapshot(&self.entries),
             ..PendingInstall::new(slug, rx)
         });
+    }
+
+    /// The first free slug from `base` whose artifact dir this call creates.
+    /// `fs::create_dir` fails when the dir exists, so of two instances
+    /// creating the template at once, only one gets a slug: the other moves
+    /// on to the next one instead of copying into, and on failure deleting,
+    /// the same files.
+    fn claim_eou_slug(&self, machines_dir: &Path, base: &str) -> Result<String, String> {
+        let root = self.artifacts_root.as_deref().ok_or(NO_DATA_DIR)?;
+        fs::create_dir_all(root).map_err(|e| format!("{}: {e}", root.display()))?;
+        // Candidates already present, even where `slug_on_disk` misses them
+        // (a dangling symlink), so the search always moves on.
+        let mut lost = Vec::new();
+        loop {
+            let slug = machine_def::unique_slug(base, &|candidate| {
+                lost.iter().any(|slug| slug == candidate)
+                    || self.slug_taken(machines_dir, candidate)
+            });
+            let artifact_dir = root.join(&slug);
+            match fs::create_dir(&artifact_dir) {
+                Ok(()) => return Ok(slug),
+                Err(e) if e.kind() == io::ErrorKind::AlreadyExists => lost.push(slug),
+                Err(e) => return Err(format!("{}: {e}", artifact_dir.display())),
+            }
+        }
     }
 
     /// The slug a running install writes, which no other machine may take.

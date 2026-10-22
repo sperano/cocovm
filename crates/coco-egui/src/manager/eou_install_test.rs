@@ -165,3 +165,57 @@ fn failed_install_reports_its_error() {
     assert!(app.entries.is_empty());
     assert_eq!(app.save_error.as_deref(), Some("disk full"));
 }
+
+/// Two instances creating the template at once get different slugs: the
+/// first claims its artifact dir before its copy starts, so the second
+/// never copies into, or cleans up, the same files.
+#[test]
+fn concurrent_instances_claim_different_slugs() {
+    let fixture = Fixture::new("eou-install-concurrent");
+    let mut first = fixture.app();
+    let mut second = fixture.app();
+    let ctx = egui::Context::default();
+
+    first.create_machine_from_preset(Preset::NitrOS9Eou);
+    second.create_machine_from_preset(Preset::NitrOS9Eou);
+    wait_for_install(&mut first, &ctx);
+    wait_for_install(&mut second, &ctx);
+
+    assert_eq!(first.entries[0].slug, EOU_SLUG);
+    assert_eq!(second.entries[0].slug, format!("{EOU_SLUG}-2"));
+    assert!(fixture.installed());
+}
+
+/// A slug whose artifact dir can't be created because something already
+/// sits there, even where the slug check misses it, is skipped.
+#[cfg(unix)]
+#[test]
+fn claim_skips_a_slug_already_present() {
+    let fixture = Fixture::new("eou-install-dangling");
+    let dangling = fixture.artifacts.path().join(EOU_SLUG);
+    std::os::unix::fs::symlink(fixture.artifacts.path().join("gone"), &dangling).unwrap();
+    let mut app = fixture.app();
+
+    app.create_machine_from_preset(Preset::NitrOS9Eou);
+    wait_for_install(&mut app, &egui::Context::default());
+
+    assert_eq!(app.save_error, None);
+    assert_eq!(app.entries[0].slug, format!("{EOU_SLUG}-2"));
+    assert!(fs::symlink_metadata(&dangling).unwrap().is_symlink());
+}
+
+/// An install that fails after claiming its slug removes the claimed dir,
+/// so the slug stays free.
+#[test]
+fn failed_install_releases_its_slug() {
+    let fixture = Fixture::new("eou-install-release");
+    let mut app = fixture.app();
+    fs::remove_file(fixture.eou.path().join(EOU_IMAGES[0])).unwrap();
+
+    app.create_machine_from_preset(Preset::NitrOS9Eou);
+    wait_for_install(&mut app, &egui::Context::default());
+
+    assert_eq!(app.save_error.as_deref(), Some(presets::EOU_NOT_DOWNLOADED));
+    assert!(app.entries.is_empty());
+    assert!(!fixture.artifacts.path().join(EOU_SLUG).exists());
+}

@@ -7,7 +7,7 @@ use coco_core::MachineConfig;
 use owo_colors::colors::xterm;
 use owo_colors::{OwoColorize, Stream};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::machine_def;
 
@@ -54,18 +54,12 @@ impl ManagerApp {
             return;
         };
         let name = preset.map_or_else(default_new_name, |preset| preset.name().to_string());
-        // Checks both the in-memory list and the disk, since `entries`
-        // misses a file written by another instance.
-        let taken = |candidate: &str| {
-            self.entries.iter().any(|e| e.slug == candidate)
-                || self.installing_slug() == Some(candidate)
-                || machine_def::slug_on_disk(Some(&dir), self.artifacts_root.as_deref(), candidate)
-        };
-        let slug = machine_def::unique_slug(&machine_def::slugify(&name), &taken);
+        let base = machine_def::slugify(&name);
         if preset == Some(Preset::NitrOS9Eou) {
-            self.start_eou_install(dir, slug);
+            self.start_eou_install(dir, &base);
             return;
         }
+        let slug = machine_def::unique_slug(&base, &|candidate| self.slug_taken(&dir, candidate));
         let saved = match preset {
             Some(preset) => presets::install(
                 preset,
@@ -87,6 +81,19 @@ impl ManagerApp {
             }
         };
         self.insert_created(slug, saved);
+    }
+
+    /// Whether a new machine under `machines_dir` can't take `candidate`.
+    /// Checks both the in-memory list and the disk, since `entries` misses a
+    /// file written by another instance.
+    pub(super) fn slug_taken(&self, machines_dir: &Path, candidate: &str) -> bool {
+        self.entries.iter().any(|e| e.slug == candidate)
+            || self.installing_slug() == Some(candidate)
+            || machine_def::slug_on_disk(
+                Some(machines_dir),
+                self.artifacts_root.as_deref(),
+                candidate,
+            )
     }
 
     /// Insert and select the machine just `saved` as `slug`, or report why

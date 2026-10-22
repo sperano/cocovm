@@ -213,18 +213,24 @@ fn place_media(preset: Preset, artifacts_root: Option<&Path>, slug: &str) -> Res
 }
 
 /// Copy the downloaded [`EOU_IMAGES`] into machine `slug`'s artifact dir,
-/// which it returns.
+/// which it returns. A failure removes the copies it made, and the dir while
+/// it is empty, such as the one the New menu created to claim `slug`
+/// (`manager/eou_install.rs`).
 fn place_eou_images(dirs: &InstallDirs<'_>, slug: &str) -> Result<PathBuf, String> {
     let root = dirs.artifacts_root.ok_or(super::NO_DATA_DIR)?;
-    let eou_dir = dirs.eou_dir.ok_or(EOU_NOT_DOWNLOADED)?;
     let artifact_dir = root.join(slug);
-    copy_eou_images(eou_dir, &artifact_dir)?;
-    Ok(artifact_dir)
+    let copied = dirs
+        .eou_dir
+        .ok_or_else(|| EOU_NOT_DOWNLOADED.to_string())
+        .and_then(|eou_dir| copy_eou_images(eou_dir, &artifact_dir));
+    if copied.is_err() {
+        discard_eou_images(&artifact_dir);
+    }
+    copied.map(|()| artifact_dir)
 }
 
 /// Copy the [`EOU_IMAGES`] from `eou_dir` into `artifact_dir`, so the new
 /// machine writes to its own system disk and never to the downloaded one.
-/// A failure removes the copies it made.
 ///
 /// The 128 MB VHD can take seconds on a hard disk, so the New menu calls
 /// this through [`install`] on a thread of its own (`manager/eou_install.rs`).
@@ -233,16 +239,12 @@ fn copy_eou_images(eou_dir: &Path, artifact_dir: &Path) -> Result<(), String> {
         return Err(EOU_NOT_DOWNLOADED.to_string());
     }
     fs::create_dir_all(artifact_dir).map_err(|e| format!("{}: {e}", artifact_dir.display()))?;
-    let copied = EOU_IMAGES.into_iter().try_for_each(|name| {
+    EOU_IMAGES.into_iter().try_for_each(|name| {
         let target = artifact_dir.join(name);
         fs::copy(eou_dir.join(name), &target)
             .map(drop)
             .map_err(|e| format!("{}: {e}", target.display()))
-    });
-    if copied.is_err() {
-        discard_eou_images(artifact_dir);
-    }
-    copied
+    })
 }
 
 /// Remove the [`EOU_IMAGES`] from `artifact_dir`, then the dir itself while
