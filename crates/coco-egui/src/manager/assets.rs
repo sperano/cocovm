@@ -41,11 +41,9 @@ const ICON_BYTES: &[u8] = include_bytes!("../../assets/cocovm-icon.png");
 /// What one dialog frame resolved to.
 pub(super) enum Verdict {
     Pending,
-    /// Download finished and every missing file is now present.
+    /// The required downloads finished and their files are all present.
+    /// Optional ones may still be running, or may have failed.
     Installed,
-    /// The required files are present and the user chose to go on without
-    /// the optional ones that failed to download.
-    Skipped,
     /// The user declined — the app quits.
     Cancelled,
 }
@@ -67,9 +65,6 @@ pub(crate) struct AssetDialog {
     downloads: Vec<Download>,
     /// Failure from the last attempt, shown above the buttons for a retry.
     error: Option<String>,
-    /// Whether the last attempt left only optional files missing, so the
-    /// dialog offers Skip.
-    skippable: bool,
     icon: Option<egui::TextureHandle>,
 }
 
@@ -85,34 +80,40 @@ impl AssetDialog {
             pending: pending_sources(),
             downloads: Vec::new(),
             error: None,
-            skippable: false,
             icon: None,
         }
     }
 
-    /// Whether any download of the current attempt is still running.
+    /// Whether any download is still running.
     fn downloading(&self) -> bool {
         self.downloads.iter().any(Download::is_running)
     }
 
+    /// Whether a required source's download is still running: what the
+    /// dialog waits for. An optional one (the NitrOS-9 EOU images, from a
+    /// third-party site) never holds the manager back.
+    fn installing(&self) -> bool {
+        self.downloads
+            .iter()
+            .any(|download| download.is_running() && download.source().required())
+    }
+
     /// Fold finished download threads' results back in. Returns whether
-    /// the attempt completed successfully (the dialog's work is done). An
-    /// attempt that still leaves files missing — a stale bundle behind a new
-    /// [`crate::startup::BUNDLED_ROMS`] or cartridge-manifest entry — reads
-    /// as a failure, not a silent close followed by a re-prompt on every
-    /// start.
+    /// the required downloads completed successfully (the dialog's work is
+    /// done). One that still leaves files missing — a stale bundle behind a
+    /// new [`crate::startup::BUNDLED_ROMS`] or cartridge-manifest entry —
+    /// reads as a failure, not a silent close followed by a re-prompt on
+    /// every start.
     fn poll(&mut self) -> bool {
-        if !self.downloading() {
-            return false;
-        }
+        let was_installing = self.installing();
         for download in &mut self.downloads {
             download.poll();
         }
-        if self.downloading() {
+        if !was_installing || self.installing() {
             return false;
         }
         self.pending = pending_sources();
-        if self.pending.is_empty() {
+        if !self.pending.iter().any(|source| source.required()) {
             return true;
         }
         self.missing = self
@@ -120,9 +121,16 @@ impl AssetDialog {
             .iter()
             .flat_map(|source| source.missing())
             .collect();
-        self.skippable = self.pending.iter().all(|source| !source.required());
         self.error = Some(self.failure_details());
         false
+    }
+
+    /// The NitrOS-9 EOU download, running or finished, for the New menu to
+    /// carry on showing once the dialog closes (`manager/eou_menu.rs`).
+    fn into_eou_download(self) -> Option<Download> {
+        self.downloads
+            .into_iter()
+            .find(|download| download.source() == Source::Eou)
     }
 
     /// What went wrong in the finished attempt: each failed download's
@@ -143,25 +151,28 @@ impl AssetDialog {
         }
     }
 
-    /// Start a download thread for every [`Self::pending`] source. Each
-    /// thread's result comes back through its [`Download`]; its repaint
-    /// wakes the UI so [`Self::poll`] sees it promptly. Returns `false`
-    /// when nothing is missing any more, so there is nothing to wait for.
+    /// Start a download thread for every [`Self::pending`] source not
+    /// already downloading (a retry leaves a running EOU download alone).
+    /// Each thread's result comes back through its [`Download`]; its repaint
+    /// wakes the UI so [`Self::poll`] sees it promptly. Returns `false` when
+    /// no required file is missing any more, so there is nothing to wait for.
     fn start_download(&mut self, ctx: &egui::Context) -> bool {
-        self.downloads = self
+        self.downloads.retain(Download::is_running);
+        let running: Vec<Source> = self.downloads.iter().map(Download::source).collect();
+        let idle = self
             .pending
             .iter()
-            .map(|&source| {
-                let url = self.assets_url.clone();
-                let install_dir = self.install_dir.clone();
-                Download::start(source, ctx, move |progress| {
-                    source.fetch(&url, &install_dir, progress)
-                })
-            })
-            .collect();
+            .filter(|source| !running.contains(source));
+        for &source in idle {
+            let url = self.assets_url.clone();
+            let install_dir = self.install_dir.clone();
+            let download = Download::start(source, ctx, move |progress| {
+                source.fetch(&url, &install_dir, progress)
+            });
+            self.downloads.push(download);
+        }
         self.error = None;
-        self.skippable = false;
-        !self.downloads.is_empty()
+        self.installing()
     }
 
     /// Draw the dialog as the window's only content for one frame.
@@ -236,7 +247,8 @@ impl AssetDialog {
             // The EOU images come from a third-party site and add most of
             // the download.
             let note = format!(
-                "Includes {EOU_TITLE} ({}) from {EOU_HOST}.",
+                "Includes {EOU_TITLE} ({}) from {EOU_HOST}. CoCoVM opens without \
+                waiting for it.",
                 megabytes(EOU_ARCHIVE_BYTES)
             );
             ui.label(egui::RichText::new(note).color(secondary_color(ui)));
@@ -249,14 +261,7 @@ impl AssetDialog {
         }
         if let Some(err) = &self.error {
             ui.add_space(TEXT_GAP);
-            // Only optional sources are left when skippable, and EOU is the
-            // only optional one.
-            let message = if self.skippable {
-                "The NitrOS-9 download failed. Try again, or skip it for now."
-            } else {
-                "Download failed. Try again."
-            };
-            ui.colored_label(ui.visuals().error_fg_color, message);
+            ui.colored_label(ui.visuals().error_fg_color, "Download failed. Try again.");
             ui.collapsing("Show details", |ui| {
                 ui.label(err);
             });
@@ -283,7 +288,7 @@ impl AssetDialog {
 
     /// Keep the actions visible even when a long error needs to scroll.
     fn draw_actions(&mut self, ui: &mut egui::Ui) -> Verdict {
-        if self.downloading() {
+        if self.installing() {
             ui.allocate_ui_with_layout(
                 egui::vec2(ui.available_width(), BUTTON_SIZE[1]),
                 egui::Layout::left_to_right(egui::Align::Center),
@@ -309,14 +314,6 @@ impl AssetDialog {
                     .min_size(BUTTON_SIZE.into());
             if ui.add(download).clicked() && !self.start_download(ui.ctx()) {
                 verdict = Verdict::Installed;
-            }
-            if self.skippable {
-                let skip = egui::Button::new("Skip")
-                    .corner_radius(BUTTON_RADIUS)
-                    .min_size(BUTTON_SIZE.into());
-                if ui.add(skip).clicked() {
-                    verdict = Verdict::Skipped;
-                }
             }
             let cancel = egui::Button::new("Cancel")
                 .corner_radius(BUTTON_RADIUS)
@@ -377,8 +374,11 @@ impl ManagerApp {
         };
         match dialog.draw(ctx) {
             Verdict::Pending => {}
-            Verdict::Installed | Verdict::Skipped => {
-                self.asset_dialog = None;
+            Verdict::Installed => {
+                self.eou_download = self
+                    .asset_dialog
+                    .take()
+                    .and_then(AssetDialog::into_eou_download);
                 for command in grow_to_manager_commands() {
                     ctx.send_viewport_cmd(command);
                 }

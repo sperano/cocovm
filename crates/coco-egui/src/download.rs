@@ -6,6 +6,16 @@
 use std::io::Read;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
+
+/// How long [`open`] waits to connect, so a dead host fails instead of
+/// leaving a progress bar at zero.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// How long [`open`] waits for the response headers once connected. The
+/// body has no limit: ureq only bounds its total time, which would cut off
+/// a slow download that is still making progress.
+const RESPONSE_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// Bytes a download has received out of how many it expects. Written by the
 /// download thread, read by the UI; the two counters are independent, so
@@ -74,7 +84,13 @@ pub(crate) fn open(
     url: &str,
     progress: Arc<Progress>,
 ) -> Result<ProgressReader<ureq::BodyReader<'static>>, ureq::Error> {
-    let body = ureq::get(url).call()?.into_body();
+    let body = ureq::get(url)
+        .config()
+        .timeout_connect(Some(CONNECT_TIMEOUT))
+        .timeout_recv_response(Some(RESPONSE_TIMEOUT))
+        .build()
+        .call()?
+        .into_body();
     progress.set_total(body.content_length());
     Ok(ProgressReader::new(body.into_reader(), progress))
 }

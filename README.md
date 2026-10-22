@@ -60,9 +60,10 @@ The source repository doesn't contain copyrighted ROM images. On first launch,
 CoCoVM lists any missing runtime assets and asks before downloading the separate
 asset bundle. The same step downloads the NitrOS-9 Ease of Use 1.0.1 disk images
 from [lcurtisboyle.com](https://www.lcurtisboyle.com/nitros9/), and a progress
-bar tracks each download. If only the NitrOS-9 download fails, you can skip it
-and download the images later from the template menu. On Linux and macOS, CoCoVM
-installs these files under `~/.local/share/cocovm/assets/`. ROM images remain copyrighted by their
+bar tracks each download. CoCoVM opens without waiting for the NitrOS-9 download,
+which continues in the background; the template menu shows its progress and
+offers a retry if it fails. On Linux and macOS, CoCoVM installs these files under
+`~/.local/share/cocovm/assets/`. ROM images remain copyrighted by their
 respective owners and aren't covered by the source-code licenses in this
 repository. See [NOTICE.md](NOTICE.md) for details.
 

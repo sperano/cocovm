@@ -6,22 +6,21 @@ use egui_kittest::kittest::Queryable;
 use super::*;
 use crate::download::Progress;
 
-/// The dialog's state in a harness, plus the verdict of its last frame.
-type DialogState = (AssetDialog, Option<Verdict>);
-
-/// A dialog fetching into an unused directory, drawn by a harness the size
-/// of the real window.
-fn dialog_harness(dialog: AssetDialog) -> Harness<'static, DialogState> {
+/// A dialog drawn by a harness the size of the real window.
+fn dialog_harness(dialog: AssetDialog) -> Harness<'static, AssetDialog> {
     let mut harness = Harness::builder()
         .with_size(egui::Vec2::from(DIALOG_WINDOW_SIZE))
         .build_state(
-            |ctx, (dialog, verdict): &mut DialogState| *verdict = Some(dialog.draw(ctx)),
-            (dialog, None),
+            |ctx, dialog: &mut AssetDialog| {
+                dialog.draw(ctx);
+            },
+            dialog,
         );
     harness.run_steps(2);
     harness
 }
 
+/// A dialog fetching into an unused directory.
 fn dialog() -> AssetDialog {
     AssetDialog::new(
         vec!["coco3.rom".to_string()],
@@ -82,31 +81,47 @@ fn running_downloads_each_show_a_progress_bar() {
     assert!(harness.query_by_label("Cancel").is_none());
 }
 
-/// When only the optional EOU images failed, Skip opens the manager
-/// without them.
+/// A failed bundle offers a retry while the EOU download carries on: the
+/// footer waits only for required downloads.
 #[test]
-fn skip_continues_without_the_optional_files() {
-    let mut dialog = dialog();
-    dialog.error = Some(format!("{}: 404", Source::Eou.label()));
-    dialog.skippable = true;
-    let mut harness = dialog_harness(dialog);
-
-    harness.get_by_label("Try again");
-    harness.get_by_label("Skip").click();
-    harness.run_steps(1);
-
-    assert!(matches!(harness.state().1, Some(Verdict::Skipped)));
-}
-
-/// A failed required download offers only a retry or Cancel.
-#[test]
-fn required_failure_offers_no_skip() {
+fn optional_download_does_not_hold_the_buttons() {
+    let (bundle_tx, bundle_rx) = mpsc::channel();
+    bundle_tx.send(Err("404".to_string())).unwrap();
+    let (_eou_tx, eou_rx) = mpsc::channel();
+    let mut failed = Download::running(Source::Bundle, Arc::default(), bundle_rx);
+    failed.poll();
     let mut dialog = dialog();
     dialog.error = Some(format!("{}: 404", Source::Bundle.label()));
+    dialog.downloads = vec![
+        failed,
+        Download::running(Source::Eou, Arc::default(), eou_rx),
+    ];
+
     let harness = dialog_harness(dialog);
 
     harness.get_by_label("Try again");
-    assert!(harness.query_by_label("Skip").is_none());
+    harness.get_by_label("Cancel");
+    harness.get_by_label(Source::Eou.label());
+    let spinner = harness.query_by_label("Downloading and installing…");
+    assert!(spinner.is_none());
+}
+
+/// The EOU download, still running, outlives the dialog for the New menu
+/// to show.
+#[test]
+fn eou_download_is_handed_over() {
+    let (_bundle_tx, bundle_rx) = mpsc::channel();
+    let (_eou_tx, eou_rx) = mpsc::channel();
+    let mut dialog = dialog();
+    dialog.downloads = vec![
+        Download::running(Source::Bundle, Arc::default(), bundle_rx),
+        Download::running(Source::Eou, Arc::default(), eou_rx),
+    ];
+
+    let handed = dialog.into_eou_download().expect("the EOU download");
+
+    assert_eq!(handed.source(), Source::Eou);
+    assert!(handed.is_running());
 }
 
 /// Each failed download's error is named after its source.
