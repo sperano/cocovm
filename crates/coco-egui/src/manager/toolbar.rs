@@ -148,7 +148,7 @@ impl ManagerApp {
     fn new_menu_ui(&mut self, ui: &mut egui::Ui) {
         for preset in Preset::ALL {
             if preset == Preset::NitrOS9Eou && self.eou_install.is_some() {
-                Self::eou_install_ui(ui);
+                super::eou_install::eou_install_ui(ui);
                 continue;
             }
             if !preset.available(self.eou_dir.as_deref()) {

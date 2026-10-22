@@ -68,7 +68,7 @@ fn stall_guard_passes_the_body_through() {
     let body: Vec<u8> = (0..STALL_GUARD_CHUNK_BYTES * 3 + 7)
         .map(|i| (i % 251) as u8)
         .collect();
-    let mut reader = StallGuard::new(io::Cursor::new(body.clone()), STALL_TIMEOUT);
+    let mut reader = StallGuard::new(io::Cursor::new(body.clone()), STALL_TIMEOUT).unwrap();
 
     let mut out = Vec::new();
     reader.read_to_end(&mut out).unwrap();
@@ -82,7 +82,7 @@ fn stall_guard_passes_the_body_through() {
 #[test]
 fn stall_guard_times_out_a_stalled_body() {
     let (_keep_stalled, rx) = mpsc::channel();
-    let mut reader = StallGuard::new(Stalled(rx), TEST_STALL_TIMEOUT);
+    let mut reader = StallGuard::new(Stalled(rx), TEST_STALL_TIMEOUT).unwrap();
 
     let started = Instant::now();
     let error = reader.read(&mut [0; 1]).unwrap_err();
@@ -94,7 +94,7 @@ fn stall_guard_times_out_a_stalled_body() {
 /// The inner reader's error reaches the consumer.
 #[test]
 fn stall_guard_passes_errors_through() {
-    let mut reader = StallGuard::new(Broken, STALL_TIMEOUT);
+    let mut reader = StallGuard::new(Broken, STALL_TIMEOUT).unwrap();
     let error = reader.read(&mut [0; 1]).unwrap_err();
     assert_eq!(error.to_string(), "connection reset");
 }

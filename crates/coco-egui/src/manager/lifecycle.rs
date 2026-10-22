@@ -58,14 +58,15 @@ impl ManagerApp {
         // misses a file written by another instance.
         let taken = |candidate: &str| {
             self.entries.iter().any(|e| e.slug == candidate)
+                || self.installing_slug() == Some(candidate)
                 || machine_def::slug_on_disk(Some(&dir), self.artifacts_root.as_deref(), candidate)
         };
         let slug = machine_def::unique_slug(&machine_def::slugify(&name), &taken);
+        if preset == Some(Preset::NitrOS9Eou) {
+            self.start_eou_install(dir, slug);
+            return;
+        }
         let saved = match preset {
-            Some(Preset::NitrOS9Eou) => {
-                self.start_eou_install(dir, slug);
-                return;
-            }
             Some(preset) => presets::install(
                 preset,
                 &presets::InstallDirs {

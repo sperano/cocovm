@@ -19,6 +19,9 @@ use crate::machine_def::MachineDef;
 /// The New menu's text while the install runs.
 pub(crate) const COPYING_TEXT: &str = "Copying the NitrOS-9 EOU disk images…";
 
+/// The error of an install whose thread ended without a result.
+const INSTALL_EXITED: &str = "the NitrOS-9 EOU install exited unexpectedly";
+
 /// A NitrOS-9 EOU machine being written on its own thread.
 pub(crate) struct PendingInstall {
     /// The slug the machine is saved under.
@@ -37,7 +40,12 @@ impl PendingInstall {
 impl ManagerApp {
     /// Install the NitrOS-9 EOU template as machine `slug` under
     /// `machines_dir` on a new thread; [`Self::poll_eou_install`] inserts it.
+    /// Does nothing while another install runs (the New menu hides the
+    /// template meanwhile).
     pub(super) fn start_eou_install(&mut self, machines_dir: PathBuf, slug: String) {
+        if self.eou_install.is_some() {
+            return;
+        }
         let artifacts_root = self.artifacts_root.clone();
         let eou_dir = self.eou_dir.clone();
         let created = Some(created_today());
@@ -59,42 +67,53 @@ impl ManagerApp {
         self.eou_install = Some(PendingInstall::new(slug, rx));
     }
 
+    /// The slug a running install writes, which no other machine may take.
+    pub(super) fn installing_slug(&self) -> Option<&str> {
+        self.eou_install
+            .as_ref()
+            .map(|pending| pending.slug.as_str())
+    }
+
     /// Once per frame: insert the machine a finished install saved, or
     /// report its error; while it runs, keep frames coming to notice the end.
     pub(super) fn poll_eou_install(&mut self, ctx: &egui::Context) {
-        let Some(pending) = &self.eou_install else {
+        let Some(pending) = self.eou_install.take() else {
             return;
         };
         let saved = match pending.result.try_recv() {
             Ok(saved) => saved,
             Err(mpsc::TryRecvError::Empty) => {
+                self.eou_install = Some(pending);
                 ctx.request_repaint_after(PROGRESS_REPAINT_INTERVAL);
                 return;
             }
-            Err(mpsc::TryRecvError::Disconnected) => {
-                Err("the NitrOS-9 EOU install exited unexpectedly".to_string())
-            }
+            Err(mpsc::TryRecvError::Disconnected) => Err(INSTALL_EXITED.into()),
         };
-        if let Some(pending) = self.eou_install.take() {
-            self.insert_created(pending.slug, saved);
-        }
+        self.insert_created(pending.slug, saved);
     }
 
     /// On quit: let a running install finish, so its copy is never cut
-    /// short and its definition is saved for the next launch.
+    /// short and, unless it fails, its definition is saved for the next
+    /// launch. The window stays up, unresponsive, until the copy is done.
     pub(super) fn finish_eou_install(&mut self) {
-        if let Some(pending) = self.eou_install.take() {
-            let _ = pending.result.recv();
-        }
+        let Some(pending) = self.eou_install.take() else {
+            return;
+        };
+        let error = match pending.result.recv() {
+            Ok(Ok(_)) => return,
+            Ok(Err(error)) => error,
+            Err(mpsc::RecvError) => INSTALL_EXITED.to_string(),
+        };
+        eprintln!("coco: creating machine '{}': {error}", pending.slug);
     }
+}
 
-    /// The New menu's NitrOS-9 EOU entry while its install runs.
-    pub(super) fn eou_install_ui(ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
-            ui.spinner();
-            ui.label(COPYING_TEXT);
-        });
-    }
+/// The New menu's NitrOS-9 EOU entry while its install runs.
+pub(super) fn eou_install_ui(ui: &mut egui::Ui) {
+    ui.horizontal(|ui| {
+        ui.spinner();
+        ui.label(COPYING_TEXT);
+    });
 }
 
 #[cfg(test)]

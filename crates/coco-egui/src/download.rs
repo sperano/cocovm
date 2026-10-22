@@ -29,6 +29,9 @@ const STALL_GUARD_CHUNK_BYTES: usize = 64 * 1024;
 /// Chunks [`StallGuard`]'s reading thread may read ahead of its consumer.
 const STALL_GUARD_QUEUE_CHUNKS: usize = 4;
 
+/// Name of [`StallGuard`]'s reading thread.
+const STALL_GUARD_THREAD: &str = "download-body";
+
 /// Bytes a download has received out of how many it expects. Written by the
 /// download thread, read by the UI; the two counters are independent, so
 /// relaxed ordering is enough.
@@ -93,7 +96,8 @@ impl<R: Read> Read for ProgressReader<R> {
 /// produced nothing for its timeout. ureq has no such idle limit, and a
 /// blocked socket read can't be interrupted, so `inner` is read on a thread
 /// of its own that hands chunks over a bounded channel. On a stall, that
-/// thread is abandoned: it exits on its next read, once the socket gives up.
+/// thread is abandoned with its connection: it exits once its read returns,
+/// which may not happen before the OS drops the connection or the app quits.
 pub(crate) struct StallGuard {
     chunks: mpsc::Receiver<io::Result<Vec<u8>>>,
     timeout: Duration,
@@ -106,16 +110,18 @@ pub(crate) struct StallGuard {
 
 impl StallGuard {
     /// Read `inner` on a new thread, failing after `timeout` without data.
-    pub(crate) fn new(inner: impl Read + Send + 'static, timeout: Duration) -> Self {
+    pub(crate) fn new(inner: impl Read + Send + 'static, timeout: Duration) -> io::Result<Self> {
         let (tx, chunks) = mpsc::sync_channel(STALL_GUARD_QUEUE_CHUNKS);
-        std::thread::spawn(move || pump_chunks(inner, &tx));
-        Self {
+        std::thread::Builder::new()
+            .name(STALL_GUARD_THREAD.to_string())
+            .spawn(move || pump_chunks(inner, &tx))?;
+        Ok(Self {
             chunks,
             timeout,
             chunk: Vec::new(),
             consumed: 0,
             finished: false,
-        }
+        })
     }
 
     /// Wait for the next chunk into [`Self::chunk`]; `false` at the end.
@@ -165,7 +171,8 @@ fn pump_chunks(mut inner: impl Read, tx: &mpsc::SyncSender<io::Result<Vec<u8>>>)
             Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
             Err(e) => Err(e),
         };
-        let last = !matches!(&read, Ok(chunk) if !chunk.is_empty());
+        // An empty chunk (the end) or an error is the last thing sent.
+        let last = read.as_ref().map_or(true, Vec::is_empty);
         if tx.send(read).is_err() || last {
             return;
         }
@@ -188,7 +195,7 @@ pub(crate) fn open(
         .call()?
         .into_body();
     progress.set_total(body.content_length());
-    let body = StallGuard::new(body.into_reader(), STALL_TIMEOUT);
+    let body = StallGuard::new(body.into_reader(), STALL_TIMEOUT)?;
     Ok(ProgressReader::new(body, progress))
 }
 
