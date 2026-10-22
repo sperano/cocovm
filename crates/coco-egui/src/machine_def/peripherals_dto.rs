@@ -128,6 +128,44 @@ impl CartridgeDTO {
             _ => false,
         }
     }
+
+    /// The ROM image paths this cartridge names, MPI slots included, as
+    /// written (they resolve like `[media]` paths).
+    pub fn rom_paths(&self) -> Vec<&str> {
+        match self {
+            Self::ROMPak { path } | Self::BankedROMPak { path } | Self::GamesMaster { path } => {
+                vec![path]
+            }
+            Self::MPI { slots, .. } => slots.iter().filter_map(SlotDTO::rom_path).collect(),
+            // Listed, not `_`: a new variant with a path must not slip past
+            // the delete check that relies on this.
+            Self::None
+            | Self::FD502 { .. }
+            | Self::RTC
+            | Self::RS232 { .. }
+            | Self::Orch90
+            | Self::SoundSpeech
+            | Self::CoCoMax => Vec::new(),
+        }
+    }
+}
+
+impl SlotDTO {
+    /// The ROM image path this occupant names, as written.
+    pub fn rom_path(&self) -> Option<&str> {
+        match self {
+            Self::ROMPak { path } | Self::BankedROMPak { path } | Self::GamesMaster { path } => {
+                Some(path)
+            }
+            Self::Empty
+            | Self::FD502 { .. }
+            | Self::RTC
+            | Self::RS232 { .. }
+            | Self::Orch90
+            | Self::SoundSpeech
+            | Self::CoCoMax => None,
+        }
+    }
 }
 
 /// One MultiPak slot's occupant ([`CartridgeDTO::MPI`]'s `slots`) —

@@ -195,14 +195,11 @@ impl ManagerApp {
                 return false;
             }
             self.entries.iter().any(|entry| entry.slug == candidate)
-                || self
-                    .machines_dir
-                    .as_ref()
-                    .is_some_and(|dir| machine_def::def_path(dir, candidate).exists())
-                || self
-                    .artifacts_root
-                    .as_ref()
-                    .is_some_and(|root| root.join(candidate).exists())
+                || machine_def::slug_on_disk(
+                    self.machines_dir.as_deref(),
+                    self.artifacts_root.as_deref(),
+                    candidate,
+                )
         };
         machine_def::unique_slug(&base, &taken)
     }

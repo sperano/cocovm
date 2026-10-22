@@ -2,7 +2,7 @@
 
 use crate::machine_def;
 
-use super::{MachineEntry, ManagerApp, WINDOW_SIZE, assets, control, rename};
+use super::{MachineEntry, ManagerApp, WINDOW_SIZE, assets, control, lifecycle, presets, rename};
 
 /// Open the manager as the application's main window. `config_path` is the
 /// same path `main.rs` resolved `config` from (`None` when no home
@@ -65,6 +65,16 @@ pub fn run(
     {
         eprintln!("coco: cannot recover machine rename: {error}");
         std::process::exit(1);
+    }
+    if let Some(dir) = machines_dir.as_deref()
+        && let Err(error) = presets::seed_first_run(
+            dir,
+            artifacts_root.as_deref(),
+            Some(lifecycle::created_today()),
+        )
+    {
+        // Not fatal: the list starts with whatever was written, and New still works.
+        eprintln!("coco: cannot create the starter machines: {error}");
     }
     let entries = load_entries(machines_dir.as_deref());
     let machine_count = entries.len();

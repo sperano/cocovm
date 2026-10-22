@@ -27,6 +27,7 @@ use crate::display::Display;
 use crate::paths;
 
 mod dto;
+mod host_paths;
 mod io;
 mod peripherals_dto;
 mod printer_dto;
@@ -43,7 +44,7 @@ pub use share_dto::{DriveWireShareDTO, ShareAccessDTO};
 // production writers go through `HardwareDTO::from_config`.
 #[cfg(test)]
 pub use dto::DisplayDTO;
-pub use io::{def_path, load_all, save};
+pub use io::{DEF_EXTENSION, def_path, load_all, save};
 
 /// Schema version this build writes, and the newest it accepts on load.
 /// Bump only on a breaking change to the TOML shape.
@@ -195,6 +196,21 @@ pub fn slugify(name: &str) -> String {
     } else {
         trimmed.to_string()
     }
+}
+
+/// Whether `slug` already has a definition in `machines_dir` or an artifact
+/// dir under `artifacts_root`. Deleting a machine removes both
+/// (`manager::delete`), but an artifact dir can still outlive its
+/// definition (a delete from an older build, a hand-removed `.toml`), and a
+/// new machine reusing the slug would inherit its disk images and suspend
+/// state.
+pub fn slug_on_disk(
+    machines_dir: Option<&Path>,
+    artifacts_root: Option<&Path>,
+    slug: &str,
+) -> bool {
+    machines_dir.is_some_and(|dir| def_path(dir, slug).exists())
+        || artifacts_root.is_some_and(|root| root.join(slug).exists())
 }
 
 /// `base`, or `base-2`, `base-3`, … — the first candidate for which `taken`

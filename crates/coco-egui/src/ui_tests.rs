@@ -28,6 +28,7 @@ mod manager_drivewire_test;
 mod manager_help_test;
 mod manager_lifecycle;
 mod manager_peripherals;
+mod manager_presets_test;
 mod manager_roms;
 mod manager_selection;
 mod manager_settings;

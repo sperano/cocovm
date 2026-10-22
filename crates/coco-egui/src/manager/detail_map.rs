@@ -7,7 +7,7 @@
 //! once that file grew past the project's ~500-line file ceiling.
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::{machine_def, new_vm};
 
@@ -19,13 +19,30 @@ const BLANK_TAPE_FILE: &str = "tape.cas";
 
 /// File name of the auto-placed blank image for Disk N = Blank, recorded in
 /// `[media].diskN` as a relative path.
-fn blank_disk_file(drive: usize) -> String {
+pub(super) fn blank_disk_file(drive: usize) -> String {
     format!("disk{drive}.dsk")
 }
 
 /// [`blank_disk_file`]'s VHD sibling, for `[media].vhdN`.
 fn blank_vhd_file(drive: usize) -> String {
     format!("hd{drive}.vhd")
+}
+
+/// Create `file` in `slug`'s artifact dir under `root` as a 0-byte image —
+/// the backing file of a Blank media pick. An existing file is kept.
+pub(super) fn place_blank_file(root: &Path, slug: &str, file: &str) -> Result<(), String> {
+    let artifact_dir = root.join(slug);
+    fs::create_dir_all(&artifact_dir).map_err(|e| format!("{}: {e}", artifact_dir.display()))?;
+    let path = artifact_dir.join(file);
+    match fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&path)
+    {
+        Ok(_) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => Ok(()),
+        Err(e) => Err(format!("{}: {e}", path.display())),
+    }
 }
 
 /// Seed the detail pane's [`new_vm::MachineForm`] from a saved definition —
@@ -81,30 +98,17 @@ impl ManagerApp {
         choice: &mut new_vm::MediaChoice,
         auto_file: String,
     ) -> Result<Option<String>, String> {
-        let (path, recorded) = match &*choice {
+        match &*choice {
             new_vm::MediaChoice::None => return Ok(None),
             new_vm::MediaChoice::File(path) => return Ok(Some(path.display().to_string())),
-            new_vm::MediaChoice::Blank => {
-                let Some(root) = self.artifacts_root.clone() else {
-                    return Err(NO_CONFIG_DIR.to_string());
-                };
-                let artifact_dir = root.join(slug);
-                fs::create_dir_all(&artifact_dir)
-                    .map_err(|e| format!("{}: {e}", artifact_dir.display()))?;
-                (artifact_dir.join(&auto_file), auto_file)
-            }
-        };
-        match fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&path)
-        {
-            Ok(_) => {}
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
-            Err(e) => return Err(format!("{}: {e}", path.display())),
+            new_vm::MediaChoice::Blank => {}
         }
-        *choice = new_vm::MediaChoice::File(PathBuf::from(&recorded));
-        Ok(Some(recorded))
+        let Some(root) = self.artifacts_root.as_deref() else {
+            return Err(NO_CONFIG_DIR.to_string());
+        };
+        place_blank_file(root, slug, &auto_file)?;
+        *choice = new_vm::MediaChoice::File(PathBuf::from(&auto_file));
+        Ok(Some(auto_file))
     }
 
     /// Pack the edit form back into a definition, starting from `base` so

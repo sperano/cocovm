@@ -40,6 +40,7 @@ pub(crate) mod list;
 mod live_drivewire;
 #[cfg(feature = "perf")]
 mod perf_scenarios;
+pub(crate) mod presets;
 mod rename;
 pub(crate) mod reveal;
 mod roms;
@@ -52,6 +53,9 @@ mod toolbar;
 mod vm_windows;
 pub(crate) mod welcome;
 mod welcome_image;
+
+#[cfg(test)]
+pub(crate) use toolbar::TEMPLATES_LABEL;
 
 pub use run::run;
 
