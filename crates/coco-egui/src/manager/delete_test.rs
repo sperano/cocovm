@@ -135,6 +135,56 @@ fn deleting_machine_without_artifact_dir_succeeds() {
     assert!(!machine_def::def_path(machines_dir.path(), TEST_SLUG).exists());
 }
 
+/// Error left by a failed Save in the save-error tests.
+const STALE_ERROR: &str = "stale save error";
+/// The second machine of the save-error tests.
+const OTHER_SLUG: &str = "other-machine";
+
+/// A manager over saved [`TEST_SLUG`] and [`OTHER_SLUG`], with
+/// `entries[selected]` selected and [`STALE_ERROR`] showing.
+fn manager_with_save_error(machines_dir: &Path, selected: usize) -> ManagerApp {
+    let entries = [TEST_SLUG, OTHER_SLUG].map(|slug| {
+        machine_def::save(machines_dir, slug, &test_def()).expect("save definition");
+        MachineEntry::new(slug.to_string(), test_def())
+    });
+    let mut manager = ManagerApp::new(
+        None,
+        Some(machines_dir.to_path_buf()),
+        None,
+        entries.into(),
+        None,
+    );
+    manager.selection.set_single(selected);
+    manager.save_error = Some(STALE_ERROR.to_string());
+    manager
+}
+
+/// Deleting the selected machine drops its save error, which the welcome
+/// pane would otherwise show once nothing is selected.
+#[test]
+fn deleting_selected_machine_clears_its_save_error() {
+    let machines_dir = TempDir::new("delete-selected-save-error");
+    let mut manager = manager_with_save_error(machines_dir.path(), 0);
+
+    manager.delete_machine(0).expect("delete should succeed");
+
+    assert!(manager.selection.is_empty());
+    assert_eq!(manager.save_error, None);
+}
+
+/// Deleting a machine that isn't selected leaves the selected one's save
+/// error in view.
+#[test]
+fn deleting_unselected_machine_keeps_the_save_error() {
+    let machines_dir = TempDir::new("delete-unselected-save-error");
+    let mut manager = manager_with_save_error(machines_dir.path(), 1);
+
+    manager.delete_machine(0).expect("delete should succeed");
+
+    assert_eq!(manager.selection.single(), Some(0));
+    assert_eq!(manager.save_error.as_deref(), Some(STALE_ERROR));
+}
+
 #[test]
 fn artifact_dir_refuses_slugs_other_than_one_file_name() {
     let root = Path::new("artifacts");
