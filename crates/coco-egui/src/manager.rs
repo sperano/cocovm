@@ -34,6 +34,7 @@ mod control;
 mod delete;
 mod detail;
 mod detail_map;
+pub(crate) mod eou_install;
 mod eou_menu;
 mod exit;
 mod gamepad_service;
@@ -290,6 +291,13 @@ pub struct ManagerApp {
     /// The New menu's NitrOS-9 EOU download (`manager/eou_menu.rs`), once
     /// started.
     pub(crate) eou_download: Option<asset_downloads::Download>,
+    /// Where the New menu's NitrOS-9 EOU download comes from:
+    /// [`crate::nitros9::EOU_URL`], or, in tests, a URL that fails without
+    /// reaching the network.
+    pub(crate) eou_url: &'static str,
+    /// The NitrOS-9 EOU machine being written off the UI thread
+    /// (`manager/eou_install.rs`), while it is.
+    pub(crate) eou_install: Option<eou_install::PendingInstall>,
     /// Root of the per-machine artifact directories
     /// (`machine_def::artifacts_root()`), where each entry's
     /// [`THUMBNAIL_FILE`] and [`SUSPEND_STATE_FILE`] live under
@@ -451,6 +459,8 @@ impl ManagerApp {
             cartridges_dir: None,
             eou_dir: None,
             eou_download: None,
+            eou_url: crate::nitros9::EOU_URL,
+            eou_install: None,
             artifacts_root,
             entries,
             selection: Selection::default(),
@@ -493,6 +503,7 @@ impl eframe::App for ManagerApp {
     /// live VM's runtime into its persisted total, same as Stop. A flush
     /// failure is only logged — there's no dialog left to show it in.
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        self.finish_eou_install();
         self.apply_pending_rename();
         for index in 0..self.entries.len() {
             self.fold_runtime_into_def(index);
@@ -530,6 +541,7 @@ impl eframe::App for ManagerApp {
         }
 
         self.update_check.poll();
+        self.poll_eou_install(ctx);
         self.poll_menu_requests(ctx);
         self.welcome_image.service(ctx, self.selection.is_empty());
         self.thumbnail_loads_remaining = thumbnails::THUMBNAIL_LOADS_PER_UPDATE;

@@ -45,7 +45,9 @@ impl ManagerApp {
     }
 
     /// Create, save, insert, and select a machine built from `preset`, or the
-    /// default machine for `None`.
+    /// default machine for `None`. The NitrOS-9 EOU template copies its
+    /// 128 MB system disk, so it is written on a background thread and
+    /// inserted once that finishes (`manager/eou_install.rs`).
     fn create_machine(&mut self, preset: Option<Preset>) {
         let Some(dir) = self.machines_dir.clone() else {
             self.save_error = Some(NO_CONFIG_DIR.to_string());
@@ -60,6 +62,10 @@ impl ManagerApp {
         };
         let slug = machine_def::unique_slug(&machine_def::slugify(&name), &taken);
         let saved = match preset {
+            Some(Preset::NitrOS9Eou) => {
+                self.start_eou_install(dir, slug);
+                return;
+            }
             Some(preset) => presets::install(
                 preset,
                 &presets::InstallDirs {
@@ -79,6 +85,16 @@ impl ManagerApp {
                 machine_def::save(&dir, &slug, &def).map(|()| def)
             }
         };
+        self.insert_created(slug, saved);
+    }
+
+    /// Insert and select the machine just `saved` as `slug`, or report why
+    /// it couldn't be.
+    pub(super) fn insert_created(
+        &mut self,
+        slug: String,
+        saved: Result<machine_def::MachineDef, String>,
+    ) {
         match saved {
             Ok(def) => {
                 self.entries.push(MachineEntry::new(slug, def));

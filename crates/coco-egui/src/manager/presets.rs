@@ -226,9 +226,8 @@ fn place_eou_images(dirs: &InstallDirs<'_>, slug: &str) -> Result<PathBuf, Strin
 /// machine writes to its own system disk and never to the downloaded one.
 /// A failure removes the copies it made.
 ///
-/// Runs on the caller's thread, which for the New menu is the UI's: the
-/// 128 MB VHD takes a fraction of a second on an SSD, and less where
-/// `fs::copy` can clone the file instead (APFS, Btrfs, XFS).
+/// The 128 MB VHD can take seconds on a hard disk, so the New menu calls
+/// this through [`install`] on a thread of its own (`manager/eou_install.rs`).
 fn copy_eou_images(eou_dir: &Path, artifact_dir: &Path) -> Result<(), String> {
     if !missing_eou_images(eou_dir).is_empty() {
         return Err(EOU_NOT_DOWNLOADED.to_string());

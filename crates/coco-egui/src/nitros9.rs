@@ -5,7 +5,7 @@
 //! keeps only the two emulator images, and caches them under
 //! `paths::eou_dir`.
 
-use std::fs::{self, File};
+use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -64,6 +64,10 @@ pub(crate) const EOU_IMAGES: [&str; 2] = [EOU_BOOT_DISK, EOU_SYSTEM_VHD];
 /// unverified download never leaves a file under its real name.
 const PARTIAL_SUFFIX: &str = ".part";
 
+/// The file under the EOU directory whose lock [`download_eou`] holds, so
+/// two app instances never write the same [`PARTIAL_SUFFIX`] files at once.
+const LOCK_FILE: &str = ".download.lock";
+
 /// The [`EOU_IMAGES`] not present as files under `dir`.
 pub(crate) fn missing_eou_images(dir: &Path) -> Vec<&'static str> {
     EOU_IMAGES
@@ -74,19 +78,51 @@ pub(crate) fn missing_eou_images(dir: &Path) -> Vec<&'static str> {
 
 /// Download the archive at `url` into `dest`, reporting into `progress`,
 /// and keep its [`EOU_IMAGES`] once its digest matches [`EOU_SHA256`].
+/// Holds `dest`'s [`lock_dest`] throughout: an instance that waited on it
+/// finds the images another one installed meanwhile and downloads nothing.
 pub(crate) fn download_eou(
     url: &str,
     dest: &Path,
     progress: Arc<Progress>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let _lock = lock_dest(dest)?;
+    if missing_eou_images(dest).is_empty() {
+        return Ok(());
+    }
     unpack_eou(download::open(url, progress)?, dest, EOU_SHA256)
+}
+
+/// Create `dest`, open its [`LOCK_FILE`], and wait for an exclusive lock on
+/// it; dropping the file releases the lock, and so does a crash. When the
+/// lock can't be taken (a platform or NFS mount without locks), the
+/// download warns and goes ahead unlocked, as starter-machine seeding does
+/// (`manager::presets::lock_seeding`): the race needs two instances
+/// downloading at once.
+fn lock_dest(dest: &Path) -> Result<File, Box<dyn std::error::Error>> {
+    fs::create_dir_all(dest).map_err(|e| path_error(dest, e))?;
+    let path = dest.join(LOCK_FILE);
+    let file = OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(&path)
+        .map_err(|e| path_error(&path, e))?;
+    if let Err(e) = file.lock() {
+        eprintln!(
+            "coco: {}: locking: {e}; downloading NitrOS-9 EOU unlocked",
+            path.display()
+        );
+    }
+    Ok(file)
 }
 
 /// Stream the zip archive in `reader` and write its [`EOU_IMAGES`] into
 /// `dest`, but only once the whole stream's SHA-256 matches `sha256`
 /// (lowercase hex). No image takes its real name before the whole archive
 /// checks out, and a failure removes the partial files. Split from the
-/// download so it can be tested without a network.
+/// download so it can be tested without a network; the caller serializes
+/// calls for one `dest` ([`download_eou`]'s lock), since they share the
+/// partial files.
 pub(crate) fn unpack_eou(
     reader: impl Read,
     dest: &Path,

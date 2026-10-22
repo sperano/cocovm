@@ -113,10 +113,18 @@ fn install_round_trips_and_places_the_blank_disk() {
 
         let loaded = machine_def::load_all(machines.path()).expect("installed preset loads");
         assert_eq!(loaded, vec![(slug.clone(), def.clone())]);
-        if let Some(disk) = &def.media.disk0 {
-            let disk = artifacts.path().join(&slug).join(disk);
-            assert!(disk.is_file(), "{preset:?}: {}", disk.display());
-        }
+        // Without a drive 0 image, no blank floppy may be written either.
+        let blank = blank_disk_file(BLANK_DISK_DRIVE);
+        let disk = artifacts
+            .path()
+            .join(&slug)
+            .join(def.media.disk0.as_deref().unwrap_or(&blank));
+        assert_eq!(
+            disk.is_file(),
+            def.media.disk0.is_some(),
+            "{preset:?}: {}",
+            disk.display()
+        );
     }
 }
 

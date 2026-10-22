@@ -1,4 +1,5 @@
 use std::sync::{Arc, mpsc};
+use std::time::Duration;
 
 use egui_kittest::Harness;
 use egui_kittest::kittest::{NodeT, Queryable};
@@ -6,6 +7,13 @@ use egui_kittest::kittest::{NodeT, Queryable};
 use super::*;
 use crate::download::Progress;
 use crate::machine_def::tests::TempDir;
+
+/// A URL whose download fails at once, without reaching the network.
+const REFUSED_URL: &str = "http://127.0.0.1:1/eou.zip";
+
+/// How often, and how many times, the retry test polls for its download's end.
+const POLL_INTERVAL: Duration = Duration::from_millis(10);
+const POLL_ATTEMPTS: usize = 500;
 
 /// The entry's download button label.
 fn download_label() -> String {
@@ -79,4 +87,31 @@ fn failed_download_offers_a_retry() {
 
     harness.get_by_label(FAILED_TEXT);
     harness.get_by_label(&download_label());
+}
+
+/// Clicking the button after a failure starts a new download.
+#[test]
+fn retry_starts_a_new_download() {
+    let eou = TempDir::new("eou-menu-retry");
+    let (tx, rx) = mpsc::channel();
+    tx.send(Err("404".to_string())).unwrap();
+    let mut app = app_with_eou_dir(Some(eou.path()));
+    app.eou_url = REFUSED_URL;
+    app.eou_download = Some(Download::running(Source::Eou, Arc::default(), rx));
+    let mut harness = entry_harness(app);
+
+    harness.get_by_label(&download_label()).click();
+    harness.step();
+    for _ in 0..POLL_ATTEMPTS {
+        harness.step();
+        if !harness.state().eou_download.as_ref().unwrap().is_running() {
+            break;
+        }
+        std::thread::sleep(POLL_INTERVAL);
+    }
+
+    let download = harness.state().eou_download.as_ref().unwrap();
+    assert!(!download.is_running(), "the retry must end");
+    let error = download.error().expect("a refused connection fails");
+    assert_ne!(error, "404", "a new download replaced the failed one");
 }

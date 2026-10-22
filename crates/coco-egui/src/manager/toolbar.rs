@@ -143,9 +143,14 @@ impl ManagerApp {
 
     /// The New menu: one item per built-in template. A template whose
     /// downloaded images are missing (only NitrOS-9 EOU's can be) offers to
-    /// download them instead.
+    /// download them instead, and NitrOS-9 EOU shows a spinner while a
+    /// machine made from it is being written.
     fn new_menu_ui(&mut self, ui: &mut egui::Ui) {
         for preset in Preset::ALL {
+            if preset == Preset::NitrOS9Eou && self.eou_install.is_some() {
+                Self::eou_install_ui(ui);
+                continue;
+            }
             if !preset.available(self.eou_dir.as_deref()) {
                 self.eou_download_ui(ui);
                 continue;
