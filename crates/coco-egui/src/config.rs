@@ -317,7 +317,7 @@ pub(crate) fn resolve(cli: Cli, file: FileConfig) -> Config {
 }
 
 /// `value` trimmed, or `None` when that leaves it empty: a blank URL (an
-/// `eou_url = \"\"` line, an empty `COCOVM_EOU_URL`) falls through to the
+/// `eou_url = ""` line, an empty `COCOVM_EOU_URL`) falls through to the
 /// next source the way an emptied Settings field does.
 fn non_blank(value: Option<String>) -> Option<String> {
     value
