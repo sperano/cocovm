@@ -54,7 +54,7 @@ cd cocovm
 To build and launch CoCoVM during development, run:
 
 ```sh
-cargo run 
+cargo run
 ```
 
 To create an optimized executable, run:
