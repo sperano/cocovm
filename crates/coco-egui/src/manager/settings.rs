@@ -209,8 +209,8 @@ impl ManagerApp {
 
     /// Saves the draft and closes the dialog; applies the icons-only toggles,
     /// the welcome-image cycle, the hotkeys, `eou_url`, `log_level` and
-    /// `control_port` live unless a CLI/env override wins. A failure shows in the dialog,
-    /// which stays open with the old listener.
+    /// `control_port` live unless a CLI/env override wins. A failure shows in
+    /// the dialog, which stays open with the old listener.
     fn commit_settings(&mut self, ctx: &egui::Context) {
         let Some(dialog) = &mut self.settings else {
             return;
