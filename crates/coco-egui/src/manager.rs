@@ -324,7 +324,8 @@ pub struct ManagerApp {
     /// Focus the detail pane's Name field on its next draw — set by "New…"
     /// so the natural next gesture after creating is typing the real name.
     focus_name: bool,
-    /// Message from the last failed Save, shown under the Save/Revert row
+    /// Message from the last failed Save or Create, shown under the
+    /// Save/Revert row, the bulk pane's hint, or the welcome instructions,
     /// until the next attempt or a fresh selection.
     save_error: Option<String>,
     /// Slugs of the entries a "Delete…" (single- or multi-row) was clicked
@@ -592,6 +593,7 @@ impl eframe::App for ManagerApp {
                     &mut self.welcome_image,
                     !self.entries.is_empty(),
                     &mut self.update_check,
+                    self.save_error.as_deref(),
                 );
             } else {
                 egui::ScrollArea::vertical().show(ui, |ui| {

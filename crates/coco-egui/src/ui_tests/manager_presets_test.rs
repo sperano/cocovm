@@ -6,6 +6,7 @@ use eframe::egui;
 use egui_kittest::kittest::{NodeT, Queryable};
 
 use crate::machine_def::tests::TempDir;
+use crate::manager::NO_CONFIG_DIR;
 use crate::manager::eou_install::{COPYING_TEXT, PendingInstall};
 use crate::manager::new_dialog::{CANCEL_LABEL, CREATE_LABEL, EMPTY_LABEL, NEW_DIALOG_TITLE};
 use crate::manager::presets::Preset;
@@ -168,4 +169,36 @@ fn new_dialog_shows_a_running_eou_install() {
     assert!(eou_choice.accesskit_node().is_disabled());
     let disk_basic = harness.get_by_label(Preset::CoCo3DiskBasic.name());
     assert!(!disk_basic.accesskit_node().is_disabled());
+}
+
+/// A Create that fails with nothing selected shows its error in the
+/// welcome pane, which is what the closed dialog leaves in view.
+#[test]
+fn failed_create_with_nothing_selected_shows_in_the_welcome_pane() {
+    let mut harness = manager_harness(None, Vec::new());
+
+    create_empty_machine(&mut harness);
+
+    assert!(harness.query_by_label(NEW_DIALOG_TITLE).is_none());
+    assert!(harness.state().entries.is_empty());
+    harness.get_by_label(NO_CONFIG_DIR);
+}
+
+/// A Create that fails with several rows selected shows its error in the
+/// bulk pane.
+#[test]
+fn failed_create_with_several_selected_shows_in_the_bulk_pane() {
+    let entries = vec![
+        sample_entry("alpha", "Alpha CoCo 3"),
+        sample_entry("beta", "Beta CoCo 3"),
+    ];
+    let mut harness = manager_harness(None, entries);
+    click(&mut harness, "Alpha CoCo 3");
+    click_modifiers(&mut harness, "Beta CoCo 3", egui::Modifiers::COMMAND);
+    assert_eq!(harness.state().selection.len(), 2);
+
+    create_empty_machine(&mut harness);
+
+    assert_eq!(harness.state().entries.len(), 2);
+    harness.get_by_label(NO_CONFIG_DIR);
 }

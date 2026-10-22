@@ -40,11 +40,16 @@ pub(super) struct BulkFlags {
 
 impl ManagerApp {
     /// The bulk pane: a "N machines selected" heading and a pointer to the
-    /// toolbar, which is where the actual transport controls now live.
+    /// toolbar, which is where the actual transport controls now live, and
+    /// the error of a Create that failed with these rows selected.
     pub(super) fn draw_bulk_detail(&self, ui: &mut egui::Ui) {
         ui.heading(format!("{} machines selected", self.selection.len()));
         ui.add_space(DETAIL_SECTION_GAP);
         ui.small(BULK_HINT);
+        if let Some(error) = &self.save_error {
+            ui.add_space(DETAIL_SECTION_GAP);
+            ui.colored_label(ui.visuals().error_fg_color, error);
+        }
     }
 
     /// `indices`' three [`BulkFlags`] — "is at least one selected row
