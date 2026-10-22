@@ -43,7 +43,8 @@ pub(super) fn draw(
         }
         if let Some(error) = save_error {
             ui.add_space(HEADING_GAP);
-            ui.colored_label(ui.visuals().error_fg_color, error);
+            let text = egui::RichText::new(error).color(ui.visuals().error_fg_color);
+            ui.add(egui::Label::new(text).wrap());
         }
         ui.add_space(ARTWORK_GAP);
         if ui.available_height() > 0.0 && ui.available_width() > 0.0 {

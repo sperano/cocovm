@@ -200,5 +200,6 @@ fn failed_create_with_several_selected_shows_in_the_bulk_pane() {
     create_empty_machine(&mut harness);
 
     assert_eq!(harness.state().entries.len(), 2);
+    assert_eq!(harness.state().selection.len(), 2);
     harness.get_by_label(NO_CONFIG_DIR);
 }

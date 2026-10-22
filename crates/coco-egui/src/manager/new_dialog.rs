@@ -18,9 +18,9 @@ use super::{DETAIL_SECTION_GAP, ManagerApp};
 pub(crate) const NEW_DIALOG_TITLE: &str = "New Machine";
 /// The choice that creates the default machine rather than a template.
 pub(crate) const EMPTY_LABEL: &str = "Empty machine";
-/// What [`EMPTY_LABEL`] creates: `MachineConfig::default` with
-/// `PeripheralsDTO::default`'s empty cartridge slot (pinned by this
-/// module's tests).
+/// What [`EMPTY_LABEL`] creates: `MachineConfig::default` with an empty
+/// cartridge slot and no disks (the `PeripheralsDTO`, `MediaDTO`, and
+/// `DriveWireDTO` defaults; pinned by this module's tests).
 const EMPTY_DESCRIPTION: &str = "CoCo 3 with 512K and an RGB monitor, no cartridge, and no \
     disks, to set up yourself";
 /// The confirm button.
