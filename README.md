@@ -113,10 +113,15 @@ The most important settings are:
 | Log level | `--log-level` | `COCOVM_LOG_LEVEL` | `warn` |
 | MCP server port | `--control-port` | `COCOVM_CONTROL_PORT` | `6809` |
 | Asset bundle URL | `--assets-url` | `COCOVM_ASSETS_URL` | Built-in bundle |
+| NitrOS-9 Ease of Use archive URL | `--eou-url` | `COCOVM_EOU_URL` | lcurtisboyle.com |
 | Icon-only toolbars | `--toolbar-icons-only` | `COCOVM_TOOLBAR_ICONS_ONLY` | `false` |
 | Icon-only status bar | `--status-bar-icons-only` | `COCOVM_STATUS_BAR_ICONS_ONLY` | `false` |
 
 Set the control port to `0` to disable the MCP server.
+
+A NitrOS-9 Ease of Use URL must serve the same archive as the default one,
+for example a mirror. CoCoVM checks the archive's SHA-256 and installs nothing
+if it doesn't match.
 
 To change a hotkey, open the settings dialog, click the hotkey's current key,
 and then press the new key. The rebindable hotkeys are the key layout window

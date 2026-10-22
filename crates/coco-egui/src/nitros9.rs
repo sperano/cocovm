@@ -30,12 +30,12 @@ pub(crate) const EOU_TITLE: &str = concat!("NitrOS-9 Ease of Use ", eou_version!
 /// later EOU release lands in a fresh directory and gets downloaded again.
 pub(crate) const EOU_DIR_NAME: &str = concat!("nitros9-eou-", eou_version!());
 
-/// L. Curtis Boyle's EOU release for the 6809 (the CoCo 3's stock CPU).
+/// L. Curtis Boyle's EOU release for the 6809 (the CoCo 3's stock CPU),
+/// where `--eou-url` (`COCOVM_EOU_URL`) points unless overridden. Must
+/// never contain `"` or `\` — `config::default_config_template`
+/// interpolates it unescaped into a quoted TOML string.
 pub(crate) const EOU_URL: &str =
     "https://www.lcurtisboyle.com/nitros9/EOU_Version1_0_1_(6809_ONLY)_04-07-2024.zip";
-
-/// Host of [`EOU_URL`], named wherever the app offers the download.
-pub(crate) const EOU_HOST: &str = "lcurtisboyle.com";
 
 /// Size of the archive at [`EOU_URL`], as its `Content-Length` reported on
 /// 2026-10-22; the asset dialog quotes it before the download starts.

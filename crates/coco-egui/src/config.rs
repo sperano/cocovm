@@ -65,6 +65,7 @@ pub(crate) struct FileConfig {
     pub(crate) log_level: Option<LogLevel>,
     pub(crate) control_port: Option<u16>,
     pub(crate) assets_url: Option<String>,
+    pub(crate) eou_url: Option<String>,
     pub(crate) toolbar_icons_only: Option<bool>,
     pub(crate) status_bar_icons_only: Option<bool>,
     pub(crate) welcome_image_cycle: Option<bool>,
@@ -195,6 +196,10 @@ pub(crate) struct Config {
     /// dialog then leaves the live listener alone on save.
     pub(crate) control_port_overridden: bool,
     pub(crate) assets_url: String,
+    pub(crate) eou_url: String,
+    /// True when a CLI flag or env var supplied `eou_url`; the Settings
+    /// dialog then leaves the New menu's download source alone on save.
+    pub(crate) eou_url_overridden: bool,
     pub(crate) toolbar_icons_only: bool,
     /// True when a CLI flag or env var supplied `toolbar_icons_only`; the
     /// Settings dialog then leaves the live value alone on save.
@@ -250,6 +255,7 @@ fn read(path: &Path) -> Result<FileConfig, String> {
 pub(crate) fn resolve(cli: Cli, file: FileConfig) -> Config {
     let log_level_overridden = cli.log_level.is_some();
     let control_port_overridden = cli.control_port.is_some();
+    let eou_url_overridden = cli.eou_url.is_some();
     let toolbar_icons_only_overridden = cli.toolbar_icons_only.is_some();
     let status_bar_icons_only_overridden = cli.status_bar_icons_only.is_some();
     let welcome_image_cycle_overridden = cli.welcome_image_cycle.is_some();
@@ -271,6 +277,11 @@ pub(crate) fn resolve(cli: Cli, file: FileConfig) -> Config {
             .assets_url
             .or(file.assets_url)
             .unwrap_or_else(|| crate::startup::DEFAULT_ASSETS_URL.to_string()),
+        eou_url: cli
+            .eou_url
+            .or(file.eou_url)
+            .unwrap_or_else(|| crate::nitros9::EOU_URL.to_string()),
+        eou_url_overridden,
         toolbar_icons_only: cli
             .toolbar_icons_only
             .or(file.toolbar_icons_only)
@@ -310,9 +321,10 @@ pub(crate) fn resolve(cli: Cli, file: FileConfig) -> Config {
 /// touched `config.toml` still finds a reference instead of an empty file.
 fn default_config_template() -> String {
     let log_level = log_level_name(DEFAULT_LOG_LEVEL);
-    // `assets_url` is interpolated into a quoted TOML string unescaped: it
-    // must never contain `"` or `\` (see `DEFAULT_ASSETS_URL`'s own doc in
-    // startup.rs), or the generated file stops parsing.
+    // `assets_url` and `eou_url` are interpolated into quoted TOML strings
+    // unescaped: they must never contain `"` or `\` (see
+    // `DEFAULT_ASSETS_URL`'s own doc in startup.rs), or the generated file
+    // stops parsing.
     format!(
         "\
 # cocovm global config.
@@ -328,6 +340,9 @@ fn default_config_template() -> String {
 
 # first-run asset bundle URL
 # assets_url = \"{assets_url}\"
+
+# NitrOS-9 Ease of Use archive URL; a mirror must serve the same archive
+# eou_url = \"{eou_url}\"
 
 # draw every toolbar as icon-only, caption moved into hover text
 # toolbar_icons_only = {toolbar_icons_only}
@@ -357,6 +372,7 @@ fn default_config_template() -> String {
 ",
         control_port = crate::control::DEFAULT_PORT,
         assets_url = crate::startup::DEFAULT_ASSETS_URL,
+        eou_url = crate::nitros9::EOU_URL,
         toolbar_icons_only = DEFAULT_TOOLBAR_ICONS_ONLY,
         status_bar_icons_only = DEFAULT_STATUS_BAR_ICONS_ONLY,
         welcome_image_cycle = DEFAULT_WELCOME_IMAGE_CYCLE,
@@ -431,6 +447,7 @@ pub(crate) fn save_file(path: &Path, file: &FileConfig) -> Result<(), String> {
     set_or_remove(&mut doc, "log_level", file.log_level.map(log_level_name));
     set_or_remove(&mut doc, "control_port", file.control_port.map(i64::from));
     set_or_remove(&mut doc, "assets_url", file.assets_url.clone());
+    set_or_remove(&mut doc, "eou_url", file.eou_url.clone());
     set_or_remove(&mut doc, "toolbar_icons_only", file.toolbar_icons_only);
     set_or_remove(
         &mut doc,

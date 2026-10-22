@@ -96,7 +96,7 @@ fn retry_starts_a_new_download() {
     let (tx, rx) = mpsc::channel();
     tx.send(Err("404".to_string())).unwrap();
     let mut app = app_with_eou_dir(Some(eou.path()));
-    app.eou_url = REFUSED_URL;
+    app.eou_url = REFUSED_URL.to_string();
     app.eou_download = Some(Download::running(Source::Eou, Arc::default(), rx));
     let mut harness = entry_harness(app);
 

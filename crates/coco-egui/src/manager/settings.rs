@@ -33,6 +33,7 @@ pub(crate) struct SettingsDialog {
     /// changed it here, so an unrelated save never retries a failed bind.
     opened_control_port: u16,
     assets_url: String,
+    eou_url: String,
     toolbar_icons_only: bool,
     status_bar_icons_only: bool,
     welcome_image_cycle: bool,
@@ -91,6 +92,9 @@ impl SettingsDialog {
             assets_url: file
                 .assets_url
                 .unwrap_or_else(|| crate::startup::DEFAULT_ASSETS_URL.to_string()),
+            eou_url: file
+                .eou_url
+                .unwrap_or_else(|| crate::nitros9::EOU_URL.to_string()),
             toolbar_icons_only: file
                 .toolbar_icons_only
                 .unwrap_or(config::DEFAULT_TOOLBAR_ICONS_ONLY),
@@ -117,6 +121,12 @@ impl SettingsDialog {
         }
     }
 
+    /// [`Self::eou_url`] as it takes effect: the default when emptied.
+    fn effective_eou_url(&self) -> String {
+        url_override(&self.eou_url, crate::nitros9::EOU_URL)
+            .unwrap_or_else(|| crate::nitros9::EOU_URL.to_string())
+    }
+
     fn effective_control_port(&self) -> u16 {
         if self.mcp_enabled {
             self.control_port
@@ -136,10 +146,8 @@ impl SettingsDialog {
         let mut file = FileConfig {
             log_level: (self.log_level != config::DEFAULT_LOG_LEVEL).then_some(self.log_level),
             control_port: (control_port != DEFAULT_PORT).then_some(control_port),
-            // An emptied field reads as "reset to default", not "set to ''".
-            assets_url: (!self.assets_url.trim().is_empty()
-                && self.assets_url != crate::startup::DEFAULT_ASSETS_URL)
-                .then(|| self.assets_url.clone()),
+            assets_url: url_override(&self.assets_url, crate::startup::DEFAULT_ASSETS_URL),
+            eou_url: url_override(&self.eou_url, crate::nitros9::EOU_URL),
             toolbar_icons_only: (self.toolbar_icons_only != config::DEFAULT_TOOLBAR_ICONS_ONLY)
                 .then_some(self.toolbar_icons_only),
             status_bar_icons_only: (self.status_bar_icons_only
@@ -200,8 +208,8 @@ impl ManagerApp {
     }
 
     /// Saves the draft and closes the dialog; applies the icons-only toggles,
-    /// the welcome-image cycle, the hotkeys, `log_level` and `control_port`
-    /// live unless a CLI/env override wins. A failure shows in the dialog,
+    /// the welcome-image cycle, the hotkeys, `eou_url`, `log_level` and
+    /// `control_port` live unless a CLI/env override wins. A failure shows in the dialog,
     /// which stays open with the old listener.
     fn commit_settings(&mut self, ctx: &egui::Context) {
         let Some(dialog) = &mut self.settings else {
@@ -278,7 +286,17 @@ impl ManagerApp {
         }
         welcome.rearm();
         self.hotkeys = live.hotkeys;
+        if !self.eou_url_overridden {
+            self.eou_url.clone_from(&live.eou_url);
+        }
     }
+}
+
+/// A URL field's draft for `config.toml`: `None` when it is the built-in
+/// `default`, or emptied, which reads as "reset to default", not "set to
+/// ''".
+fn url_override(draft: &str, default: &str) -> Option<String> {
+    (!draft.trim().is_empty() && draft != default).then(|| draft.to_string())
 }
 
 /// The draft values [`ManagerApp::apply_live_settings`] copies onto the
@@ -291,6 +309,8 @@ struct LiveSettings {
     welcome_image_cycle_secs: Option<NonZeroU32>,
     welcome_image_shuffle: bool,
     hotkeys: Hotkeys,
+    /// Where the New menu's next NitrOS-9 EOU download comes from.
+    eou_url: String,
 }
 
 impl LiveSettings {
@@ -302,6 +322,7 @@ impl LiveSettings {
             welcome_image_cycle_secs: NonZeroU32::new(dialog.welcome_image_cycle_secs),
             welcome_image_shuffle: dialog.welcome_image_shuffle,
             hotkeys: dialog.hotkey_editor.hotkeys,
+            eou_url: dialog.effective_eou_url(),
         }
     }
 }

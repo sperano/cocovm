@@ -59,25 +59,42 @@ impl Source {
         }
     }
 
-    /// Download and install this source's files under the assets directory
-    /// `install_dir`; `bundle_url` is where [`Self::Bundle`] comes from.
+    /// Download this source's files from `url` and install them under the
+    /// assets directory `install_dir`.
     pub(crate) fn fetch(
         self,
-        bundle_url: &str,
+        url: &str,
         install_dir: &Path,
         progress: Arc<Progress>,
     ) -> Result<(), String> {
         match self {
-            Self::Bundle => {
-                crate::startup::download_and_unpack_assets(bundle_url, install_dir, progress)
-            }
+            Self::Bundle => crate::startup::download_and_unpack_assets(url, install_dir, progress),
             Self::Eou => crate::nitros9::download_eou(
-                crate::nitros9::EOU_URL,
+                url,
                 &install_dir.join(crate::nitros9::EOU_DIR_NAME),
                 progress,
             ),
         }
         .map_err(|e| e.to_string())
+    }
+}
+
+/// Where each [`Source`] downloads from.
+#[derive(Debug, Clone)]
+pub(crate) struct SourceUrls {
+    /// `--assets-url` (`cli.rs`).
+    pub(crate) bundle: String,
+    /// `--eou-url` (`cli.rs`).
+    pub(crate) eou: String,
+}
+
+impl SourceUrls {
+    /// `source`'s URL.
+    pub(crate) fn get(&self, source: Source) -> &str {
+        match source {
+            Source::Bundle => &self.bundle,
+            Source::Eou => &self.eou,
+        }
     }
 }
 

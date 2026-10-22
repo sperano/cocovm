@@ -11,9 +11,9 @@ use std::path::PathBuf;
 
 use eframe::egui;
 
-use super::asset_downloads::{Download, PROGRESS_REPAINT_INTERVAL, Source, megabytes};
+use super::asset_downloads::{Download, PROGRESS_REPAINT_INTERVAL, Source, SourceUrls, megabytes};
 use super::{ManagerApp, WINDOW_SIZE};
-use crate::nitros9::{EOU_ARCHIVE_BYTES, EOU_HOST, EOU_TITLE};
+use crate::nitros9::{EOU_ARCHIVE_BYTES, EOU_TITLE};
 
 /// What the dialog asks before fetching anything.
 const PROMPT_TEXT: &str =
@@ -54,8 +54,9 @@ pub(super) enum Verdict {
 pub(crate) struct AssetDialog {
     /// Display paths of the absent files of every [`Source`].
     missing: Vec<String>,
-    /// Where the bundle is fetched from (`--assets-url`, `cli.rs`).
-    assets_url: String,
+    /// Where each source is fetched from (`--assets-url` and `--eou-url`,
+    /// `cli.rs`).
+    urls: SourceUrls,
     /// Where the bundle unpacks (`paths::assets_dir`).
     install_dir: PathBuf,
     /// The sources [`Self::start_download`] would fetch: those with missing
@@ -72,11 +73,11 @@ pub(crate) struct AssetDialog {
 impl AssetDialog {
     /// The dialog for the bundle's `missing` files (`startup::missing_assets`),
     /// which also fetches whichever NitrOS-9 EOU images are missing.
-    pub(crate) fn new(mut missing: Vec<String>, assets_url: String, install_dir: PathBuf) -> Self {
+    pub(crate) fn new(mut missing: Vec<String>, urls: SourceUrls, install_dir: PathBuf) -> Self {
         missing.extend(crate::startup::missing_eou_assets());
         Self {
             missing,
-            assets_url,
+            urls,
             install_dir,
             pending: pending_sources(),
             downloads: Vec::new(),
@@ -167,7 +168,7 @@ impl AssetDialog {
             .iter()
             .filter(|source| !running.contains(source));
         for &source in idle {
-            let url = self.assets_url.clone();
+            let url = self.urls.get(source).to_string();
             let install_dir = self.install_dir.clone();
             let download = Download::start(source, ctx, move |progress| {
                 source.fetch(&url, &install_dir, progress)
@@ -250,9 +251,10 @@ impl AssetDialog {
             // The EOU images come from a third-party site and add most of
             // the download.
             let note = format!(
-                "Includes {EOU_TITLE} ({}) from {EOU_HOST}. CoCoVM opens without \
+                "Includes {EOU_TITLE} ({}) from {}. CoCoVM opens without \
                 waiting for it.",
-                megabytes(EOU_ARCHIVE_BYTES)
+                megabytes(EOU_ARCHIVE_BYTES),
+                crate::download::host(&self.urls.eou)
             );
             ui.label(egui::RichText::new(note).color(secondary_color(ui)));
         }

@@ -25,6 +25,9 @@ const CHECK_FOR_UPDATES_LABEL: &str = "Check for updates at startup";
 const CHECK_FOR_UPDATES_HOVER: &str =
     "Ask GitHub for the latest release when CoCoVM starts. Takes effect at the next launch.";
 
+const EOU_URL_HOVER: &str = "Download source for the NitrOS-9 Ease of Use disk images. A \
+    mirror must serve the same archive. Leave empty to use the default.";
+
 pub(super) fn dialog_frame(ctx: &egui::Context) -> egui::Frame {
     egui::Frame::popup(&ctx.style()).inner_margin(DIALOG_INNER_MARGIN)
 }
@@ -157,6 +160,11 @@ impl SettingsDialog {
         ui.add(egui::TextEdit::singleline(&mut self.assets_url).desired_width(f32::INFINITY))
             .labelled_by(label.id)
             .on_hover_text("Download source for emulator assets. Leave empty to use the default.");
+        ui.add_space(ui.spacing().item_spacing.y);
+        let label = ui.label("NitrOS-9 EOU URL");
+        ui.add(egui::TextEdit::singleline(&mut self.eou_url).desired_width(f32::INFINITY))
+            .labelled_by(label.id)
+            .on_hover_text(EOU_URL_HOVER);
     }
 
     fn draw_actions(&self, ui: &mut egui::Ui) -> SettingsAction {

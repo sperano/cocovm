@@ -8,7 +8,7 @@ use eframe::egui;
 
 use super::ManagerApp;
 use super::asset_downloads::{Download, PROGRESS_REPAINT_INTERVAL, Source, megabytes};
-use crate::nitros9::{self, EOU_ARCHIVE_BYTES, EOU_HOST, EOU_TITLE};
+use crate::nitros9::{self, EOU_ARCHIVE_BYTES, EOU_TITLE};
 
 /// Hover text of the entry's download button.
 const DOWNLOAD_HOVER: &str = "Download the disk images the NitrOS-9 EOU template copies";
@@ -40,12 +40,15 @@ impl ManagerApp {
         };
         if ui
             .button(label)
-            .on_hover_text(format!("{DOWNLOAD_HOVER}, from {EOU_HOST}"))
+            .on_hover_text(format!(
+                "{DOWNLOAD_HOVER}, from {}",
+                crate::download::host(&self.eou_url)
+            ))
             .clicked()
         {
-            let url = self.eou_url;
+            let url = self.eou_url.clone();
             self.eou_download = Some(Download::start(Source::Eou, ui.ctx(), move |progress| {
-                nitros9::download_eou(url, &eou_dir, progress).map_err(|e| e.to_string())
+                nitros9::download_eou(&url, &eou_dir, progress).map_err(|e| e.to_string())
             }));
         }
     }

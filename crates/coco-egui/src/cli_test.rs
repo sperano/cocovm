@@ -68,6 +68,21 @@ fn assets_url_comes_from_the_flag() {
     }
 }
 
+#[test]
+fn eou_url_comes_from_the_flag() {
+    use clap::Parser as _;
+
+    let parse = |args: &[&str]| Cli::try_parse_from(args).map(|cli| cli.eou_url).ok();
+    assert_eq!(
+        parse(&["cocovm", "--eou-url", "https://example.test/eou.zip"]),
+        Some(Some("https://example.test/eou.zip".to_string()))
+    );
+    // Skipped when COCOVM_EOU_URL is set, same reason as the log-level test.
+    if std::env::var_os("COCOVM_EOU_URL").is_none() {
+        assert_eq!(parse(&["cocovm"]), Some(None));
+    }
+}
+
 /// The default with no flag, no env, and no config file — `resolve()`'s
 /// job, not the bare `Cli` parse (`config_test.rs` covers the rest of the
 /// precedence chain). Skipped under the same ambient-env-var conditions as

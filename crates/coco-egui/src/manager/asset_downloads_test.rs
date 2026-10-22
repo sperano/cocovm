@@ -46,3 +46,13 @@ fn only_the_bundle_is_required() {
     assert!(Source::Bundle.required());
     assert!(!Source::Eou.required());
 }
+
+#[test]
+fn each_source_downloads_from_its_own_url() {
+    let urls = SourceUrls {
+        bundle: "https://example.test/bundle.tgz".to_string(),
+        eou: "https://mirror.example.test/eou.zip".to_string(),
+    };
+    assert_eq!(urls.get(Source::Bundle), "https://example.test/bundle.tgz");
+    assert_eq!(urls.get(Source::Eou), "https://mirror.example.test/eou.zip");
+}

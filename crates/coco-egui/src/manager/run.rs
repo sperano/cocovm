@@ -2,7 +2,10 @@
 
 use crate::machine_def;
 
-use super::{MachineEntry, ManagerApp, WINDOW_SIZE, assets, control, lifecycle, presets, rename};
+use super::{
+    MachineEntry, ManagerApp, WINDOW_SIZE, asset_downloads, assets, control, lifecycle, presets,
+    rename,
+};
 
 /// Open the manager as the application's main window. `config_path` is the
 /// same path `main.rs` resolved `config` from (`None` when no home
@@ -22,6 +25,8 @@ pub fn run(
         control_port,
         control_port_overridden,
         assets_url,
+        eou_url,
+        eou_url_overridden,
         toolbar_icons_only,
         toolbar_icons_only_overridden,
         status_bar_icons_only,
@@ -133,10 +138,16 @@ pub fn run(
             app.roms_dir = crate::paths::roms_dir();
             app.cartridges_dir = crate::paths::cartridges_dir();
             app.eou_dir = crate::paths::eou_dir();
+            app.eou_url.clone_from(&eou_url);
+            app.eou_url_overridden = eou_url_overridden;
             app.log_reload = Some(log_reload);
             app.log_level_overridden = log_level_overridden;
             if !missing.is_empty() {
-                app.asset_dialog = Some(assets::AssetDialog::new(missing, assets_url, assets_dir));
+                let urls = asset_downloads::SourceUrls {
+                    bundle: assets_url,
+                    eou: eou_url,
+                };
+                app.asset_dialog = Some(assets::AssetDialog::new(missing, urls, assets_dir));
             }
             #[cfg(feature = "perf")]
             app.initialize_perf_scenario(&creation.egui_ctx)

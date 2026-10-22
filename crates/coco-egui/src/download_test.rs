@@ -98,3 +98,26 @@ fn stall_guard_passes_errors_through() {
     let error = reader.read(&mut [0; 1]).unwrap_err();
     assert_eq!(error.to_string(), "connection reset");
 }
+
+#[test]
+fn host_names_the_server_without_www() {
+    assert_eq!(
+        host(crate::nitros9::EOU_URL),
+        "lcurtisboyle.com",
+        "the default EOU archive's host, as the app names it"
+    );
+    assert_eq!(
+        host("https://mirror.example.test/eou.zip"),
+        "mirror.example.test"
+    );
+    assert_eq!(host("http://127.0.0.1:8080?file=eou.zip"), "127.0.0.1:8080");
+    assert_eq!(
+        host("https://user@files.example.test#top"),
+        "files.example.test"
+    );
+}
+
+#[test]
+fn host_of_a_url_without_a_scheme_is_the_whole_text() {
+    assert_eq!(host("mirror/eou.zip"), "mirror/eou.zip");
+}

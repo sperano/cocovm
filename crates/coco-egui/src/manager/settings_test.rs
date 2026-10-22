@@ -32,6 +32,7 @@ fn non_default_values_round_trip() {
         log_level: Some(LogLevel::Trace),
         control_port: Some(7002),
         assets_url: Some("https://example.test/bundle.tgz".to_string()),
+        eou_url: Some("https://example.test/eou.zip".to_string()),
         toolbar_icons_only: Some(true),
         status_bar_icons_only: Some(true),
         welcome_image_cycle: Some(true),
@@ -52,6 +53,7 @@ fn non_default_values_round_trip() {
             log_level: file.log_level,
             control_port: file.control_port,
             assets_url: file.assets_url.clone(),
+            eou_url: file.eou_url.clone(),
             toolbar_icons_only: file.toolbar_icons_only,
             status_bar_icons_only: file.status_bar_icons_only,
             welcome_image_cycle: file.welcome_image_cycle,
@@ -150,6 +152,56 @@ fn emptied_assets_url_means_reset_to_default() {
     let mut dialog = SettingsDialog::from_file(FileConfig::default(), None);
     dialog.assets_url = "   ".to_string();
     assert_eq!(dialog.to_file_config().assets_url, None);
+}
+
+#[test]
+fn emptied_eou_url_means_reset_to_default() {
+    let mut dialog = SettingsDialog::from_file(FileConfig::default(), None);
+    dialog.eou_url = "   ".to_string();
+    assert_eq!(dialog.to_file_config().eou_url, None);
+    assert_eq!(dialog.effective_eou_url(), crate::nitros9::EOU_URL);
+}
+
+/// A manager with its `config.toml` under `dir` and the Settings dialog
+/// open with `eou_url` drafted.
+fn manager_with_eou_url_draft(dir: &TempDir, eou_url: &str) -> ManagerApp {
+    let mut manager = ManagerApp::new(None, None, None, Vec::new(), None);
+    manager.config_path = Some(dir.path().join("config.toml"));
+    let mut dialog = SettingsDialog::from_file(FileConfig::default(), None);
+    dialog.eou_url = eou_url.to_string();
+    manager.settings = Some(dialog);
+    manager
+}
+
+/// Save points the New menu's next NitrOS-9 EOU download at the new URL.
+#[test]
+fn commit_applies_the_eou_url() {
+    let dir = TempDir::new("settings-eou-url-apply");
+    let mut manager = manager_with_eou_url_draft(&dir, "https://mirror.example.test/eou.zip");
+
+    manager.commit_settings(&egui::Context::default());
+
+    assert!(manager.settings.is_none(), "Save must close the dialog");
+    assert_eq!(manager.eou_url, "https://mirror.example.test/eou.zip");
+}
+
+#[test]
+fn commit_leaves_a_cli_env_eou_url_override_alone() {
+    let dir = TempDir::new("settings-eou-url-override");
+    let mut manager = manager_with_eou_url_draft(&dir, "https://mirror.example.test/eou.zip");
+    manager.eou_url = "https://cli.example.test/eou.zip".to_string();
+    manager.eou_url_overridden = true;
+
+    manager.commit_settings(&egui::Context::default());
+
+    assert!(manager.settings.is_none(), "Save must close the dialog");
+    assert_eq!(manager.eou_url, "https://cli.example.test/eou.zip");
+    let saved = crate::config::load(Some(&dir.path().join("config.toml"))).expect("saved file");
+    assert_eq!(
+        saved.eou_url.as_deref(),
+        Some("https://mirror.example.test/eou.zip"),
+        "the file still records the draft"
+    );
 }
 
 /// A manager with a live listener on an ephemeral port, its `config.toml`

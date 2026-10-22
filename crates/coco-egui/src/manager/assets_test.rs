@@ -24,7 +24,10 @@ fn dialog_harness(dialog: AssetDialog) -> Harness<'static, AssetDialog> {
 fn dialog() -> AssetDialog {
     AssetDialog::new(
         vec!["coco3.rom".to_string()],
-        "http://unused.invalid/bundle.tgz".to_string(),
+        SourceUrls {
+            bundle: "http://unused.invalid/bundle.tgz".to_string(),
+            eou: crate::nitros9::EOU_URL.to_string(),
+        },
         std::env::temp_dir().join("cocovm-asset-dialog-unused"),
     )
 }

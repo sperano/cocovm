@@ -23,6 +23,7 @@ fn no_relevant_env_vars_set() -> bool {
         "COCOVM_LOG_LEVEL",
         "COCOVM_CONTROL_PORT",
         "COCOVM_ASSETS_URL",
+        "COCOVM_EOU_URL",
         "COCOVM_TOOLBAR_ICONS_ONLY",
         "COCOVM_STATUS_BAR_ICONS_ONLY",
         "COCOVM_WELCOME_IMAGE_CYCLE",
@@ -44,6 +45,8 @@ fn cli_flag_beats_file_and_default() {
         "1234",
         "--assets-url",
         "https://cli.example.test/bundle.tgz",
+        "--eou-url",
+        "https://cli.example.test/eou.zip",
         "--toolbar-icons-only",
         "--status-bar-icons-only",
         "--welcome-image-cycle",
@@ -57,6 +60,7 @@ fn cli_flag_beats_file_and_default() {
         log_level: Some(LogLevel::Error),
         control_port: Some(9999),
         assets_url: Some("https://file.example.test/bundle.tgz".to_string()),
+        eou_url: Some("https://file.example.test/eou.zip".to_string()),
         toolbar_icons_only: Some(false),
         status_bar_icons_only: Some(false),
         welcome_image_cycle: Some(false),
@@ -72,6 +76,8 @@ fn cli_flag_beats_file_and_default() {
     assert_eq!(config.control_port, 1234);
     assert!(config.control_port_overridden);
     assert_eq!(config.assets_url, "https://cli.example.test/bundle.tgz");
+    assert_eq!(config.eou_url, "https://cli.example.test/eou.zip");
+    assert!(config.eou_url_overridden);
     assert!(config.toolbar_icons_only);
     assert!(config.toolbar_icons_only_overridden);
     assert!(config.status_bar_icons_only);
@@ -116,6 +122,7 @@ fn file_value_beats_built_in_default() {
         log_level: Some(LogLevel::Debug),
         control_port: Some(4242),
         assets_url: Some("https://file.example.test/bundle.tgz".to_string()),
+        eou_url: Some("https://file.example.test/eou.zip".to_string()),
         toolbar_icons_only: Some(true),
         status_bar_icons_only: Some(true),
         welcome_image_cycle: Some(true),
@@ -137,6 +144,8 @@ fn file_value_beats_built_in_default() {
     assert_eq!(config.control_port, 4242);
     assert!(!config.control_port_overridden);
     assert_eq!(config.assets_url, "https://file.example.test/bundle.tgz");
+    assert_eq!(config.eou_url, "https://file.example.test/eou.zip");
+    assert!(!config.eou_url_overridden);
     assert!(config.toolbar_icons_only);
     assert!(!config.toolbar_icons_only_overridden);
     assert!(config.status_bar_icons_only);
@@ -170,6 +179,7 @@ fn built_in_defaults_apply_when_nothing_else_is_set() {
     assert_eq!(config.log_level, LogLevel::Warn);
     assert_eq!(config.control_port, crate::control::DEFAULT_PORT);
     assert_eq!(config.assets_url, crate::startup::DEFAULT_ASSETS_URL);
+    assert_eq!(config.eou_url, crate::nitros9::EOU_URL);
     assert!(!config.toolbar_icons_only);
     assert!(!config.status_bar_icons_only);
     assert!(config.check_for_updates);
@@ -277,6 +287,7 @@ fn default_template_uncommented_resolves_to_true_defaults() {
         log_level,
         control_port,
         assets_url,
+        eou_url,
         toolbar_icons_only,
         status_bar_icons_only,
         welcome_image_cycle,
@@ -309,6 +320,10 @@ fn default_template_uncommented_resolves_to_true_defaults() {
     );
     assert!(
         assets_url.is_some(),
+        "every FileConfig parameter needs a commented line in the template"
+    );
+    assert!(
+        eou_url.is_some(),
         "every FileConfig parameter needs a commented line in the template"
     );
     assert!(
@@ -400,6 +415,7 @@ fn a_valid_full_config_file_loads() {
         log_level = "debug"
         control_port = 7000
         assets_url = "https://example.test/bundle.tgz"
+        eou_url = "https://example.test/eou.zip"
         toolbar_icons_only = true
         status_bar_icons_only = true
         welcome_image_cycle = true
@@ -423,6 +439,7 @@ fn a_valid_full_config_file_loads() {
             log_level: Some(LogLevel::Debug),
             control_port: Some(7000),
             assets_url: Some("https://example.test/bundle.tgz".to_string()),
+            eou_url: Some("https://example.test/eou.zip".to_string()),
             toolbar_icons_only: Some(true),
             status_bar_icons_only: Some(true),
             welcome_image_cycle: Some(true),
@@ -525,6 +542,7 @@ fn save_file_round_trips_through_load() {
         log_level: Some(LogLevel::Debug),
         control_port: Some(7001),
         assets_url: Some("https://example.test/bundle.tgz".to_string()),
+        eou_url: Some("https://example.test/eou.zip".to_string()),
         toolbar_icons_only: Some(true),
         status_bar_icons_only: Some(true),
         welcome_image_cycle: Some(true),

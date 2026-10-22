@@ -32,6 +32,9 @@ const STALL_GUARD_QUEUE_CHUNKS: usize = 4;
 /// Name of [`StallGuard`]'s reading thread.
 const STALL_GUARD_THREAD: &str = "download-body";
 
+/// Dropped from the front of a URL's host by [`host`].
+const WWW_PREFIX: &str = "www.";
+
 /// Bytes a download has received out of how many it expects. Written by the
 /// download thread, read by the UI; the two counters are independent, so
 /// relaxed ordering is enough.
@@ -197,6 +200,20 @@ pub(crate) fn open(
     progress.set_total(body.content_length());
     let body = StallGuard::new(body.into_reader(), STALL_TIMEOUT)?;
     Ok(ProgressReader::new(body, progress))
+}
+
+/// The host `url` names, port included and without a leading `www.`, for
+/// text that says where a download comes from; all of `url` when it has no
+/// `scheme://`.
+pub(crate) fn host(url: &str) -> &str {
+    let Some((_, rest)) = url.split_once("://") else {
+        return url;
+    };
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or(rest);
+    let host = authority
+        .rsplit_once('@')
+        .map_or(authority, |(_, host)| host);
+    host.strip_prefix(WWW_PREFIX).unwrap_or(host)
 }
 
 #[cfg(test)]

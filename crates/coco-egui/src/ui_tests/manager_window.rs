@@ -159,7 +159,10 @@ fn asset_dialog_cancel_quits_without_downloading() {
         let mut app = manager::ManagerApp::new(None, None, None, Vec::new(), None);
         app.asset_dialog = Some(manager::assets::AssetDialog::new(
             vec!["coco3.rom".to_string()],
-            "http://unused.invalid/bundle.tgz".to_string(),
+            manager::asset_downloads::SourceUrls {
+                bundle: "http://unused.invalid/bundle.tgz".to_string(),
+                eou: crate::nitros9::EOU_URL.to_string(),
+            },
             data_dir,
         ));
         app

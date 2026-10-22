@@ -291,10 +291,13 @@ pub struct ManagerApp {
     /// The New menu's NitrOS-9 EOU download (`manager/eou_menu.rs`), once
     /// started.
     pub(crate) eou_download: Option<asset_downloads::Download>,
-    /// Where the New menu's NitrOS-9 EOU download comes from:
-    /// [`crate::nitros9::EOU_URL`], or, in tests, a URL that fails without
-    /// reaching the network.
-    pub(crate) eou_url: &'static str,
+    /// Where the New menu's NitrOS-9 EOU download comes from: `--eou-url`
+    /// (`cli.rs`), [`crate::nitros9::EOU_URL`] by default, or, in tests, a
+    /// URL that fails without reaching the network.
+    pub(crate) eou_url: String,
+    /// True when a CLI flag or env var supplied [`Self::eou_url`]; the
+    /// Settings dialog then leaves it alone on save.
+    pub(crate) eou_url_overridden: bool,
     /// The NitrOS-9 EOU machine being written off the UI thread
     /// (`manager/eou_install.rs`), while it is.
     pub(crate) eou_install: Option<eou_install::PendingInstall>,
@@ -459,7 +462,8 @@ impl ManagerApp {
             cartridges_dir: None,
             eou_dir: None,
             eou_download: None,
-            eou_url: crate::nitros9::EOU_URL,
+            eou_url: crate::nitros9::EOU_URL.to_string(),
+            eou_url_overridden: false,
             eou_install: None,
             artifacts_root,
             entries,
