@@ -118,6 +118,7 @@ fn host_names_the_server_without_www() {
 }
 
 #[test]
-fn host_of_a_url_without_a_scheme_is_the_whole_text() {
+fn host_of_a_url_without_a_scheme_or_host_is_the_whole_text() {
     assert_eq!(host("mirror/eou.zip"), "mirror/eou.zip");
+    assert_eq!(host("file:///tmp/eou.zip"), "file:///tmp/eou.zip");
 }

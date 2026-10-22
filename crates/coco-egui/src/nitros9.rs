@@ -31,7 +31,7 @@ pub(crate) const EOU_TITLE: &str = concat!("NitrOS-9 Ease of Use ", eou_version!
 pub(crate) const EOU_DIR_NAME: &str = concat!("nitros9-eou-", eou_version!());
 
 /// L. Curtis Boyle's EOU release for the 6809 (the CoCo 3's stock CPU),
-/// where `--eou-url` (`COCOVM_EOU_URL`) points unless overridden. Must
+/// and the default for `--eou-url` (`COCOVM_EOU_URL`). Must
 /// never contain `"` or `\` — `config::default_config_template`
 /// interpolates it unescaped into a quoted TOML string.
 pub(crate) const EOU_URL: &str =

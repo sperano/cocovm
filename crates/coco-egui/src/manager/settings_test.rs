@@ -162,6 +162,21 @@ fn emptied_eou_url_means_reset_to_default() {
     assert_eq!(dialog.effective_eou_url(), crate::nitros9::EOU_URL);
 }
 
+/// Spaces pasted around a URL never reach the file or the download.
+#[test]
+fn a_padded_url_draft_is_trimmed() {
+    let mut dialog = SettingsDialog::from_file(FileConfig::default(), None);
+    dialog.assets_url = " https://example.test/bundle.tgz ".to_string();
+    dialog.eou_url = format!("  {} ", crate::nitros9::EOU_URL);
+    let file = dialog.to_file_config();
+    assert_eq!(
+        file.assets_url.as_deref(),
+        Some("https://example.test/bundle.tgz")
+    );
+    assert_eq!(file.eou_url, None, "a padded default is the default");
+    assert_eq!(dialog.effective_eou_url(), crate::nitros9::EOU_URL);
+}
+
 /// A manager with its `config.toml` under `dir` and the Settings dialog
 /// open with `eou_url` drafted.
 fn manager_with_eou_url_draft(dir: &TempDir, eou_url: &str) -> ManagerApp {

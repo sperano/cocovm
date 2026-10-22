@@ -292,11 +292,12 @@ impl ManagerApp {
     }
 }
 
-/// A URL field's draft for `config.toml`: `None` when it is the built-in
-/// `default`, or emptied, which reads as "reset to default", not "set to
-/// ''".
+/// A URL field's draft for `config.toml`, trimmed: `None` when it is the
+/// built-in `default`, or emptied, which reads as "reset to default", not
+/// "set to ''".
 fn url_override(draft: &str, default: &str) -> Option<String> {
-    (!draft.trim().is_empty() && draft != default).then(|| draft.to_string())
+    let draft = draft.trim();
+    (!draft.is_empty() && draft != default).then(|| draft.to_string())
 }
 
 /// The draft values [`ManagerApp::apply_live_settings`] copies onto the

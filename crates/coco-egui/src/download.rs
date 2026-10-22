@@ -204,7 +204,7 @@ pub(crate) fn open(
 
 /// The host `url` names, port included and without a leading `www.`, for
 /// text that says where a download comes from; all of `url` when it has no
-/// `scheme://`.
+/// `scheme://` or an empty host.
 pub(crate) fn host(url: &str) -> &str {
     let Some((_, rest)) = url.split_once("://") else {
         return url;
@@ -213,7 +213,10 @@ pub(crate) fn host(url: &str) -> &str {
     let host = authority
         .rsplit_once('@')
         .map_or(authority, |(_, host)| host);
-    host.strip_prefix(WWW_PREFIX).unwrap_or(host)
+    match host.strip_prefix(WWW_PREFIX).unwrap_or(host) {
+        "" => url,
+        host => host,
+    }
 }
 
 #[cfg(test)]
