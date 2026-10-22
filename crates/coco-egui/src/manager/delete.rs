@@ -196,7 +196,8 @@ impl ManagerApp {
 
     /// Delete `entries[index]`: stop its VM if running, remove its artifact
     /// dir and then its `<slug>.toml`, drop the row, and fix up
-    /// selection/edit state. Media outside the artifact dir stays on disk.
+    /// selection/edit/save-error state. Media outside the artifact dir
+    /// stays on disk.
     /// The definition goes last, so a failed removal leaves the machine
     /// listed for the modal's retry instead of orphaning its artifact dir.
     /// An artifact dir another machine uses refuses the delete before
@@ -227,10 +228,17 @@ impl ManagerApp {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
             Err(e) => return Err(format!("{}: {e}", path.display())),
         }
+        let was_selected = self.selection.contains(index);
         self.entries.remove(index);
         self.selection.remove_index(index);
         if self.edit.as_ref().is_some_and(|e| e.slug == slug) {
             self.edit = None;
+        }
+        // The selection changed: an error from the old one (this machine's
+        // failed Save, or a Create made with it) must not outlive it in the
+        // pane that follows.
+        if was_selected {
+            self.save_error = None;
         }
         Ok(())
     }

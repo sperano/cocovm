@@ -1,9 +1,9 @@
 //! Creating a NitrOS-9 EOU machine off the UI thread. [`presets::install`]
 //! copies the template's 128 MB system disk, which takes a fraction of a
 //! second on an SSD but can freeze the window for seconds on a hard disk or
-//! a network home directory. So the New menu runs the install on a thread of
-//! its own, shows a spinner in place of the template meanwhile, and inserts
-//! the machine once it is saved.
+//! a network home directory. So the New Machine dialog runs the install on a
+//! thread of its own, shows a spinner beneath the template when reopened
+//! meanwhile, and inserts the machine once it is saved.
 
 use std::fs;
 use std::io;
@@ -19,7 +19,7 @@ use super::selection::SelectionSnapshot;
 use super::{MachineEntry, ManagerApp, NO_DATA_DIR};
 use crate::machine_def::{self, MachineDef};
 
-/// The New menu's text while the install runs.
+/// The New Machine dialog's text while the install runs.
 pub(crate) const COPYING_TEXT: &str = "Copying the NitrOS-9 EOU disk images…";
 
 /// The error of an install whose thread ended without a result.
@@ -53,7 +53,7 @@ impl ManagerApp {
     /// Install the NitrOS-9 EOU template under `machines_dir` on a new
     /// thread, as the first free slug from `base` ([`Self::claim_eou_slug`]);
     /// [`Self::poll_eou_install`] inserts it. Does nothing while another
-    /// install runs (the New menu hides the template meanwhile); a slug that
+    /// install runs (the New Machine dialog turns the template off meanwhile); a slug that
     /// can't be claimed is reported through `save_error`.
     pub(super) fn start_eou_install(&mut self, machines_dir: PathBuf, base: &str) {
         if self.eou_install.is_some() {
@@ -191,7 +191,8 @@ impl ManagerApp {
     }
 }
 
-/// The New menu's NitrOS-9 EOU entry while its install runs.
+/// The New Machine dialog's spinner beneath the NitrOS-9 EOU template while
+/// its install runs.
 pub(super) fn eou_install_ui(ui: &mut egui::Ui) {
     ui.horizontal(|ui| {
         ui.spinner();

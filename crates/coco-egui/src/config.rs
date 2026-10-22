@@ -198,7 +198,7 @@ pub(crate) struct Config {
     pub(crate) assets_url: String,
     pub(crate) eou_url: String,
     /// True when a CLI flag or env var supplied `eou_url`; the Settings
-    /// dialog then leaves the New menu's download source alone on save.
+    /// dialog then leaves the New Machine dialog's download source alone on save.
     pub(crate) eou_url_overridden: bool,
     pub(crate) toolbar_icons_only: bool,
     /// True when a CLI flag or env var supplied `toolbar_icons_only`; the

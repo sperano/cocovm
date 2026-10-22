@@ -41,6 +41,7 @@ mod gamepad_service;
 mod lifecycle;
 pub(crate) mod list;
 mod live_drivewire;
+pub(crate) mod new_dialog;
 #[cfg(feature = "perf")]
 mod perf_scenarios;
 pub(crate) mod presets;
@@ -56,9 +57,6 @@ mod toolbar;
 mod vm_windows;
 pub(crate) mod welcome;
 mod welcome_image;
-
-#[cfg(test)]
-pub(crate) use toolbar::TEMPLATES_LABEL;
 
 pub use run::run;
 
@@ -288,12 +286,12 @@ pub struct ManagerApp {
     /// template copies; `None` like [`Self::roms_dir`], and in tests, which
     /// point it at fixtures.
     pub(crate) eou_dir: Option<PathBuf>,
-    /// The New menu's NitrOS-9 EOU download (`manager/eou_menu.rs`), once
-    /// started.
+    /// The New Machine dialog's NitrOS-9 EOU download
+    /// (`manager/eou_menu.rs`), once started.
     pub(crate) eou_download: Option<asset_downloads::Download>,
-    /// Where the New menu's NitrOS-9 EOU download comes from: `--eou-url`
-    /// (`cli.rs`), [`crate::nitros9::EOU_URL`] by default, or, in tests, a
-    /// URL that fails without reaching the network.
+    /// Where the New Machine dialog's NitrOS-9 EOU download comes from:
+    /// `--eou-url` (`cli.rs`), [`crate::nitros9::EOU_URL`] by default, or, in
+    /// tests, a URL that fails without reaching the network.
     pub(crate) eou_url: String,
     /// True when a CLI flag or env var supplied [`Self::eou_url`]; the
     /// Settings dialog then leaves it alone on save.
@@ -326,7 +324,8 @@ pub struct ManagerApp {
     /// Focus the detail pane's Name field on its next draw — set by "New…"
     /// so the natural next gesture after creating is typing the real name.
     focus_name: bool,
-    /// Message from the last failed Save, shown under the Save/Revert row
+    /// Message from the last failed Save or Create, shown under the
+    /// Save/Revert row, the bulk pane's hint, or the welcome instructions,
     /// until the next attempt or a fresh selection.
     save_error: Option<String>,
     /// Slugs of the entries a "Delete…" (single- or multi-row) was clicked
@@ -336,6 +335,8 @@ pub struct ManagerApp {
     /// reload, a sort change, or a Create landing elsewhere), and deleting the
     /// wrong row is the one mistake this dialog exists to prevent.
     pending_delete: Vec<String>,
+    /// The New Machine dialog ([`Self::draw_new_dialog`]), while it is open.
+    new_dialog: Option<new_dialog::NewDialog>,
     /// Message from the last failed delete, shown inside the confirmation
     /// modal (which stays open for another try or a Cancel).
     delete_error: Option<String>,
@@ -472,6 +473,7 @@ impl ManagerApp {
             focus_name: false,
             save_error: None,
             pending_delete: Vec::new(),
+            new_dialog: None,
             delete_error: None,
             exit: exit::ExitState::default(),
             control,
@@ -554,12 +556,12 @@ impl eframe::App for ManagerApp {
         // stay stable for the frame.
         self.apply_pending_rename();
 
-        // The New machine hotkey triggers New…; only fires with the manager window focused.
+        // The New machine hotkey opens New…; only fires with the manager window focused.
         // Settings' hotkey capture needs the raw press, so nothing here takes keys meanwhile.
         if self.settings.is_none() && !self.exit.is_pending() {
             let new_machine = self.hotkeys.new_machine;
             if ctx.input_mut(|i| new_machine.consume(i)) {
-                self.create_machine_now();
+                self.open_new_dialog();
             }
             self.handle_list_shortcuts(ctx);
         }
@@ -591,6 +593,7 @@ impl eframe::App for ManagerApp {
                     &mut self.welcome_image,
                     !self.entries.is_empty(),
                     &mut self.update_check,
+                    self.save_error.as_deref(),
                 );
             } else {
                 egui::ScrollArea::vertical().show(ui, |ui| {
@@ -606,6 +609,7 @@ impl eframe::App for ManagerApp {
 
         if !self.exit.is_pending() {
             self.draw_delete_confirmation(ctx);
+            self.draw_new_dialog(ctx);
             self.draw_settings_dialog(ctx);
             if self.show_about {
                 crate::about::window(

@@ -15,7 +15,7 @@ fn cartridge_dropdown_has_one_rom_picker() {
     let dir = TempDir::new("cartridge-picker");
     let mut harness = manager_harness(Some(dir.path().to_path_buf()), Vec::new());
 
-    click_containing(&mut harness, "New");
+    create_empty_machine(&mut harness);
     click(&mut harness, "Devices");
     open_combo_at(&mut harness, "None", 1);
 
@@ -30,7 +30,7 @@ fn unknown_rom_hardware_fallback_can_be_changed() {
     let dir = TempDir::new("cartridge-fallback");
     let mut harness = manager_harness(Some(dir.path().to_path_buf()), Vec::new());
 
-    click_containing(&mut harness, "New");
+    create_empty_machine(&mut harness);
     let form = harness
         .state_mut()
         .edit_form_mut()
@@ -73,7 +73,7 @@ fn known_cartridges_submenu_picks_bundled_image() {
     let dir = TempDir::new("known-carts");
     let mut harness = manager_harness(Some(dir.path().to_path_buf()), Vec::new());
 
-    click_containing(&mut harness, "New");
+    create_empty_machine(&mut harness);
     click(&mut harness, "Devices");
     open_combo_at(&mut harness, "None", 1);
     assert_eq!(

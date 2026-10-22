@@ -76,10 +76,10 @@ fn model_radio_autosaves_the_definition() {
     );
 }
 
-/// ⌘N/Ctrl+N in the manager is the toolbar's "New…": it creates a machine
-/// on the spot — saved to disk, inserted, selected — with no dialog.
+/// ⌘N/Ctrl+N in the manager is the toolbar's "New…": it opens the New
+/// Machine dialog, whose Create saves, inserts, and selects a machine.
 #[test]
-fn cmd_n_creates_a_machine_immediately() {
+fn cmd_n_opens_the_new_machine_dialog() {
     let dir = TempDir::new("cmd-n-manager");
     let mut harness = manager_harness(Some(dir.path().to_path_buf()), Vec::new());
     assert!(harness.state().entries.is_empty());
@@ -87,11 +87,14 @@ fn cmd_n_creates_a_machine_immediately() {
     harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::N);
     harness.step();
     harness.step();
-    assert_eq!(
-        harness.state().entries.len(),
-        1,
-        "Cmd/Ctrl+N must create a machine immediately in the manager"
+    harness.get_by_label(manager::new_dialog::NEW_DIALOG_TITLE);
+    assert!(
+        harness.state().entries.is_empty(),
+        "Cmd/Ctrl+N must only open the dialog"
     );
+
+    click(&mut harness, manager::new_dialog::CREATE_LABEL);
+    assert_eq!(harness.state().entries.len(), 1);
     assert_eq!(harness.state().selection.single(), Some(0));
     assert!(dir.path().join("coco-3.toml").is_file());
 }
@@ -114,11 +117,7 @@ fn manager_window_shows_its_toolbar() {
         "Start must be disabled with no selection"
     );
 
-    harness.get_by_label("New").hover();
-    harness.step();
-    harness.get_by_label("New").click();
-    harness.step();
-    harness.step();
+    create_empty_machine(&mut harness);
     assert!(
         harness.state().entries.is_empty(),
         "no config dir: New must fail gracefully, not add a row"
@@ -426,15 +425,16 @@ fn manager_row_context_menu_delete_confirms_and_removes() {
     );
 }
 
-/// "New" creates a definition file *immediately* — default name under a
-/// uniquified slug, saved, selected, no dialog. A second "New" uniquifies against the first.
+/// "New" then Create with the empty machine chosen writes a definition file
+/// on the spot — default name under a uniquified slug, saved, selected. A
+/// second one uniquifies against the first.
 #[test]
-fn manager_new_creates_a_definition_file_immediately() {
+fn manager_new_creates_a_definition_file() {
     let dir = TempDir::new("create");
     let mut harness = manager_harness(Some(dir.path().to_path_buf()), Vec::new());
     assert!(harness.state().entries.is_empty());
 
-    click_containing(&mut harness, "New");
+    create_empty_machine(&mut harness);
 
     assert_eq!(
         harness.state().entries.len(),
@@ -442,8 +442,10 @@ fn manager_new_creates_a_definition_file_immediately() {
         "New must add a list row on the spot"
     );
     assert!(
-        harness.query_by_label("Create").is_none(),
-        "no dialog is involved"
+        harness
+            .query_by_label(manager::new_dialog::NEW_DIALOG_TITLE)
+            .is_none(),
+        "Create must close the dialog"
     );
     let slug = harness.state().entries[0].slug.clone();
     assert_eq!(slug, "coco-3", "slugified from the default name");
@@ -462,7 +464,7 @@ fn manager_new_creates_a_definition_file_immediately() {
     // Not get_by_label: the detail pane's own "CoCo 3" model radio makes the label ambiguous.
     assert_eq!(harness.state().detail_name(), Some("CoCo 3"));
 
-    click_containing(&mut harness, "New");
+    create_empty_machine(&mut harness);
     assert_eq!(harness.state().entries.len(), 2);
     assert_eq!(
         harness.state().entries[1].slug,

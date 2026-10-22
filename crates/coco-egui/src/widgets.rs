@@ -206,40 +206,6 @@ pub(crate) fn toolbar_button(
     }
 }
 
-/// Width of [`toolbar_menu_tile`]: a narrow strip beside the tile it
-/// extends, as wide as its glyph plus a little padding.
-const MENU_TILE_WIDTH: f32 = 16.0;
-/// [`toolbar_menu_tile`]'s glyph — a dropdown arrow, smaller than a tile's
-/// icon so it reads as part of the tile beside it. Present in egui's bundled
-/// emoji-icon-font, like [`SUSPEND_GLYPH`].
-const MENU_GLYPH: &str = "⏷";
-/// [`MENU_GLYPH`]'s size, smaller than [`ICON_FONT_SIZE`].
-const MENU_GLYPH_FONT_SIZE: f32 = 12.0;
-
-/// A narrow, full-height toolbar tile showing only a dropdown arrow, drawn
-/// right after a [`toolbar_button`] to open a menu of that tile's variants
-/// (the caller attaches the `egui::Popup`). `name` is its accessible name;
-/// the caller's hover text must say what the menu holds.
-pub(crate) fn toolbar_menu_tile(ui: &mut egui::Ui, name: &str, icons_only: bool) -> egui::Response {
-    let enabled = ui.is_enabled();
-    let size = egui::vec2(MENU_TILE_WIDTH, tile_size(icons_only).y);
-    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, name));
-    let visuals = ui.style().interact(&response);
-    let painter = ui.painter();
-    if enabled && (response.hovered() || response.is_pointer_button_down_on()) {
-        painter.rect_filled(rect, BUTTON_CORNER_RADIUS, visuals.weak_bg_fill);
-    }
-    painter.text(
-        rect.center(),
-        egui::Align2::CENTER_CENTER,
-        MENU_GLYPH,
-        egui::FontId::proportional(MENU_GLYPH_FONT_SIZE),
-        visuals.text_color(),
-    );
-    response
-}
-
 /// [`toolbar_button`]'s painting with an accessible `name` that can say
 /// more than the `caption` ("Save to State 1" under a "Save" caption), and
 /// no tooltip of its own: the caller's hover texts must name the tile, since

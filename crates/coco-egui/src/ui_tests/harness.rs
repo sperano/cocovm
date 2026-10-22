@@ -7,7 +7,7 @@
 
 use std::path::PathBuf;
 
-use egui_kittest::kittest::{By, Queryable};
+use egui_kittest::kittest::Queryable;
 
 use coco_core::{MachineVariant, MemorySize, VDGVariant, VideoStandard};
 
@@ -98,6 +98,13 @@ pub(super) fn click<S: 'static>(harness: &mut egui_kittest::Harness<'static, S>,
     harness.step();
 }
 
+/// The toolbar's New, then Create in the New Machine dialog it opens, whose
+/// empty machine is chosen to start with: creates the default machine.
+pub(super) fn create_empty_machine<S: 'static>(harness: &mut egui_kittest::Harness<'static, S>) {
+    click(harness, "New");
+    click(harness, manager::new_dialog::CREATE_LABEL);
+}
+
 /// [`click`] with the secondary button — opens the machine-list rows'
 /// context menu.
 pub(super) fn right_click<S: 'static>(
@@ -121,22 +128,6 @@ pub(super) fn click_modifiers<S: 'static>(
     harness.get_by_label(label).hover();
     harness.step();
     harness.get_by_label(label).click_modifiers(modifiers);
-    harness.step();
-    harness.step();
-}
-
-/// [`click`] for buttons matching by substring. The role excludes guidance
-/// text that mentions a button's caption.
-pub(super) fn click_containing<S: 'static>(
-    harness: &mut egui_kittest::Harness<'static, S>,
-    label: &str,
-) {
-    let button = By::new()
-        .role(egui::accesskit::Role::Button)
-        .label_contains(label);
-    harness.get(button.clone()).hover();
-    harness.step();
-    harness.get(button).click();
     harness.step();
     harness.step();
 }

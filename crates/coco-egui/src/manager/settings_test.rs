@@ -188,7 +188,7 @@ fn manager_with_eou_url_draft(dir: &TempDir, eou_url: &str) -> ManagerApp {
     manager
 }
 
-/// Save points the New menu's next NitrOS-9 EOU download at the new URL.
+/// Save points the New Machine dialog's next NitrOS-9 EOU download at the new URL.
 #[test]
 fn commit_applies_the_eou_url() {
     let dir = TempDir::new("settings-eou-url-apply");

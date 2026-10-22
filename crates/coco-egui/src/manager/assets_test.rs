@@ -109,7 +109,7 @@ fn optional_download_does_not_hold_the_buttons() {
     assert!(spinner.is_none());
 }
 
-/// The EOU download, still running, outlives the dialog for the New menu
+/// The EOU download, still running, outlives the dialog for the New Machine dialog
 /// to show.
 #[test]
 fn eou_download_is_handed_over() {

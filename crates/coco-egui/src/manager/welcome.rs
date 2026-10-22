@@ -13,11 +13,15 @@ pub(crate) const RELEASE_LINK_TEXT: &str = "Release notes and downloads";
 /// Label of the button that hides the update notice for the session.
 pub(crate) const DISMISS_LABEL: &str = "Dismiss";
 
+/// The welcome pane, with `save_error` (any error recorded while nothing is
+/// selected, such as a failed Create or NitrOS-9 EOU install) under the
+/// instructions.
 pub(super) fn draw(
     ui: &mut egui::Ui,
     image: &mut WelcomeImage,
     has_machines: bool,
     update: &mut UpdateCheck,
+    save_error: Option<&str>,
 ) {
     ui.vertical_centered(|ui| {
         ui.add_space(TOP_GAP);
@@ -37,6 +41,11 @@ pub(super) fn draw(
         ui.add(egui::Label::new(creation_instruction(ui)).wrap());
         if has_machines {
             ui.add(egui::Label::new("Or click a VM in the list to edit its settings.").wrap());
+        }
+        if let Some(error) = save_error {
+            ui.add_space(HEADING_GAP);
+            let text = egui::RichText::new(error).color(ui.visuals().error_fg_color);
+            ui.add(egui::Label::new(text).wrap());
         }
         ui.add_space(ARTWORK_GAP);
         if ui.available_height() > 0.0 && ui.available_width() > 0.0 {
@@ -69,9 +78,7 @@ fn creation_instruction(ui: &egui::Ui) -> egui::text::LayoutJob {
     for text in [
         egui::RichText::new("Click "),
         egui::RichText::new("New").strong(),
-        egui::RichText::new(
-            " to create a virtual machine, or the arrow beside it to start from a template.",
-        ),
+        egui::RichText::new(" to create a virtual machine, empty or from a template."),
     ] {
         text.append_to(
             &mut job,
