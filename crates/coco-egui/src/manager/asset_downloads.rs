@@ -42,7 +42,8 @@ impl Source {
 
     /// Whether the manager needs this source's files to open. The EOU
     /// images only back one template, and they come from a third-party
-    /// site, so the dialog lets the user skip them when they fail.
+    /// site, so the dialog never waits for them: a failed download is
+    /// retried from the New menu.
     pub(crate) const fn required(self) -> bool {
         match self {
             Self::Bundle => true,

@@ -1,10 +1,11 @@
 //! The first-run asset download dialog: when startup finds bundle assets
 //! missing (`startup::missing_assets`), the window opens dialog-sized and
 //! shows only this prompt — the manager UI appears (and the window grows to
-//! its real size) only once the download has installed the bundle; a failed
-//! NitrOS-9 EOU download alone can be skipped. Each missing file set
-//! ([`Source`]) downloads on its own background thread, all at once, with a
-//! progress bar per set, so the window stays live; Cancel quits the app.
+//! its real size) only once the download has installed the bundle. Each
+//! missing file set ([`Source`]) downloads on its own background thread, all
+//! at once, with a progress bar per set, so the window stays live; Cancel
+//! quits the app. The dialog never waits for the NitrOS-9 EOU download: the
+//! New menu carries it on (`manager/eou_menu.rs`).
 
 use std::path::PathBuf;
 
@@ -157,6 +158,8 @@ impl AssetDialog {
     /// wakes the UI so [`Self::poll`] sees it promptly. Returns `false` when
     /// no required file is missing any more, so there is nothing to wait for.
     fn start_download(&mut self, ctx: &egui::Context) -> bool {
+        // An optional download may have finished since the last attempt.
+        self.pending = pending_sources();
         self.downloads.retain(Download::is_running);
         let running: Vec<Source> = self.downloads.iter().map(Download::source).collect();
         let idle = self

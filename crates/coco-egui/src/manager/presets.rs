@@ -21,8 +21,9 @@ use crate::machine_def::{self, CartridgeDTO, DosRom, MachineDef};
 use crate::nitros9::{EOU_BOOT_DISK, EOU_IMAGES, EOU_SYSTEM_VHD, eou_version, missing_eou_images};
 
 /// Why the NitrOS-9 EOU template can't be created: its images were never
-/// downloaded (the asset dialog's Skip, or an install that predates the
-/// template) or are gone. The New menu offers the download instead.
+/// downloaded (their download failed or is still running, or the install
+/// predates the template) or are gone. The New menu offers the download
+/// instead.
 pub(crate) const EOU_NOT_DOWNLOADED: &str = "the NitrOS-9 EOU images are not downloaded";
 
 /// Floppy drive of the blank disk a Disk BASIC template mounts.
