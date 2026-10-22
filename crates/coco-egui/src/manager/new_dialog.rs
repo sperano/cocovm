@@ -33,6 +33,8 @@ const UNAVAILABLE_HOVER: &str = "This template can't be created right now";
 /// Fixed width of the dialog's contents, so the descriptions wrap and the
 /// NitrOS-9 EOU download's progress bar keeps one width.
 const DIALOG_WIDTH: f32 = 440.0;
+/// Space between the dialog's frame and its contents.
+const DIALOG_INNER_MARGIN: i8 = 16;
 /// Vertical gap between two choices.
 const CHOICE_GAP: f32 = 6.0;
 
@@ -74,9 +76,11 @@ impl ManagerApp {
             return;
         };
         let mut action = NewAction::Idle;
-        let modal = egui::Modal::new(egui::Id::new("new_machine_dialog")).show(ctx, |ui| {
-            action = self.new_dialog_body(ui, &mut dialog);
-        });
+        let modal = egui::Modal::new(egui::Id::new("new_machine_dialog"))
+            .frame(egui::Frame::popup(&ctx.style()).inner_margin(DIALOG_INNER_MARGIN))
+            .show(ctx, |ui| {
+                action = self.new_dialog_body(ui, &mut dialog);
+            });
         match action {
             NewAction::Create(Choice::Empty) => self.create_machine_now(),
             NewAction::Create(Choice::Template(preset)) => self.create_machine_from_preset(preset),
