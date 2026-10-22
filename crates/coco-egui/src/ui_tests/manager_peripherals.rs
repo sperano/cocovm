@@ -16,7 +16,7 @@ fn manager_edit_with_fd502_records_the_peripheral() {
     let dir = TempDir::new("create-fd502");
     let mut harness = manager_harness(Some(dir.path().to_path_buf()), Vec::new());
 
-    click_containing(&mut harness, "New");
+    create_empty_machine(&mut harness);
     click(&mut harness, "Devices");
     // Combos showing "None": Cassette, then Cartridge, then the VHDs — Cartridge is second.
     select_combo_at(&mut harness, "None", 1, "FD-502");
@@ -45,7 +45,7 @@ fn manager_edit_with_mpi_records_the_peripheral() {
     let dir = TempDir::new("create-mpi");
     let mut harness = manager_harness(Some(dir.path().to_path_buf()), Vec::new());
 
-    click_containing(&mut harness, "New");
+    create_empty_machine(&mut harness);
     click(&mut harness, "Devices");
     select_combo_at(&mut harness, "None", 1, "MultiPak Interface");
 
@@ -77,7 +77,7 @@ fn manager_edit_with_rtc_records_the_peripheral() {
     let dir = TempDir::new("create-rtc");
     let mut harness = manager_harness(Some(dir.path().to_path_buf()), Vec::new());
 
-    click_containing(&mut harness, "New");
+    create_empty_machine(&mut harness);
     click(&mut harness, "Devices");
     select_combo_at(&mut harness, "None", 1, "Disto RTC (4-N-1)");
     assert_eq!(harness.state().entries.len(), 1);
@@ -90,7 +90,7 @@ fn manager_edit_with_rtc_records_the_peripheral() {
     );
 
     // Slotted, on a second machine: MPI cartridge with slot 1 holding the RTC.
-    click_containing(&mut harness, "New");
+    create_empty_machine(&mut harness);
     click(&mut harness, "Devices");
     select_combo_at(&mut harness, "None", 1, "MultiPak Interface");
     select_combo_at(&mut harness, "Empty", 0, "Disto RTC (4-N-1)");
@@ -118,7 +118,7 @@ fn manager_edit_with_rom_pak_records_the_cart() {
     let dir = TempDir::new("create-rompak");
     let mut harness = manager_harness(Some(dir.path().to_path_buf()), Vec::new());
 
-    click_containing(&mut harness, "New");
+    create_empty_machine(&mut harness);
     let form = harness
         .state_mut()
         .edit_form_mut()
@@ -139,7 +139,7 @@ fn manager_edit_with_rom_pak_records_the_cart() {
 
     // Slotted, on a second machine — and unlike the retired boolean schema, two slotted paks
     // are both representable: each slot records its own path independently.
-    click_containing(&mut harness, "New");
+    create_empty_machine(&mut harness);
     {
         let form = harness
             .state_mut()
@@ -183,7 +183,7 @@ fn manager_edit_with_rs232_records_the_peripheral() {
     let dir = TempDir::new("create-rs232");
     let mut harness = manager_harness(Some(dir.path().to_path_buf()), Vec::new());
 
-    click_containing(&mut harness, "New");
+    create_empty_machine(&mut harness);
     click(&mut harness, "Devices");
     select_combo_at(&mut harness, "None", 1, "RS-232 Pak");
 
@@ -209,7 +209,7 @@ fn manager_edit_with_slotted_rs232_records_the_peripheral() {
     let dir = TempDir::new("create-mpi-rs232-slot");
     let mut harness = manager_harness(Some(dir.path().to_path_buf()), Vec::new());
 
-    click_containing(&mut harness, "New");
+    create_empty_machine(&mut harness);
     click(&mut harness, "Devices");
     select_combo_at(&mut harness, "None", 1, "MultiPak Interface");
     // Slot 2 (index 1): the second "Empty" combo, 0-based over the y-sorted nodes; the
@@ -248,7 +248,7 @@ fn manager_edit_with_gmc_and_orch90_records_the_cart() {
     let dir = TempDir::new("create-gmc-orch90");
     let mut harness = manager_harness(Some(dir.path().to_path_buf()), Vec::new());
 
-    click_containing(&mut harness, "New");
+    create_empty_machine(&mut harness);
     let form = harness
         .state_mut()
         .edit_form_mut()
@@ -265,7 +265,7 @@ fn manager_edit_with_gmc_and_orch90_records_the_cart() {
         }
     );
 
-    click_containing(&mut harness, "New");
+    create_empty_machine(&mut harness);
     {
         let form = harness
             .state_mut()
@@ -298,7 +298,7 @@ fn manager_edit_with_ssc_records_the_peripheral() {
     let dir = TempDir::new("create-ssc");
     let mut harness = manager_harness(Some(dir.path().to_path_buf()), Vec::new());
 
-    click_containing(&mut harness, "New");
+    create_empty_machine(&mut harness);
     click(&mut harness, "Devices");
     select_combo_at(&mut harness, "None", 1, "Sound/Speech Cartridge");
     assert_eq!(
@@ -308,7 +308,7 @@ fn manager_edit_with_ssc_records_the_peripheral() {
 
     // Slotted, on a second machine — any number of slots may hold one, so two are recorded
     // independently.
-    click_containing(&mut harness, "New");
+    create_empty_machine(&mut harness);
     click(&mut harness, "Devices");
     select_combo_at(&mut harness, "None", 1, "MultiPak Interface");
     select_combo_at(&mut harness, "Empty", 0, "Sound/Speech Cartridge");
@@ -335,7 +335,7 @@ fn manager_edit_with_serial_records_the_port() {
     let dir = TempDir::new("create-serial");
     let mut harness = manager_harness(Some(dir.path().to_path_buf()), Vec::new());
 
-    click_containing(&mut harness, "New");
+    create_empty_machine(&mut harness);
     click(&mut harness, "Devices");
     // "None" combo order: Cassette, Cartridge, VHD 0, VHD 1, then Serial (Ports renders below
     // Peripherals).
@@ -378,7 +378,7 @@ fn manager_edit_with_joy_sources_records_them() {
     let dir = TempDir::new("create-joy-sources");
     let mut harness = manager_harness(Some(dir.path().to_path_buf()), Vec::new());
 
-    click_containing(&mut harness, "New");
+    create_empty_machine(&mut harness);
     click(&mut harness, "Input");
     select_combo_at(&mut harness, "None", 0, "Keys");
     // Left now reads "Keys", so Right is the remaining "None" combo.
@@ -408,7 +408,7 @@ fn manager_edit_with_blank_disk0_places_it_in_the_artifact_dir() {
         Vec::new(),
     );
 
-    click_containing(&mut harness, "New");
+    create_empty_machine(&mut harness);
     click(&mut harness, "Devices");
     select_combo_at(&mut harness, "None", 1, "FD-502");
     // "None" order: Cassette, Disk 0, Disk 1, VHD 0, VHD 1; each pick leaves the pool immediately.
@@ -455,7 +455,7 @@ fn manager_edit_with_mpi_switch_records_the_switch() {
     let dir = TempDir::new("create-mpi-switch");
     let mut harness = manager_harness(Some(dir.path().to_path_buf()), Vec::new());
 
-    click_containing(&mut harness, "New");
+    create_empty_machine(&mut harness);
     click(&mut harness, "Devices");
     select_combo_at(&mut harness, "None", 1, "MultiPak Interface");
     // The switch combo's own default text is "Slot 4" (`DEFAULT_MPI_SWITCH_SLOT`); picking
@@ -485,7 +485,7 @@ fn manager_edit_with_rs232_tcp_endpoint_records_the_endpoint() {
     let dir = TempDir::new("create-rs232-tcp");
     let mut harness = manager_harness(Some(dir.path().to_path_buf()), Vec::new());
 
-    click_containing(&mut harness, "New");
+    create_empty_machine(&mut harness);
     click(&mut harness, "Devices");
     select_combo_at(&mut harness, "None", 1, "RS-232 Pak");
     select_combo_at(&mut harness, "Loopback", 0, "TCP");

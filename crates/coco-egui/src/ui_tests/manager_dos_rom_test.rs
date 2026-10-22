@@ -18,7 +18,7 @@ fn new_machine_dos_rom_selection_saves_drivewire_settings_direct_and_in_mpi() {
     for mpi in [false, true] {
         let dir = TempDir::new(&format!("ui-dos-rom-{mpi}"));
         let mut harness = manager_harness(Some(dir.path().to_path_buf()), Vec::new());
-        click_containing(&mut harness, "New");
+        create_empty_machine(&mut harness);
         click(&mut harness, "Devices");
         if mpi {
             select_combo_at(&mut harness, "None", 1, "MultiPak Interface");
@@ -76,7 +76,7 @@ fn changing_model_resets_hdbdos_direct_and_in_mpi() {
     for mpi in [false, true] {
         let dir = TempDir::new(&format!("ui-dos-model-{mpi}"));
         let mut harness = manager_harness(Some(dir.path().to_path_buf()), Vec::new());
-        click_containing(&mut harness, "New");
+        create_empty_machine(&mut harness);
         let form = harness.state_mut().edit_form_mut().unwrap();
         let dos_rom = DosRom::HdbDosDw3;
         if mpi {

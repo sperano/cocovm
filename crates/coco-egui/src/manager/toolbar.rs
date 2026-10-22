@@ -1,9 +1,9 @@
 //! The manager window's toolbar: [`ManagerApp::draw_toolbar`], built from the
 //! shared icon-over-label tile widget in [`crate::widgets`] (also used by the
-//! VM window's own toolbar, `chrome::toolbar`). Layout is New – New menu –
-//! Start – Suspend – Stop – Reset – separator – Settings – separator – Help.
-//! The New menu, a narrow arrow tile beside New, lists the built-in machine
-//! templates (`manager/presets.rs`).
+//! VM window's own toolbar, `chrome::toolbar`). Layout is New – Start –
+//! Suspend – Stop – Reset – separator – Settings – separator – Help.
+//! New opens the New Machine dialog (`manager/new_dialog.rs`), which offers
+//! an empty machine or one of the built-in templates.
 //! Settings opens the global `config.toml` editor (`manager/settings.rs`);
 //! Help pops up a menu holding "Check for Updates…" and "About CoCoVM" (no
 //! Help tile on macOS, where the application menu carries those items).
@@ -15,11 +15,9 @@ use eframe::egui;
 
 use super::ManagerApp;
 use super::bulk::BulkAction;
-use super::presets::Preset;
 use crate::widgets::{
     BUTTON_GAP, PLAY_GLYPH, RESET_GLYPH, RESET_LABEL, START_LABEL, STOP_GLYPH, STOP_LABEL,
-    SUSPEND_GLYPH, SUSPEND_HOVER, SUSPEND_LABEL, toolbar_button, toolbar_menu_tile,
-    toolbar_separator,
+    SUSPEND_GLYPH, SUSPEND_HOVER, SUSPEND_LABEL, toolbar_button, toolbar_separator,
 };
 
 /// Toolbar glyphs, all verified present in egui's bundled emoji fonts
@@ -28,11 +26,6 @@ use crate::widgets::{
 const NEW_ICON: &str = "➕";
 const SETTINGS_ICON: &str = "⚙";
 const HELP_ICON: &str = "❓";
-
-/// Accessible name of the arrow tile beside New that opens the template
-/// menu. Deliberately without "New", which names the New tile alone.
-pub(crate) const TEMPLATES_LABEL: &str = "Templates";
-const TEMPLATES_HOVER: &str = "Create a machine from a template";
 
 /// Disabled-hover text shared by every transport tile when nothing at all
 /// is selected — distinct from the flags-driven reason below it, so the
@@ -81,16 +74,8 @@ impl ManagerApp {
                 )
                 .clicked()
             {
-                self.create_machine_now();
+                self.open_new_dialog();
             }
-            let templates =
-                toolbar_menu_tile(ui, TEMPLATES_LABEL, icons_only).on_hover_text(TEMPLATES_HOVER);
-            egui::Popup::menu(&templates)
-                .id(ui.id().with("new_menu"))
-                // Stays open on the NitrOS-9 EOU download's click, so its
-                // progress bar shows; the template items close it themselves.
-                .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
-                .show(|ui| self.new_menu_ui(ui));
 
             if toolbar_button(ui, PLAY_GLYPH, START_LABEL, flags.any_startable, icons_only)
                 .on_hover_text(START_HOVER)
@@ -139,31 +124,6 @@ impl ManagerApp {
                     .show(|ui| self.help_menu_ui(ui));
             }
         });
-    }
-
-    /// The New menu: one item per built-in template. A template whose
-    /// downloaded images are missing (only NitrOS-9 EOU's can be) offers to
-    /// download them instead, and NitrOS-9 EOU shows a spinner while a
-    /// machine made from it is being written.
-    fn new_menu_ui(&mut self, ui: &mut egui::Ui) {
-        for preset in Preset::ALL {
-            if preset == Preset::NitrOS9Eou && self.eou_install.is_some() {
-                super::eou_install::eou_install_ui(ui);
-                continue;
-            }
-            if !preset.available(self.eou_dir.as_deref()) {
-                self.eou_download_ui(ui);
-                continue;
-            }
-            if ui
-                .button(preset.name())
-                .on_hover_text(preset.description())
-                .clicked()
-            {
-                self.create_machine_from_preset(preset);
-                ui.close();
-            }
-        }
     }
 
     /// The Help tile's menu.

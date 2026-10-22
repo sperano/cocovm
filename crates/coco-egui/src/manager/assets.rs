@@ -5,7 +5,7 @@
 //! missing file set ([`Source`]) downloads on its own background thread, all
 //! at once, with a progress bar per set, so the window stays live; Cancel
 //! quits the app. The dialog never waits for the NitrOS-9 EOU download: the
-//! New menu carries it on (`manager/eou_menu.rs`).
+//! New Machine dialog carries it on (`manager/eou_menu.rs`).
 
 use std::path::PathBuf;
 
@@ -127,8 +127,8 @@ impl AssetDialog {
         false
     }
 
-    /// The NitrOS-9 EOU download, running or finished, for the New menu to
-    /// carry on showing once the dialog closes (`manager/eou_menu.rs`).
+    /// The NitrOS-9 EOU download, running or finished, for the New Machine
+    /// dialog to carry on showing once this dialog closes (`manager/eou_menu.rs`).
     fn into_eou_download(self) -> Option<Download> {
         self.downloads
             .into_iter()

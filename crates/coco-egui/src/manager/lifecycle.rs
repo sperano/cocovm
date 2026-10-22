@@ -31,14 +31,14 @@ pub(super) fn created_today() -> String {
 }
 
 impl ManagerApp {
-    /// "New…" (toolbar button and ⌘N): create a default machine right now —
-    /// saved to disk, inserted in the list, and selected with the Name field
-    /// focused, instead of opening a dialog. Does NOT boot anything.
+    /// The New Machine dialog's empty machine (`manager/new_dialog.rs`):
+    /// create a default machine right now — saved to disk, inserted in the
+    /// list, and selected with the Name field focused. Does NOT boot anything.
     pub(super) fn create_machine_now(&mut self) {
         self.create_machine(None);
     }
 
-    /// The New menu's template items: [`Self::create_machine_now`], but the
+    /// The New Machine dialog's templates: [`Self::create_machine_now`], but the
     /// new machine starts as `preset` instead of the default CoCo 3.
     pub(super) fn create_machine_from_preset(&mut self, preset: Preset) {
         self.create_machine(Some(preset));

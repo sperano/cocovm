@@ -69,9 +69,7 @@ fn creation_instruction(ui: &egui::Ui) -> egui::text::LayoutJob {
     for text in [
         egui::RichText::new("Click "),
         egui::RichText::new("New").strong(),
-        egui::RichText::new(
-            " to create a virtual machine, or the arrow beside it to start from a template.",
-        ),
+        egui::RichText::new(" to create a virtual machine, empty or from a template."),
     ] {
         text.append_to(
             &mut job,

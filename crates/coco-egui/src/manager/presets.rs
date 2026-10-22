@@ -1,5 +1,5 @@
-//! Built-in machine templates: ready-made definitions the toolbar's New menu
-//! offers next to the plain default machine, and the starter machines
+//! Built-in machine templates: ready-made definitions the toolbar's New Machine
+//! dialog offers next to the empty machine, and the starter machines
 //! written on a real first run ([`seed_first_run`]).
 //!
 //! A template is compiled in, not a file: picking one creates an ordinary,
@@ -22,7 +22,7 @@ use crate::nitros9::{EOU_BOOT_DISK, EOU_IMAGES, EOU_SYSTEM_VHD, eou_version, mis
 
 /// Why the NitrOS-9 EOU template can't be created: its images were never
 /// downloaded (their download failed or is still running, or the install
-/// predates the template) or are gone. The New menu offers the download
+/// predates the template) or are gone. The New Machine dialog offers the download
 /// instead.
 pub(crate) const EOU_NOT_DOWNLOADED: &str = "the NitrOS-9 EOU images are not downloaded";
 
@@ -55,7 +55,7 @@ pub(crate) enum Preset {
 }
 
 impl Preset {
-    /// Every template, in the order the New menu lists them.
+    /// Every template, in the order the New Machine dialog lists them.
     pub(crate) const ALL: [Self; 4] = [
         Self::CoCo3DiskBasic,
         Self::CoCo3DriveWire,
@@ -69,7 +69,7 @@ impl Preset {
     /// dialog has downloaded its images.
     pub(crate) const FIRST_RUN: [Self; 2] = [Self::CoCo3DiskBasic, Self::CoCo2DiskBasic];
 
-    /// Menu label, and the new machine's display name (and slug source).
+    /// Choice label, and the new machine's display name (and slug source).
     pub(crate) const fn name(self) -> &'static str {
         match self {
             Self::CoCo3DiskBasic => "CoCo 3 Disk BASIC",
@@ -79,7 +79,7 @@ impl Preset {
         }
     }
 
-    /// Hover text of the template's menu item.
+    /// The template's description, under its choice in the New Machine dialog.
     pub(crate) const fn description(self) -> &'static str {
         match self {
             Self::CoCo3DiskBasic => {
@@ -214,7 +214,7 @@ fn place_media(preset: Preset, artifacts_root: Option<&Path>, slug: &str) -> Res
 
 /// Copy the downloaded [`EOU_IMAGES`] into machine `slug`'s artifact dir,
 /// which it returns. A failure removes the copies it made, and the dir while
-/// it is empty, such as the one the New menu created to claim `slug`
+/// it is empty, such as the one the New Machine dialog created to claim `slug`
 /// (`manager/eou_install.rs`).
 fn place_eou_images(dirs: &InstallDirs<'_>, slug: &str) -> Result<PathBuf, String> {
     let root = dirs.artifacts_root.ok_or(super::NO_DATA_DIR)?;
@@ -232,7 +232,7 @@ fn place_eou_images(dirs: &InstallDirs<'_>, slug: &str) -> Result<PathBuf, Strin
 /// Copy the [`EOU_IMAGES`] from `eou_dir` into `artifact_dir`, so the new
 /// machine writes to its own system disk and never to the downloaded one.
 ///
-/// The 128 MB VHD can take seconds on a hard disk, so the New menu calls
+/// The 128 MB VHD can take seconds on a hard disk, so the New Machine dialog calls
 /// this through [`install`] on a thread of its own (`manager/eou_install.rs`).
 fn copy_eou_images(eou_dir: &Path, artifact_dir: &Path) -> Result<(), String> {
     if !missing_eou_images(eou_dir).is_empty() {

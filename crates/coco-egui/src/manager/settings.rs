@@ -310,7 +310,7 @@ struct LiveSettings {
     welcome_image_cycle_secs: Option<NonZeroU32>,
     welcome_image_shuffle: bool,
     hotkeys: Hotkeys,
-    /// Where the New menu's next NitrOS-9 EOU download comes from.
+    /// Where the New Machine dialog's next NitrOS-9 EOU download comes from.
     eou_url: String,
 }
 
