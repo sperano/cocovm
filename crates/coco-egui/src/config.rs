@@ -255,7 +255,8 @@ fn read(path: &Path) -> Result<FileConfig, String> {
 pub(crate) fn resolve(cli: Cli, file: FileConfig) -> Config {
     let log_level_overridden = cli.log_level.is_some();
     let control_port_overridden = cli.control_port.is_some();
-    let eou_url_overridden = cli.eou_url.is_some();
+    let cli_eou_url = non_blank(cli.eou_url);
+    let eou_url_overridden = cli_eou_url.is_some();
     let toolbar_icons_only_overridden = cli.toolbar_icons_only.is_some();
     let status_bar_icons_only_overridden = cli.status_bar_icons_only.is_some();
     let welcome_image_cycle_overridden = cli.welcome_image_cycle.is_some();
@@ -277,9 +278,8 @@ pub(crate) fn resolve(cli: Cli, file: FileConfig) -> Config {
             .assets_url
             .or(file.assets_url)
             .unwrap_or_else(|| crate::startup::DEFAULT_ASSETS_URL.to_string()),
-        eou_url: cli
-            .eou_url
-            .or(file.eou_url)
+        eou_url: cli_eou_url
+            .or_else(|| non_blank(file.eou_url))
             .unwrap_or_else(|| crate::nitros9::EOU_URL.to_string()),
         eou_url_overridden,
         toolbar_icons_only: cli
@@ -314,6 +314,15 @@ pub(crate) fn resolve(cli: Cli, file: FileConfig) -> Config {
         hotkeys,
         manager_sort: file.manager_sort.unwrap_or(DEFAULT_MANAGER_SORT),
     }
+}
+
+/// `value` trimmed, or `None` when that leaves it empty: a blank URL (an
+/// `eou_url = \"\"` line, an empty `COCOVM_EOU_URL`) falls through to the
+/// next source the way an emptied Settings field does.
+fn non_blank(value: Option<String>) -> Option<String> {
+    value
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
 }
 
 /// Self-documenting template written by [`seed_default_file`]: every key

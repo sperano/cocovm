@@ -188,6 +188,35 @@ fn built_in_defaults_apply_when_nothing_else_is_set() {
 }
 
 #[test]
+fn blank_file_eou_url_falls_back_to_the_default() {
+    if !no_relevant_env_vars_set() {
+        return;
+    }
+    let file = FileConfig {
+        eou_url: Some("   ".to_string()),
+        ..FileConfig::default()
+    };
+    let config = resolve(bare_cli(), file);
+    assert_eq!(config.eou_url, crate::nitros9::EOU_URL);
+    assert!(!config.eou_url_overridden);
+}
+
+#[test]
+fn blank_cli_eou_url_falls_through_to_the_file() {
+    if !no_relevant_env_vars_set() {
+        return;
+    }
+    let cli = Cli::try_parse_from(["cocovm", "--eou-url", ""]).expect("flag parses");
+    let file = FileConfig {
+        eou_url: Some(" https://file.example.test/eou.zip ".to_string()),
+        ..FileConfig::default()
+    };
+    let config = resolve(cli, file);
+    assert_eq!(config.eou_url, "https://file.example.test/eou.zip");
+    assert!(!config.eou_url_overridden);
+}
+
+#[test]
 fn missing_config_dir_yields_the_empty_file_config() {
     assert_eq!(load(None), Ok(FileConfig::default()));
 }
