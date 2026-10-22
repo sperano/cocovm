@@ -10,10 +10,11 @@ use std::sync::mpsc;
 
 use eframe::egui;
 
-use super::ManagerApp;
 use super::asset_downloads::PROGRESS_REPAINT_INTERVAL;
 use super::lifecycle::created_today;
 use super::presets::{self, Preset};
+use super::selection::SelectionSnapshot;
+use super::{MachineEntry, ManagerApp};
 use crate::machine_def::MachineDef;
 
 /// The New menu's text while the install runs.
@@ -26,14 +27,23 @@ const INSTALL_EXITED: &str = "the NitrOS-9 EOU install exited unexpectedly";
 pub(crate) struct PendingInstall {
     /// The slug the machine is saved under.
     slug: String,
+    /// The list's selection when the install started. If it has changed by
+    /// the end, the user has moved on, and the new machine doesn't take the
+    /// selection (or the Name field, with whatever was being typed in it).
+    selection: SelectionSnapshot,
     /// The install's outcome, once it has one.
     result: mpsc::Receiver<Result<MachineDef, String>>,
 }
 
 impl PendingInstall {
-    /// An install of `slug` whose outcome arrives on `result`.
+    /// An install of `slug`, started with nothing selected, whose outcome
+    /// arrives on `result`.
     pub(crate) fn new(slug: String, result: mpsc::Receiver<Result<MachineDef, String>>) -> Self {
-        Self { slug, result }
+        Self {
+            slug,
+            selection: SelectionSnapshot::default(),
+            result,
+        }
     }
 }
 
@@ -64,7 +74,10 @@ impl ManagerApp {
                 created,
             ));
         });
-        self.eou_install = Some(PendingInstall::new(slug, rx));
+        self.eou_install = Some(PendingInstall {
+            selection: self.selection.snapshot(&self.entries),
+            ..PendingInstall::new(slug, rx)
+        });
     }
 
     /// The slug a running install writes, which no other machine may take.
@@ -89,7 +102,21 @@ impl ManagerApp {
             }
             Err(mpsc::TryRecvError::Disconnected) => Err(INSTALL_EXITED.into()),
         };
-        self.insert_created(pending.slug, saved);
+        self.insert_installed(pending, saved);
+    }
+
+    /// Insert the machine `pending` `saved` like any new machine, unless
+    /// the selection changed while it was written: then list it without
+    /// selecting it.
+    fn insert_installed(&mut self, pending: PendingInstall, saved: Result<MachineDef, String>) {
+        let moved_on = self.selection.snapshot(&self.entries) != pending.selection;
+        match saved {
+            Ok(def) if moved_on => {
+                self.entries.push(MachineEntry::new(pending.slug, def));
+                self.apply_manager_sort(self.manager_sort);
+            }
+            saved => self.insert_created(pending.slug, saved),
+        }
     }
 
     /// On quit: let a running install finish, so its copy is never cut

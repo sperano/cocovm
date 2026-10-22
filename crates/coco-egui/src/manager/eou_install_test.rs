@@ -56,6 +56,18 @@ impl Fixture {
     }
 }
 
+/// Poll `app` until its install has ended.
+fn wait_for_install(app: &mut ManagerApp, ctx: &egui::Context) {
+    for _ in 0..POLL_ATTEMPTS {
+        app.poll_eou_install(ctx);
+        if app.eou_install.is_none() {
+            return;
+        }
+        std::thread::sleep(POLL_INTERVAL);
+    }
+    panic!("the install must end");
+}
+
 /// Picking the template returns before the copy is done; polling inserts
 /// and selects the machine once it is.
 #[test]
@@ -69,19 +81,33 @@ fn template_installs_in_the_background() {
         app.eou_install.is_some(),
         "the install runs on its own thread"
     );
-    for _ in 0..POLL_ATTEMPTS {
-        app.poll_eou_install(&ctx);
-        if app.eou_install.is_none() {
-            break;
-        }
-        std::thread::sleep(POLL_INTERVAL);
-    }
+    wait_for_install(&mut app, &ctx);
 
     assert_eq!(app.save_error, None);
     assert_eq!(app.entries.len(), 1);
     assert_eq!(app.entries[0].slug, EOU_SLUG);
     assert_eq!(app.selection.single(), Some(0));
     assert!(fixture.installed());
+}
+
+/// When the user selects something else while the copy runs, the new
+/// machine is listed without taking the selection or the Name field.
+#[test]
+fn finished_install_leaves_a_changed_selection_alone() {
+    let fixture = Fixture::new("eou-install-moved-on");
+    let mut app = fixture.app();
+    app.create_machine_from_preset(Preset::CoCo3DiskBasic);
+    let ctx = egui::Context::default();
+
+    app.create_machine_from_preset(Preset::NitrOS9Eou);
+    app.selection.clear();
+    app.focus_name = false;
+    wait_for_install(&mut app, &ctx);
+
+    assert_eq!(app.entries.len(), 2);
+    assert!(app.entries.iter().any(|entry| entry.slug == EOU_SLUG));
+    assert!(app.selection.is_empty());
+    assert!(!app.focus_name);
 }
 
 /// Quitting mid-install waits for it, so the machine is complete on disk

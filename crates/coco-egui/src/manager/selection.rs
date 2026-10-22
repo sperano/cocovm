@@ -190,8 +190,9 @@ fn shift_down(i: usize, removed: usize) -> Option<usize> {
 }
 
 /// [`Selection::snapshot`]'s output: the selection's identity by slug
-/// rather than index, so it survives an index shuffle.
-#[derive(Debug, Clone)]
+/// rather than index, so it survives an index shuffle. The default is an
+/// empty selection.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct SelectionSnapshot {
     rows: Vec<String>,
     anchor: Option<String>,
