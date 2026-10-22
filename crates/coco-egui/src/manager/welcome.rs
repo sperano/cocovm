@@ -13,8 +13,9 @@ pub(crate) const RELEASE_LINK_TEXT: &str = "Release notes and downloads";
 /// Label of the button that hides the update notice for the session.
 pub(crate) const DISMISS_LABEL: &str = "Dismiss";
 
-/// The welcome pane, with `save_error` (a failed Create, made with nothing
-/// selected) under the instructions.
+/// The welcome pane, with `save_error` (any error recorded while nothing is
+/// selected, such as a failed Create or NitrOS-9 EOU install) under the
+/// instructions.
 pub(super) fn draw(
     ui: &mut egui::Ui,
     image: &mut WelcomeImage,
