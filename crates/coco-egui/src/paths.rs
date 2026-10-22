@@ -61,6 +61,17 @@ pub fn cartridges_dir() -> Option<PathBuf> {
     assets_dir().map(|d| d.join("cartridges"))
 }
 
+/// Name of [`eou_dir`] under [`assets_dir`]. Versioned, so a later EOU
+/// release lands in a fresh directory and gets downloaded again.
+pub(crate) const EOU_DIR_NAME: &str = "nitros9-eou-1.0.1";
+
+/// Directory for the NitrOS-9 EOU images the asset dialog downloads next to
+/// the bundle (`~/.local/share/cocovm/assets/nitros9-eou-1.0.1` on
+/// Linux/macOS; `nitros9.rs`).
+pub fn eou_dir() -> Option<PathBuf> {
+    assets_dir().map(|d| d.join(EOU_DIR_NAME))
+}
+
 #[cfg(test)]
 #[path = "paths_test.rs"]
 mod tests;

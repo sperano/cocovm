@@ -82,6 +82,12 @@ pluralizer = "0.5.0"
 # (`banner` in startup.rs). Small, no dependencies, and already in Cargo.lock
 # through the `wgpu` feature (naga -> codespan-reporting).
 unicode-width = "0.2"
+# MIT. Streams the NitrOS-9 EOU release archive (`nitros9.rs`); deflate only,
+# through the `flate2` above. Adds `typed-path` (MIT OR Apache-2.0).
+zip = { version = "9", default-features = false, features = ["deflate-flate2"] }
+# MIT OR Apache-2.0. Checks the NitrOS-9 EOU archive's digest (`nitros9.rs`);
+# already in Cargo.lock through coco-core.
+sha2 = "0.10"
 
 # All MIT. Retarget the application menu's About item (`macos_menu.rs`).
 [target.'cfg(target_os = "macos")'.dependencies]

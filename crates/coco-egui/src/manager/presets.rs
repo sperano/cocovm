@@ -6,7 +6,9 @@
 //! independent machine (unique slug, its own artifact dir) with nothing
 //! linking it back, so a later release can change a template without
 //! touching anyone's existing machines. Templates use only what the app's
-//! asset bundle already ships (the DOS ROMs `machine_def::DosRom` names).
+//! asset download already fetched: the bundle's DOS ROMs
+//! (`machine_def::DosRom`) and the NitrOS-9 EOU images (`nitros9.rs`), which
+//! each EOU machine gets its own copy of.
 
 use std::ffi::OsString;
 use std::fs::{self, File, OpenOptions};
@@ -16,6 +18,12 @@ use coco_core::{MachineConfig, MachineVariant, MemorySize};
 
 use super::detail_map::{blank_disk_file, place_blank_file};
 use crate::machine_def::{self, CartridgeDTO, DosRom, MachineDef};
+use crate::nitros9::{EOU_BOOT_DISK, EOU_IMAGES, EOU_SYSTEM_VHD, missing_eou_images};
+
+/// Why the NitrOS-9 EOU template can't be created: its images were never
+/// downloaded (the asset dialog's Skip) or are gone.
+pub(crate) const EOU_NOT_DOWNLOADED: &str =
+    "the NitrOS-9 EOU images are not downloaded; restart CoCoVM to download them";
 
 /// Floppy drive of the blank disk a Disk BASIC template mounts.
 const BLANK_DISK_DRIVE: usize = 0;
@@ -39,19 +47,25 @@ pub(crate) enum Preset {
     /// CoCo 2, 64K, composite, MC6847T1; FD-502 with Disk BASIC 1.1 and a
     /// blank disk in drive 0.
     CoCo2DiskBasic,
+    /// CoCo 3, 512K, RGB; FD-502 with Disk BASIC 1.1, NitrOS-9 EOU 1.0.1's
+    /// boot floppy in drive 0 and its system disk on the VHD interface:
+    /// the setup `coco-core`'s `vhd_boot` test boots to the shell.
+    NitrOS9Eou,
 }
 
 impl Preset {
     /// Every template, in the order the New menu lists them.
-    pub(crate) const ALL: [Self; 3] = [
+    pub(crate) const ALL: [Self; 4] = [
         Self::CoCo3DiskBasic,
         Self::CoCo3DriveWire,
         Self::CoCo2DiskBasic,
+        Self::NitrOS9Eou,
     ];
 
     /// The templates [`seed_first_run`] writes. DriveWire is left out: its
     /// drives start empty, so it has nothing to show until the user adds
-    /// disk images.
+    /// disk images. So is NitrOS-9 EOU: seeding runs before the asset
+    /// dialog has downloaded its images.
     pub(crate) const FIRST_RUN: [Self; 2] = [Self::CoCo3DiskBasic, Self::CoCo2DiskBasic];
 
     /// Menu label, and the new machine's display name (and slug source).
@@ -60,6 +74,7 @@ impl Preset {
             Self::CoCo3DiskBasic => "CoCo 3 Disk BASIC",
             Self::CoCo3DriveWire => "CoCo 3 DriveWire (HDB-DOS)",
             Self::CoCo2DiskBasic => "CoCo 2 Disk BASIC",
+            Self::NitrOS9Eou => "NitrOS-9 EOU",
         }
     }
 
@@ -78,6 +93,11 @@ impl Preset {
                 "CoCo 2 with 64K and the MC6847T1 VDG, an FD-502 disk controller running \
                 Disk BASIC 1.1, and a blank disk in drive 0"
             }
+            Self::NitrOS9Eou => {
+                "CoCo 3 with 512K and an RGB monitor running NitrOS-9 Ease of Use 1.0.1: \
+                its boot disk in drive 0 and its system hard disk on the VHD interface. \
+                Type DOS to boot"
+            }
         }
     }
 
@@ -86,24 +106,41 @@ impl Preset {
     const fn has_blank_disk(self) -> bool {
         match self {
             Self::CoCo3DiskBasic | Self::CoCo2DiskBasic => true,
-            Self::CoCo3DriveWire => false,
+            Self::CoCo3DriveWire | Self::NitrOS9Eou => false,
+        }
+    }
+
+    /// Whether the template can be created with the NitrOS-9 EOU images in
+    /// `eou_dir`: only [`Self::NitrOS9Eou`] needs them.
+    pub(crate) fn available(self, eou_dir: Option<&Path>) -> bool {
+        match self {
+            Self::NitrOS9Eou => eou_dir.is_some_and(|dir| missing_eou_images(dir).is_empty()),
+            Self::CoCo3DiskBasic | Self::CoCo3DriveWire | Self::CoCo2DiskBasic => true,
         }
     }
 
     /// The template's definition, named [`Self::name`] and dated `created`.
     pub(crate) fn def(self, created: Option<String>) -> MachineDef {
         let config = match self {
-            Self::CoCo3DiskBasic | Self::CoCo3DriveWire => MachineConfig::default(),
+            Self::CoCo3DiskBasic | Self::CoCo3DriveWire | Self::NitrOS9Eou => {
+                MachineConfig::default()
+            }
             Self::CoCo2DiskBasic => coco2_config(),
         };
         let mut def = MachineDef::from_config(self.name().to_string(), created, &config);
         let dos_rom = match self {
-            Self::CoCo3DiskBasic | Self::CoCo2DiskBasic => DosRom::DiskBasic,
+            Self::CoCo3DiskBasic | Self::CoCo2DiskBasic | Self::NitrOS9Eou => DosRom::DiskBasic,
             Self::CoCo3DriveWire => DosRom::HdbDosDw3,
         };
         def.peripherals.cartridge = CartridgeDTO::FD502 { dos_rom };
         if self.has_blank_disk() {
             def.media.disk0 = Some(blank_disk_file(BLANK_DISK_DRIVE));
+        }
+        if self == Self::NitrOS9Eou {
+            // Relative, so they resolve in the machine's artifact dir, where
+            // [`install`] copies them.
+            def.media.disk0 = Some(EOU_BOOT_DISK.to_string());
+            def.media.vhd0 = Some(EOU_SYSTEM_VHD.to_string());
         }
         if def.peripherals.cartridge.uses_hdbdos() {
             // What the form switches on when HDB-DOS is picked
@@ -128,21 +165,36 @@ fn coco2_config() -> MachineConfig {
     }
 }
 
-/// Write `preset` as machine `slug`: its blank media into the artifact dir
-/// under `artifacts_root` first, then its definition into `machines_dir`, so
-/// a failure never leaves a definition pointing at a missing image. Returns
+/// Write `preset` as machine `slug`: its media into the artifact dir under
+/// `artifacts_root` first (blank images, or copies of the NitrOS-9 EOU
+/// images in `eou_dir`), then its definition into `machines_dir`, so a
+/// failure never leaves a definition pointing at a missing image. Returns
 /// the saved definition.
 pub(super) fn install(
     preset: Preset,
-    machines_dir: &Path,
-    artifacts_root: Option<&Path>,
+    dirs: &InstallDirs<'_>,
     slug: &str,
     created: Option<String>,
 ) -> Result<MachineDef, String> {
     let def = preset.def(created);
-    place_media(preset, artifacts_root, slug)?;
-    machine_def::save(machines_dir, slug, &def)?;
+    place_media(preset, dirs.artifacts_root, slug)?;
+    if preset == Preset::NitrOS9Eou {
+        let root = dirs.artifacts_root.ok_or(super::NO_DATA_DIR)?;
+        let eou_dir = dirs.eou_dir.ok_or(EOU_NOT_DOWNLOADED)?;
+        copy_eou_images(eou_dir, &root.join(slug))?;
+    }
+    machine_def::save(dirs.machines_dir, slug, &def)?;
     Ok(def)
+}
+
+/// Where [`install`] writes a machine and finds what it copies.
+pub(super) struct InstallDirs<'a> {
+    /// `config_dir()/machines`, for the definition.
+    pub(super) machines_dir: &'a Path,
+    /// `data_dir()/machines`, holding each machine's artifact dir.
+    pub(super) artifacts_root: Option<&'a Path>,
+    /// `paths::eou_dir`, the downloaded NitrOS-9 EOU images.
+    pub(super) eou_dir: Option<&'a Path>,
 }
 
 /// Create `preset`'s blank media in machine `slug`'s artifact dir under
@@ -153,6 +205,30 @@ fn place_media(preset: Preset, artifacts_root: Option<&Path>, slug: &str) -> Res
         place_blank_file(root, slug, &blank_disk_file(BLANK_DISK_DRIVE))?;
     }
     Ok(())
+}
+
+/// Copy the [`EOU_IMAGES`] from `eou_dir` into `artifact_dir`, so the new
+/// machine writes to its own system disk and never to the downloaded one.
+/// A failure removes the copies it made.
+fn copy_eou_images(eou_dir: &Path, artifact_dir: &Path) -> Result<(), String> {
+    if !missing_eou_images(eou_dir).is_empty() {
+        return Err(EOU_NOT_DOWNLOADED.to_string());
+    }
+    fs::create_dir_all(artifact_dir).map_err(|e| format!("{}: {e}", artifact_dir.display()))?;
+    let copied = EOU_IMAGES.into_iter().try_for_each(|name| {
+        let target = artifact_dir.join(name);
+        fs::copy(eou_dir.join(name), &target)
+            .map(drop)
+            .map_err(|e| format!("{}: {e}", target.display()))
+    });
+    if copied.is_err() {
+        for name in EOU_IMAGES {
+            // Best effort: what stays only makes the slug count as taken.
+            let _ = fs::remove_file(artifact_dir.join(name));
+        }
+        let _ = fs::remove_dir(artifact_dir);
+    }
+    copied
 }
 
 /// On a real first run — `machines_dir` does not exist yet — write the

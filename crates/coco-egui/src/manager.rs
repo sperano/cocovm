@@ -27,6 +27,7 @@ use crate::{CocoApp, machine_def};
 use detail::EditState;
 use selection::Selection;
 
+mod asset_downloads;
 pub(crate) mod assets;
 mod bulk;
 mod control;
@@ -281,6 +282,10 @@ pub struct ManagerApp {
     /// Installed cartridge directory (`paths::cartridges_dir()`) the About
     /// window counts images in; `None` like [`Self::roms_dir`], and in tests.
     pub(crate) cartridges_dir: Option<PathBuf>,
+    /// Downloaded NitrOS-9 EOU images (`paths::eou_dir()`) the NitrOS-9 EOU
+    /// template copies; `None` like [`Self::roms_dir`], and in tests, which
+    /// point it at fixtures.
+    pub(crate) eou_dir: Option<PathBuf>,
     /// Root of the per-machine artifact directories
     /// (`machine_def::artifacts_root()`), where each entry's
     /// [`THUMBNAIL_FILE`] and [`SUSPEND_STATE_FILE`] live under
@@ -440,6 +445,7 @@ impl ManagerApp {
             machines_dir,
             roms_dir: None,
             cartridges_dir: None,
+            eou_dir: None,
             artifacts_root,
             entries,
             selection: Selection::default(),

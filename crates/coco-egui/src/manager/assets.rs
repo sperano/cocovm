@@ -1,22 +1,32 @@
 //! The first-run asset download dialog: when startup finds bundle assets
 //! missing (`startup::missing_assets`), the window opens dialog-sized and
 //! shows only this prompt — the manager UI appears (and the window grows to
-//! its real size) only after a successful download. Download runs on a
-//! background thread so the window stays live; Cancel quits the app.
+//! its real size) only after a successful download. Each missing file set
+//! ([`Source`]) downloads on its own background thread, all at once, with a
+//! progress bar per set, so the window stays live; Cancel quits the app.
 
 use std::path::PathBuf;
-use std::sync::mpsc;
+use std::time::Duration;
 
 use eframe::egui;
 
+use super::asset_downloads::{Download, Source};
 use super::{ManagerApp, WINDOW_SIZE};
 
 /// What the dialog asks before fetching anything.
 const PROMPT_TEXT: &str =
     "Download the ROMs, cartridges, and images CoCoVM needs to start your machines.";
 
-/// Window size while the dialog is the only content.
-pub(crate) const DIALOG_WINDOW_SIZE: [f32; 2] = [480.0, 280.0];
+/// Shown under [`PROMPT_TEXT`] while the NitrOS-9 EOU images are missing:
+/// they come from a third-party site and add most of the download.
+const EOU_NOTE: &str = "Includes NitrOS-9 Ease of Use 1.0.1 (58 MB) from lcurtisboyle.com.";
+
+/// Window size while the dialog is the only content: room for a progress
+/// bar per [`Source`], with a failure message under them.
+pub(crate) const DIALOG_WINDOW_SIZE: [f32; 2] = [480.0, 376.0];
+
+/// How often the progress bars redraw while a download runs.
+const PROGRESS_REPAINT_INTERVAL: Duration = Duration::from_millis(100);
 const CONTENT_MARGIN: i8 = 24;
 const FOOTER_MARGIN: i8 = 16;
 const SECTION_GAP: f32 = 16.0;
@@ -38,6 +48,9 @@ pub(super) enum Verdict {
     Pending,
     /// Download finished and every missing file is now present.
     Installed,
+    /// The required files are present and the user chose to go on without
+    /// the optional ones that failed to download.
+    Skipped,
     /// The user declined — the app quits.
     Cancelled,
 }
@@ -51,10 +64,17 @@ pub(crate) struct AssetDialog {
     assets_url: String,
     /// Where the bundle unpacks (`paths::assets_dir`).
     install_dir: PathBuf,
-    /// Completion channel of the running download thread; `Some` while it runs.
-    job: Option<mpsc::Receiver<Result<(), String>>>,
+    /// The sources [`Self::start_download`] would fetch: those with missing
+    /// files.
+    pending: Vec<Source>,
+    /// The latest attempt's downloads, one per source it fetched; empty
+    /// before the first.
+    downloads: Vec<Download>,
     /// Failure from the last attempt, shown above the buttons for a retry.
     error: Option<String>,
+    /// Whether the last attempt left only optional files missing, so the
+    /// dialog offers Skip.
+    skippable: bool,
     icon: Option<egui::TextureHandle>,
 }
 
@@ -64,56 +84,82 @@ impl AssetDialog {
             missing,
             assets_url,
             install_dir,
-            job: None,
+            pending: pending_sources(),
+            downloads: Vec::new(),
             error: None,
+            skippable: false,
             icon: None,
         }
     }
 
-    /// Fold a finished download thread's result back in. Returns whether
-    /// the download completed successfully (the dialog's work is done). An
-    /// unpack that still leaves files missing — a stale bundle behind a new
-    /// [`crate::startup::BUNDLED_ROMS`] or cartridge-manifest entry — reads as a failure, not a
-    /// silent close followed by a re-prompt on every start.
+    /// Whether any download of the current attempt is still running.
+    fn downloading(&self) -> bool {
+        self.downloads.iter().any(Download::is_running)
+    }
+
+    /// Fold finished download threads' results back in. Returns whether
+    /// the attempt completed successfully (the dialog's work is done). An
+    /// attempt that still leaves files missing — a stale bundle behind a new
+    /// [`crate::startup::BUNDLED_ROMS`] or cartridge-manifest entry — reads
+    /// as a failure, not a silent close followed by a re-prompt on every
+    /// start.
     fn poll(&mut self) -> bool {
-        let Some(rx) = &self.job else {
+        if !self.downloading() {
             return false;
-        };
-        match rx.try_recv() {
-            Ok(Ok(())) => {
-                let still_missing = crate::missing_assets();
-                if still_missing.is_empty() {
-                    return true;
-                }
-                self.missing = still_missing;
-                self.error =
-                    Some("the downloaded bundle did not provide every missing file".to_string());
-            }
-            Ok(Err(e)) => self.error = Some(e),
-            Err(mpsc::TryRecvError::Empty) => return false,
-            Err(mpsc::TryRecvError::Disconnected) => {
-                self.error = Some("download thread exited unexpectedly".to_string());
-            }
         }
-        self.job = None;
+        self.downloads.iter_mut().for_each(Download::poll);
+        if self.downloading() {
+            return false;
+        }
+        let still_missing = crate::missing_assets();
+        if still_missing.is_empty() {
+            return true;
+        }
+        self.missing = still_missing;
+        self.pending = pending_sources();
+        self.skippable = self.pending.iter().all(|source| !source.required());
+        self.error = Some(self.failure_details());
         false
     }
 
-    /// Spawn the download thread. Its result comes back through [`Self::job`];
-    /// the repaint wakes the UI so [`Self::poll`] sees it promptly.
-    fn start_download(&mut self, ctx: &egui::Context) {
-        let (tx, rx) = mpsc::channel();
-        let url = self.assets_url.clone();
-        let dest = self.install_dir.clone();
-        let ctx = ctx.clone();
-        std::thread::spawn(move || {
-            let result =
-                crate::startup::download_and_unpack_assets(&url, &dest).map_err(|e| e.to_string());
-            let _ = tx.send(result);
-            ctx.request_repaint();
-        });
-        self.job = Some(rx);
+    /// What went wrong in the finished attempt: each failed download's
+    /// error, or, when none failed, that the files are still not all there.
+    fn failure_details(&self) -> String {
+        let errors: Vec<String> = self
+            .downloads
+            .iter()
+            .filter_map(|download| {
+                let error = download.error()?;
+                Some(format!("{}: {error}", download.source().label()))
+            })
+            .collect();
+        if errors.is_empty() {
+            "the downloaded files did not provide every missing file".to_string()
+        } else {
+            errors.join("\n")
+        }
+    }
+
+    /// Start a download thread for every [`Self::pending`] source. Each
+    /// thread's result comes back through its [`Download`]; its repaint
+    /// wakes the UI so [`Self::poll`] sees it promptly. Returns `false`
+    /// when nothing is missing any more, so there is nothing to wait for.
+    fn start_download(&mut self, ctx: &egui::Context) -> bool {
+        self.downloads = self
+            .pending
+            .iter()
+            .map(|&source| {
+                Download::start(
+                    source,
+                    self.assets_url.clone(),
+                    self.install_dir.clone(),
+                    ctx,
+                )
+            })
+            .collect();
         self.error = None;
+        self.skippable = false;
+        !self.downloads.is_empty()
     }
 
     /// Draw the dialog as the window's only content for one frame.
@@ -125,6 +171,9 @@ impl AssetDialog {
                 crate::startup::asset_inventory(crate::rom_count(), crate::cartridge_count())
             );
             return Verdict::Installed;
+        }
+        if self.downloading() {
+            ctx.request_repaint_after(PROGRESS_REPAINT_INTERVAL);
         }
         let verdict = egui::TopBottomPanel::bottom("asset_actions")
             .frame(
@@ -181,12 +230,29 @@ impl AssetDialog {
                 .size(BODY_SIZE)
                 .color(ui.visuals().strong_text_color()),
         );
+        if self.pending.contains(&Source::Eou) {
+            ui.label(egui::RichText::new(EOU_NOTE).color(secondary_color(ui)));
+        }
+        if !self.downloads.is_empty() {
+            ui.add_space(TEXT_GAP);
+            for download in &self.downloads {
+                download.draw(ui);
+            }
+        }
         if let Some(err) = &self.error {
             ui.add_space(TEXT_GAP);
-            ui.colored_label(ui.visuals().error_fg_color, "Download failed. Try again.");
+            let message = if self.skippable {
+                "NitrOS-9 download failed. Try again, or skip it for now."
+            } else {
+                "Download failed. Try again."
+            };
+            ui.colored_label(ui.visuals().error_fg_color, message);
             ui.collapsing("Show details", |ui| {
                 ui.label(err);
             });
+            return;
+        }
+        if self.downloading() {
             return;
         }
         let count = self.missing.len();
@@ -207,7 +273,7 @@ impl AssetDialog {
 
     /// Keep the actions visible even when a long error needs to scroll.
     fn draw_actions(&mut self, ui: &mut egui::Ui) -> Verdict {
-        if self.job.is_some() {
+        if self.downloading() {
             ui.allocate_ui_with_layout(
                 egui::vec2(ui.available_width(), BUTTON_SIZE[1]),
                 egui::Layout::left_to_right(egui::Align::Center),
@@ -231,8 +297,16 @@ impl AssetDialog {
                     .fill(PRIMARY_FILL)
                     .corner_radius(BUTTON_RADIUS)
                     .min_size(BUTTON_SIZE.into());
-            if ui.add(download).clicked() {
-                self.start_download(ui.ctx());
+            if ui.add(download).clicked() && !self.start_download(ui.ctx()) {
+                verdict = Verdict::Installed;
+            }
+            if self.skippable {
+                let skip = egui::Button::new("Skip")
+                    .corner_radius(BUTTON_RADIUS)
+                    .min_size(BUTTON_SIZE.into());
+                if ui.add(skip).clicked() {
+                    verdict = Verdict::Skipped;
+                }
             }
             let cancel = egui::Button::new("Cancel")
                 .corner_radius(BUTTON_RADIUS)
@@ -266,6 +340,14 @@ fn grow_to_manager_commands() -> [egui::ViewportCommand; 4] {
     ]
 }
 
+/// The sources with files missing on disk, in [`Source::ALL`] order.
+fn pending_sources() -> Vec<Source> {
+    Source::ALL
+        .into_iter()
+        .filter(|source| !source.missing().is_empty())
+        .collect()
+}
+
 fn secondary_color(ui: &egui::Ui) -> egui::Color32 {
     if ui.visuals().dark_mode {
         SECONDARY_DARK
@@ -285,7 +367,7 @@ impl ManagerApp {
         };
         match dialog.draw(ctx) {
             Verdict::Pending => {}
-            Verdict::Installed => {
+            Verdict::Installed | Verdict::Skipped => {
                 self.asset_dialog = None;
                 for command in grow_to_manager_commands() {
                     ctx.send_viewport_cmd(command);

@@ -62,8 +62,11 @@ impl ManagerApp {
         let saved = match preset {
             Some(preset) => presets::install(
                 preset,
-                &dir,
-                self.artifacts_root.as_deref(),
+                &presets::InstallDirs {
+                    machines_dir: &dir,
+                    artifacts_root: self.artifacts_root.as_deref(),
+                    eou_dir: self.eou_dir.as_deref(),
+                },
                 &slug,
                 Some(created_today()),
             ),

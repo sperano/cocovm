@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::Path;
+use std::sync::Arc;
 
 use owo_colors::colors::xterm;
 use owo_colors::{OwoColorize, Stream};
@@ -12,6 +13,8 @@ use unicode_width::{UnicodeWidthChar as _, UnicodeWidthStr as _};
 
 use coco_core::rom_db::KNOWN_CARTRIDGE_ROMS;
 
+use crate::download::{self, Progress};
+use crate::nitros9::missing_eou_images;
 use crate::paths;
 
 /// Seed the environment from a `.env` file, before anything reads it. Two
@@ -349,14 +352,15 @@ pub(crate) fn unpack_assets(reader: impl std::io::Read, dest: &Path) -> std::io:
 }
 
 /// Download the bundle at `url` and unpack it into `dest`, streaming — the
-/// tarball is never held in memory or written to disk whole.
+/// tarball is never held in memory or written to disk whole. Received bytes
+/// are counted into `progress`.
 pub(crate) fn download_and_unpack_assets(
     url: &str,
     dest: &Path,
+    progress: Arc<Progress>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     fs::create_dir_all(dest)?;
-    let response = ureq::get(url).call()?;
-    unpack_assets(response.into_body().into_reader(), dest)?;
+    unpack_assets(download::open(url, progress)?, dest)?;
     Ok(())
 }
 
@@ -371,13 +375,28 @@ pub(crate) fn require_data_dir() -> std::path::PathBuf {
     data_dir
 }
 
+/// The downloaded files absent on disk, as display paths: the
+/// [`missing_bundle_assets`] plus the [`missing_eou_images`]. Empty means no
+/// download is needed. The integration tests' disk images are not the
+/// app's business: `crates/test-assets` fetches its own bundle.
+pub(crate) fn missing_assets() -> Vec<String> {
+    let mut missing = missing_bundle_assets();
+    missing.extend(missing_eou_assets());
+    missing
+}
+
+/// The NitrOS-9 EOU images absent from [`paths::eou_dir`], as display paths.
+pub(crate) fn missing_eou_assets() -> Vec<String> {
+    paths::eou_dir()
+        .map(|dir| display_paths(&dir, missing_eou_images(&dir)))
+        .unwrap_or_default()
+}
+
 /// The asset files the bundle at [`DEFAULT_ASSETS_URL`] should provide but which
 /// are absent on disk, as display paths: an empty images directory counts
 /// as one entry, plus each missing [`BUNDLED_ROMS`] image and each missing
-/// [`bundled_cartridges`] image. Empty means no download is needed. The
-/// integration tests' disk images are not the app's business:
-/// `crates/test-assets` fetches its own bundle.
-pub(crate) fn missing_assets() -> Vec<String> {
+/// [`bundled_cartridges`] image.
+pub(crate) fn missing_bundle_assets() -> Vec<String> {
     let mut missing: Vec<String> = paths::images_dir()
         .filter(|dir| !dir_has_files(dir))
         .map(|dir| dir.display().to_string())

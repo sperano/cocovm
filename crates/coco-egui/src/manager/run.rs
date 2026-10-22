@@ -132,6 +132,7 @@ pub fn run(
             }
             app.roms_dir = crate::paths::roms_dir();
             app.cartridges_dir = crate::paths::cartridges_dir();
+            app.eou_dir = crate::paths::eou_dir();
             app.log_reload = Some(log_reload);
             app.log_level_overridden = log_level_overridden;
             if !missing.is_empty() {

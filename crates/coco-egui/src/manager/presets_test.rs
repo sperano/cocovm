@@ -14,6 +14,31 @@ fn created() -> Option<String> {
     Some(CREATED.to_string())
 }
 
+/// Stand-in bytes for the downloaded EOU images.
+const FAKE_EOU_IMAGE: &[u8] = b"eou image";
+
+/// A directory holding stand-ins for both downloaded EOU images.
+fn eou_fixture() -> TempDir {
+    let dir = TempDir::new("preset-eou-images");
+    for name in EOU_IMAGES {
+        fs::write(dir.path().join(name), FAKE_EOU_IMAGE).unwrap();
+    }
+    dir
+}
+
+/// [`install`]'s directories.
+fn dirs<'a>(
+    machines_dir: &'a Path,
+    artifacts_root: Option<&'a Path>,
+    eou_dir: Option<&'a Path>,
+) -> InstallDirs<'a> {
+    InstallDirs {
+        machines_dir,
+        artifacts_root,
+        eou_dir,
+    }
+}
+
 /// Every template converts to a config the core accepts, and its
 /// DriveWire/cartridge combination passes the same checks a save does.
 #[test]
@@ -72,6 +97,7 @@ fn preset_def_takes_its_name_and_date() {
 /// floppy its `[media].disk0` names.
 #[test]
 fn install_round_trips_and_places_the_blank_disk() {
+    let eou = eou_fixture();
     for preset in Preset::ALL {
         let machines = TempDir::new("preset-install-machines");
         let artifacts = TempDir::new("preset-install-artifacts");
@@ -79,8 +105,7 @@ fn install_round_trips_and_places_the_blank_disk() {
 
         let def = install(
             preset,
-            machines.path(),
-            Some(artifacts.path()),
+            &dirs(machines.path(), Some(artifacts.path()), Some(eou.path())),
             &slug,
             created(),
         )
@@ -88,8 +113,10 @@ fn install_round_trips_and_places_the_blank_disk() {
 
         let loaded = machine_def::load_all(machines.path()).expect("installed preset loads");
         assert_eq!(loaded, vec![(slug.clone(), def.clone())]);
-        let disk = artifacts.path().join(&slug).join("disk0.dsk");
-        assert_eq!(disk.is_file(), def.media.disk0.is_some(), "{preset:?}");
+        if let Some(disk) = &def.media.disk0 {
+            let disk = artifacts.path().join(&slug).join(disk);
+            assert!(disk.is_file(), "{preset:?}: {}", disk.display());
+        }
     }
 }
 
@@ -100,8 +127,7 @@ fn install_without_artifact_root_writes_nothing() {
     let machines = TempDir::new("preset-no-artifacts");
     let error = install(
         Preset::CoCo3DiskBasic,
-        machines.path(),
-        None,
+        &dirs(machines.path(), None, None),
         "coco-3-disk-basic",
         None,
     )
@@ -267,7 +293,13 @@ fn seeding_discards_a_crashed_run() {
     let staging = staging_dir(&machines).unwrap();
     for preset in Preset::FIRST_RUN {
         let slug = machine_def::slugify(preset.name());
-        install(preset, &staging, Some(artifacts.path()), &slug, None).unwrap();
+        install(
+            preset,
+            &dirs(&staging, Some(artifacts.path()), None),
+            &slug,
+            None,
+        )
+        .unwrap();
     }
     let kept = artifacts.path().join("coco-2-disk-basic").join("disk0.dsk");
     fs::write(&kept, b"user data").unwrap();
@@ -348,17 +380,34 @@ fn concurrent_first_runs_seed_once() {
 /// against the real data directory.
 #[test]
 fn every_preset_launches() {
+    // The test bundle's EOU pair is the release's two images.
+    let eou_dir = test_assets::disk(test_assets::disk::EOU_BOOT)
+        .parent()
+        .expect("test disks live in a directory")
+        .to_path_buf();
     for preset in Preset::ALL {
+        if !preset.available(Some(&eou_dir)) {
+            eprintln!("skipping {preset:?}: the EOU test images are not present");
+            continue;
+        }
         let machines = TempDir::new("preset-launch-machines");
         let artifacts = TempDir::new("preset-launch-artifacts");
         let slug = machine_def::slugify(preset.name());
-        let mut def = install(preset, machines.path(), Some(artifacts.path()), &slug, None)
-            .unwrap_or_else(|e| panic!("{preset:?} must install: {e}"));
-        if let Some(disk) = &mut def.media.disk0 {
-            *disk = artifacts
+        let mut def = install(
+            preset,
+            &dirs(machines.path(), Some(artifacts.path()), Some(&eou_dir)),
+            &slug,
+            None,
+        )
+        .unwrap_or_else(|e| panic!("{preset:?} must install: {e}"));
+        for media in [&mut def.media.disk0, &mut def.media.vhd0]
+            .into_iter()
+            .flatten()
+        {
+            *media = artifacts
                 .path()
                 .join(&slug)
-                .join(&*disk)
+                .join(&*media)
                 .display()
                 .to_string();
         }
@@ -372,7 +421,65 @@ fn every_preset_launches() {
         assert_eq!(
             app.disk_paths[BLANK_DISK_DRIVE].is_some(),
             def.media.disk0.is_some(),
-            "{preset:?}: blank disk mount"
+            "{preset:?}: drive 0 mount"
+        );
+        assert_eq!(
+            app.vhd_paths[0].is_some(),
+            def.media.vhd0.is_some(),
+            "{preset:?}: VHD mount"
         );
     }
+}
+
+/// The EOU template copies both images into the new machine's artifact
+/// dir, where its relative media names resolve, and leaves the downloaded
+/// ones untouched.
+#[test]
+fn eou_install_copies_the_images() {
+    let machines = TempDir::new("preset-eou-machines");
+    let artifacts = TempDir::new("preset-eou-artifacts");
+    let eou = eou_fixture();
+    let slug = machine_def::slugify(Preset::NitrOS9Eou.name());
+
+    let def = install(
+        Preset::NitrOS9Eou,
+        &dirs(machines.path(), Some(artifacts.path()), Some(eou.path())),
+        &slug,
+        None,
+    )
+    .unwrap();
+
+    assert_eq!(def.media.disk0.as_deref(), Some(EOU_BOOT_DISK));
+    assert_eq!(def.media.vhd0.as_deref(), Some(EOU_SYSTEM_VHD));
+    assert_eq!(def.peripherals.cartridge.dos_rom(), Some(DosRom::DiskBasic));
+    for name in EOU_IMAGES {
+        let copy = artifacts.path().join(&slug).join(name);
+        assert_eq!(fs::read(&copy).unwrap(), FAKE_EOU_IMAGE, "{name}");
+        assert!(eou.path().join(name).is_file(), "{name} stays downloaded");
+    }
+}
+
+/// Without the downloaded images the EOU template is unavailable and
+/// installs nothing: no definition, no artifact dir.
+#[test]
+fn eou_install_without_images_writes_nothing() {
+    let machines = TempDir::new("preset-eou-missing-machines");
+    let artifacts = TempDir::new("preset-eou-missing-artifacts");
+    let empty = TempDir::new("preset-eou-missing-images");
+    let slug = machine_def::slugify(Preset::NitrOS9Eou.name());
+
+    for eou_dir in [None, Some(empty.path())] {
+        assert!(!Preset::NitrOS9Eou.available(eou_dir));
+        let error = install(
+            Preset::NitrOS9Eou,
+            &dirs(machines.path(), Some(artifacts.path()), eou_dir),
+            &slug,
+            None,
+        )
+        .unwrap_err();
+        assert_eq!(error, EOU_NOT_DOWNLOADED);
+    }
+    assert!(!machine_def::def_path(machines.path(), &slug).exists());
+    assert!(!artifacts.path().join(&slug).exists());
+    assert!(Preset::CoCo3DiskBasic.available(None));
 }
