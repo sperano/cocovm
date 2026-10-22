@@ -219,3 +219,42 @@ fn failed_install_releases_its_slug() {
     assert!(app.entries.is_empty());
     assert!(!fixture.artifacts.path().join(EOU_SLUG).exists());
 }
+
+/// A slug that can't be claimed for another reason than an existing dir
+/// (here, the artifacts root is a file) is reported, and nothing starts.
+#[test]
+fn unclaimable_slug_reports_its_error() {
+    let fixture = Fixture::new("eou-install-unclaimable");
+    let not_a_dir = fixture.artifacts.path().join("file");
+    fs::write(&not_a_dir, FAKE_EOU_IMAGE).unwrap();
+    let mut app = fixture.app();
+    app.artifacts_root = Some(not_a_dir.clone());
+
+    app.create_machine_from_preset(Preset::NitrOS9Eou);
+
+    assert!(app.eou_install.is_none());
+    let error = app.save_error.expect("the claim error is reported");
+    assert!(
+        error.starts_with(&not_a_dir.display().to_string()),
+        "{error}"
+    );
+}
+
+/// An install whose thread ended without a result removes the dir it
+/// claimed, so the slug stays free.
+#[test]
+fn exited_install_releases_its_slug() {
+    let fixture = Fixture::new("eou-install-exited");
+    let mut app = fixture.app();
+    let artifact_dir = fixture.artifacts.path().join(EOU_SLUG);
+    fs::create_dir(&artifact_dir).unwrap();
+    fs::write(artifact_dir.join(EOU_IMAGES[0]), FAKE_EOU_IMAGE).unwrap();
+    let (tx, rx) = mpsc::channel();
+    drop(tx);
+    app.eou_install = Some(PendingInstall::new(EOU_SLUG.to_string(), rx));
+
+    app.poll_eou_install(&egui::Context::default());
+
+    assert_eq!(app.save_error.as_deref(), Some(INSTALL_EXITED));
+    assert!(!artifact_dir.exists());
+}

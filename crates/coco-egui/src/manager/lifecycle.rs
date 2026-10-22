@@ -83,9 +83,9 @@ impl ManagerApp {
         self.insert_created(slug, saved);
     }
 
-    /// Whether a new machine under `machines_dir` can't take `candidate`.
-    /// Checks both the in-memory list and the disk, since `entries` misses a
-    /// file written by another instance.
+    /// Whether `candidate` is already used: by a listed machine, a running
+    /// install, or a definition in `machines_dir` or an artifact dir on disk.
+    /// `entries` alone misses a file written by another instance.
     pub(super) fn slug_taken(&self, machines_dir: &Path, candidate: &str) -> bool {
         self.entries.iter().any(|e| e.slug == candidate)
             || self.installing_slug() == Some(candidate)

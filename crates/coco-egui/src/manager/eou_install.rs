@@ -53,7 +53,8 @@ impl ManagerApp {
     /// Install the NitrOS-9 EOU template under `machines_dir` on a new
     /// thread, as the first free slug from `base` ([`Self::claim_eou_slug`]);
     /// [`Self::poll_eou_install`] inserts it. Does nothing while another
-    /// install runs (the New menu hides the template meanwhile).
+    /// install runs (the New menu hides the template meanwhile); a slug that
+    /// can't be claimed is reported through `save_error`.
     pub(super) fn start_eou_install(&mut self, machines_dir: PathBuf, base: &str) {
         if self.eou_install.is_some() {
             return;
@@ -102,7 +103,7 @@ impl ManagerApp {
         let mut lost = Vec::new();
         loop {
             let slug = machine_def::unique_slug(base, &|candidate| {
-                lost.iter().any(|slug| slug == candidate)
+                lost.iter().any(|lost_slug| lost_slug == candidate)
                     || self.slug_taken(machines_dir, candidate)
             });
             let artifact_dir = root.join(&slug);
@@ -134,7 +135,7 @@ impl ManagerApp {
                 ctx.request_repaint_after(PROGRESS_REPAINT_INTERVAL);
                 return;
             }
-            Err(mpsc::TryRecvError::Disconnected) => Err(INSTALL_EXITED.into()),
+            Err(mpsc::TryRecvError::Disconnected) => Err(self.exited(&pending.slug)),
         };
         self.insert_installed(pending, saved);
     }
@@ -174,9 +175,19 @@ impl ManagerApp {
         let error = match pending.result.recv() {
             Ok(Ok(_)) => return,
             Ok(Err(error)) => error,
-            Err(mpsc::RecvError) => INSTALL_EXITED.to_string(),
+            Err(mpsc::RecvError) => self.exited(&pending.slug),
         };
         eprintln!("coco: creating machine '{}': {error}", pending.slug);
+    }
+
+    /// The error of `slug`'s install whose thread ended without a result
+    /// (it panicked), after removing what it copied and the dir it claimed,
+    /// which would otherwise keep `slug` taken.
+    fn exited(&self, slug: &str) -> String {
+        if let Some(root) = &self.artifacts_root {
+            presets::discard_eou_images(&root.join(slug));
+        }
+        INSTALL_EXITED.to_string()
     }
 }
 

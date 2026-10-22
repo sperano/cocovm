@@ -249,7 +249,7 @@ fn copy_eou_images(eou_dir: &Path, artifact_dir: &Path) -> Result<(), String> {
 
 /// Remove the [`EOU_IMAGES`] from `artifact_dir`, then the dir itself while
 /// it is empty. Best effort: what stays only makes the slug count as taken.
-fn discard_eou_images(artifact_dir: &Path) {
+pub(super) fn discard_eou_images(artifact_dir: &Path) {
     for name in EOU_IMAGES {
         let _ = fs::remove_file(artifact_dir.join(name));
     }
