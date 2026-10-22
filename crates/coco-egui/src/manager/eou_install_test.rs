@@ -110,6 +110,32 @@ fn finished_install_leaves_a_changed_selection_alone() {
     assert!(!app.focus_name);
 }
 
+/// A name being typed in the selected machine's Name field while the copy
+/// runs keeps the selection and the draft.
+#[test]
+fn finished_install_keeps_a_name_draft() {
+    const DRAFT: &str = "Half-typ";
+    let fixture = Fixture::new("eou-install-draft");
+    let mut app = fixture.app();
+    app.create_machine_from_preset(Preset::CoCo3DiskBasic);
+    let ctx = egui::Context::default();
+
+    app.create_machine_from_preset(Preset::NitrOS9Eou);
+    let selected = &app.entries[0];
+    let mut edit = app.seed_edit(&selected.slug, &selected.def);
+    edit.name = DRAFT.to_string();
+    app.edit = Some(edit);
+    wait_for_install(&mut app, &ctx);
+
+    assert_eq!(app.entries.len(), 2);
+    let selected = app.selection.single().expect("one machine stays selected");
+    assert_eq!(app.entries[selected].slug, "coco-3-disk-basic");
+    assert_eq!(
+        app.edit.as_ref().map(|edit| edit.name.as_str()),
+        Some(DRAFT)
+    );
+}
+
 /// Quitting mid-install waits for it, so the machine is complete on disk
 /// for the next launch.
 #[test]

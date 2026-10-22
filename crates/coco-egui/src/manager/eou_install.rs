@@ -29,7 +29,7 @@ pub(crate) struct PendingInstall {
     slug: String,
     /// The list's selection when the install started. If it has changed by
     /// the end, the user has moved on, and the new machine doesn't take the
-    /// selection (or the Name field, with whatever was being typed in it).
+    /// selection.
     selection: SelectionSnapshot,
     /// The install's outcome, once it has one.
     result: mpsc::Receiver<Result<MachineDef, String>>,
@@ -106,10 +106,11 @@ impl ManagerApp {
     }
 
     /// Insert the machine `pending` `saved` like any new machine, unless
-    /// the selection changed while it was written: then list it without
-    /// selecting it.
+    /// the user moved on while it was written (selected something else, or
+    /// is typing a name): then list it without selecting it.
     fn insert_installed(&mut self, pending: PendingInstall, saved: Result<MachineDef, String>) {
-        let moved_on = self.selection.snapshot(&self.entries) != pending.selection;
+        let moved_on = self.selection.snapshot(&self.entries) != pending.selection
+            || self.name_draft_pending();
         match saved {
             Ok(def) if moved_on => {
                 self.entries.push(MachineEntry::new(pending.slug, def));
@@ -117,6 +118,16 @@ impl ManagerApp {
             }
             saved => self.insert_created(pending.slug, saved),
         }
+    }
+
+    /// Whether the Name field holds a draft not committed yet, which
+    /// selecting another machine would drop.
+    fn name_draft_pending(&self) -> bool {
+        self.edit.as_ref().is_some_and(|edit| {
+            self.entries
+                .iter()
+                .any(|entry| entry.slug == edit.slug && entry.def.name != edit.name)
+        })
     }
 
     /// On quit: let a running install finish, so its copy is never cut
