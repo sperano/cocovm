@@ -9,7 +9,7 @@ use crate::*;
 
 use super::harness::*;
 
-/// "New" creates the machine immediately; picking Cartridge = FD-502
+/// New, then Create, creates the machine; picking Cartridge = FD-502
 /// auto-saves `[peripherals].cartridge` into the definition file.
 #[test]
 fn manager_edit_with_fd502_records_the_peripheral() {

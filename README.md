@@ -60,20 +60,21 @@ The source repository doesn't contain copyrighted ROM images. On first launch,
 CoCoVM lists any missing runtime assets and asks before downloading the separate
 asset bundle. The same step downloads the NitrOS-9 Ease of Use 1.0.1 disk images
 from [lcurtisboyle.com](https://www.lcurtisboyle.com/nitros9/), and a progress
-bar tracks each download. CoCoVM opens without waiting for the NitrOS-9 download,
-which continues in the background; the template menu shows its progress and
-offers a retry if it fails. On Linux and macOS, CoCoVM installs these files under
-`~/.local/share/cocovm/assets/`. ROM images remain copyrighted by their
-respective owners and aren't covered by the source-code licenses in this
-repository. See [NOTICE.md](NOTICE.md) for details.
+bar tracks each download. CoCoVM opens without waiting for the NitrOS-9
+download, which continues in the background; the **New Machine** dialog shows
+its progress and offers a retry if it fails. On Linux and macOS, CoCoVM installs
+these files under `~/.local/share/cocovm/assets/`. ROM images remain copyrighted
+by their respective owners and aren't covered by the source-code licenses in
+this repository. See [NOTICE.md](NOTICE.md) for details.
 
 The first launch also adds two starter machines: a CoCo 3 and a CoCo 2, each
-with Disk BASIC and a blank disk in drive 0. To create another machine from a
-template, click the arrow next to **New**. The templates are the two starter
-machines, a CoCo 3 that runs HDB-DOS over the built-in DriveWire server, and a
-CoCo 3 that runs NitrOS-9 Ease of Use from its own copy of the downloaded disk
-images. To boot NitrOS-9, type `DOS` at the BASIC prompt. Until the NitrOS-9
-images are downloaded, the template menu offers to download them instead.
+with Disk BASIC and a blank disk in drive 0. To create another machine, click
+**New**, and then choose an empty machine or a template in the **New Machine**
+dialog. The templates are the two starter machines, a CoCo 3 that runs HDB-DOS
+over the built-in DriveWire server, and a CoCo 3 that runs NitrOS-9 Ease of Use
+from its own copy of the downloaded disk images. To boot NitrOS-9, type `DOS` at
+the BASIC prompt. Until the NitrOS-9 images are downloaded, the dialog offers to
+download them instead.
 
 ## Build from source
 
