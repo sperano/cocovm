@@ -375,28 +375,16 @@ pub(crate) fn require_data_dir() -> std::path::PathBuf {
     data_dir
 }
 
-/// The downloaded files absent on disk, as display paths: the
-/// [`missing_bundle_assets`] plus the [`missing_eou_images`]. Empty means no
-/// download is needed. The integration tests' disk images are not the
-/// app's business: `crates/test-assets` fetches its own bundle.
-pub(crate) fn missing_assets() -> Vec<String> {
-    let mut missing = missing_bundle_assets();
-    missing.extend(missing_eou_assets());
-    missing
-}
-
-/// The NitrOS-9 EOU images absent from [`paths::eou_dir`], as display paths.
-pub(crate) fn missing_eou_assets() -> Vec<String> {
-    paths::eou_dir()
-        .map(|dir| display_paths(&dir, missing_eou_images(&dir)))
-        .unwrap_or_default()
-}
-
 /// The asset files the bundle at [`DEFAULT_ASSETS_URL`] should provide but which
 /// are absent on disk, as display paths: an empty images directory counts
 /// as one entry, plus each missing [`BUNDLED_ROMS`] image and each missing
-/// [`bundled_cartridges`] image.
-pub(crate) fn missing_bundle_assets() -> Vec<String> {
+/// [`bundled_cartridges`] image. Empty means no download is needed. The
+/// integration tests' disk images are not the app's business:
+/// `crates/test-assets` fetches its own bundle. The NitrOS-9 EOU images
+/// ([`missing_eou_assets`]) don't count either: they back one template and
+/// come from a third-party site, so they never hold the manager back. The
+/// asset dialog fetches them alongside the bundle when it opens anyway.
+pub(crate) fn missing_assets() -> Vec<String> {
     let mut missing: Vec<String> = paths::images_dir()
         .filter(|dir| !dir_has_files(dir))
         .map(|dir| dir.display().to_string())
@@ -412,6 +400,13 @@ pub(crate) fn missing_bundle_assets() -> Vec<String> {
         ));
     }
     missing
+}
+
+/// The NitrOS-9 EOU images absent from [`paths::eou_dir`], as display paths.
+pub(crate) fn missing_eou_assets() -> Vec<String> {
+    paths::eou_dir()
+        .map(|dir| display_paths(&dir, missing_eou_images(&dir)))
+        .unwrap_or_default()
 }
 
 /// Each of `names` joined under `dir`, as a display path.

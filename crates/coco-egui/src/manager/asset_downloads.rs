@@ -2,8 +2,9 @@
 //! one background thread per file set ([`Source`]), all running at once,
 //! each drawn as a labelled progress bar.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::{Arc, mpsc};
+use std::time::Duration;
 
 use eframe::egui;
 
@@ -12,6 +13,9 @@ use crate::download::Progress;
 /// Bytes per megabyte in the progress bars' text (decimal, like the size a
 /// browser or file manager shows for the download).
 const BYTES_PER_MB: f64 = 1_000_000.0;
+
+/// How often a progress bar redraws while its download runs.
+pub(crate) const PROGRESS_REPAINT_INTERVAL: Duration = Duration::from_millis(100);
 
 /// One set of files the asset dialog downloads.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -49,14 +53,14 @@ impl Source {
     /// Display paths of this source's files absent on disk.
     pub(crate) fn missing(self) -> Vec<String> {
         match self {
-            Self::Bundle => crate::startup::missing_bundle_assets(),
+            Self::Bundle => crate::startup::missing_assets(),
             Self::Eou => crate::startup::missing_eou_assets(),
         }
     }
 
     /// Download and install this source's files under the assets directory
     /// `install_dir`; `bundle_url` is where [`Self::Bundle`] comes from.
-    fn fetch(
+    pub(crate) fn fetch(
         self,
         bundle_url: &str,
         install_dir: &Path,
@@ -92,19 +96,20 @@ pub(crate) struct Download {
 }
 
 impl Download {
-    /// Fetch `source` on a new thread, which repaints `ctx` when it ends.
+    /// Run `fetch`, which downloads `source` reporting into the
+    /// [`Progress`] it is given, on a new thread that repaints `ctx` when it
+    /// ends.
     pub(crate) fn start(
         source: Source,
-        bundle_url: String,
-        install_dir: PathBuf,
         ctx: &egui::Context,
+        fetch: impl FnOnce(Arc<Progress>) -> Result<(), String> + Send + 'static,
     ) -> Self {
         let progress = Arc::new(Progress::default());
         let (tx, rx) = mpsc::channel();
         let thread_progress = Arc::clone(&progress);
         let ctx = ctx.clone();
         std::thread::spawn(move || {
-            let _ = tx.send(source.fetch(&bundle_url, &install_dir, thread_progress));
+            let _ = tx.send(fetch(thread_progress));
             ctx.request_repaint();
         });
         Self::running(source, progress, rx)

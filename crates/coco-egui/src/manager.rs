@@ -27,13 +27,14 @@ use crate::{CocoApp, machine_def};
 use detail::EditState;
 use selection::Selection;
 
-mod asset_downloads;
+pub(crate) mod asset_downloads;
 pub(crate) mod assets;
 mod bulk;
 mod control;
 mod delete;
 mod detail;
 mod detail_map;
+mod eou_menu;
 mod exit;
 mod gamepad_service;
 mod lifecycle;
@@ -286,6 +287,9 @@ pub struct ManagerApp {
     /// template copies; `None` like [`Self::roms_dir`], and in tests, which
     /// point it at fixtures.
     pub(crate) eou_dir: Option<PathBuf>,
+    /// The New menu's NitrOS-9 EOU download (`manager/eou_menu.rs`), once
+    /// started.
+    pub(crate) eou_download: Option<asset_downloads::Download>,
     /// Root of the per-machine artifact directories
     /// (`machine_def::artifacts_root()`), where each entry's
     /// [`THUMBNAIL_FILE`] and [`SUSPEND_STATE_FILE`] live under
@@ -446,6 +450,7 @@ impl ManagerApp {
             roms_dir: None,
             cartridges_dir: None,
             eou_dir: None,
+            eou_download: None,
             artifacts_root,
             entries,
             selection: Selection::default(),

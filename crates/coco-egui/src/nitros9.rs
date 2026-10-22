@@ -34,6 +34,9 @@ pub(crate) const EOU_DIR_NAME: &str = concat!("nitros9-eou-", eou_version!());
 pub(crate) const EOU_URL: &str =
     "https://www.lcurtisboyle.com/nitros9/EOU_Version1_0_1_(6809_ONLY)_04-07-2024.zip";
 
+/// Host of [`EOU_URL`], named wherever the app offers the download.
+pub(crate) const EOU_HOST: &str = "lcurtisboyle.com";
+
 /// Size of the archive at [`EOU_URL`], as its `Content-Length` reported on
 /// 2026-10-22; the asset dialog quotes it before the download starts.
 pub(crate) const EOU_ARCHIVE_BYTES: u64 = 58_226_559;

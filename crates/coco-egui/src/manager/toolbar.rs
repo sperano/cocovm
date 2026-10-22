@@ -33,10 +33,6 @@ const HELP_ICON: &str = "❓";
 /// menu. Deliberately without "New", which names the New tile alone.
 pub(crate) const TEMPLATES_LABEL: &str = "Templates";
 const TEMPLATES_HOVER: &str = "Create a machine from a template";
-/// Hover text of a template whose downloaded images are missing
-/// (`Preset::available`): the asset dialog fetches them on the next start.
-const EOU_UNAVAILABLE_HOVER: &str =
-    "The NitrOS-9 EOU images are not downloaded. Restart CoCoVM to download them.";
 
 /// Disabled-hover text shared by every transport tile when nothing at all
 /// is selected — distinct from the flags-driven reason below it, so the
@@ -91,6 +87,9 @@ impl ManagerApp {
                 toolbar_menu_tile(ui, TEMPLATES_LABEL, icons_only).on_hover_text(TEMPLATES_HOVER);
             egui::Popup::menu(&templates)
                 .id(ui.id().with("new_menu"))
+                // Stays open on the NitrOS-9 EOU download's click, so its
+                // progress bar shows; the template items close it themselves.
+                .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
                 .show(|ui| self.new_menu_ui(ui));
 
             if toolbar_button(ui, PLAY_GLYPH, START_LABEL, flags.any_startable, icons_only)
@@ -142,14 +141,18 @@ impl ManagerApp {
         });
     }
 
-    /// The New menu: one item per built-in template.
+    /// The New menu: one item per built-in template. A template whose
+    /// downloaded images are missing (only NitrOS-9 EOU's can be) offers to
+    /// download them instead.
     fn new_menu_ui(&mut self, ui: &mut egui::Ui) {
         for preset in Preset::ALL {
-            let available = preset.available(self.eou_dir.as_deref());
+            if !preset.available(self.eou_dir.as_deref()) {
+                self.eou_download_ui(ui);
+                continue;
+            }
             if ui
-                .add_enabled(available, egui::Button::new(preset.name()))
+                .button(preset.name())
                 .on_hover_text(preset.description())
-                .on_disabled_hover_text(EOU_UNAVAILABLE_HOVER)
                 .clicked()
             {
                 self.create_machine_from_preset(preset);

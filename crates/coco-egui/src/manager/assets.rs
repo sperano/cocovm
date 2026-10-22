@@ -1,33 +1,27 @@
 //! The first-run asset download dialog: when startup finds bundle assets
 //! missing (`startup::missing_assets`), the window opens dialog-sized and
 //! shows only this prompt — the manager UI appears (and the window grows to
-//! its real size) only after a successful download. Each missing file set
+//! its real size) only once the download has installed the bundle; a failed
+//! NitrOS-9 EOU download alone can be skipped. Each missing file set
 //! ([`Source`]) downloads on its own background thread, all at once, with a
 //! progress bar per set, so the window stays live; Cancel quits the app.
 
 use std::path::PathBuf;
-use std::time::Duration;
 
 use eframe::egui;
 
-use super::asset_downloads::{Download, Source, megabytes};
+use super::asset_downloads::{Download, PROGRESS_REPAINT_INTERVAL, Source, megabytes};
 use super::{ManagerApp, WINDOW_SIZE};
-use crate::nitros9::{EOU_ARCHIVE_BYTES, EOU_TITLE};
+use crate::nitros9::{EOU_ARCHIVE_BYTES, EOU_HOST, EOU_TITLE};
 
 /// What the dialog asks before fetching anything.
 const PROMPT_TEXT: &str =
     "Download the ROMs, cartridges, and images CoCoVM needs to start your machines.";
 
-/// Host of `nitros9::EOU_URL`, named under [`PROMPT_TEXT`]: the EOU images
-/// come from a third-party site and add most of the download.
-const EOU_HOST: &str = "lcurtisboyle.com";
-
 /// Window size while the dialog is the only content: room for a progress
 /// bar per [`Source`], with a failure message under them.
 pub(crate) const DIALOG_WINDOW_SIZE: [f32; 2] = [480.0, 376.0];
 
-/// How often the progress bars redraw while a download runs.
-const PROGRESS_REPAINT_INTERVAL: Duration = Duration::from_millis(100);
 const CONTENT_MARGIN: i8 = 24;
 const FOOTER_MARGIN: i8 = 16;
 const SECTION_GAP: f32 = 16.0;
@@ -59,7 +53,7 @@ pub(super) enum Verdict {
 /// State of the dialog phase, held in [`ManagerApp::asset_dialog`] until
 /// the download succeeds (Cancel never clears it — the app closes instead).
 pub(crate) struct AssetDialog {
-    /// Display paths of the absent files, from `startup::missing_assets`.
+    /// Display paths of the absent files of every [`Source`].
     missing: Vec<String>,
     /// Where the bundle is fetched from (`--assets-url`, `cli.rs`).
     assets_url: String,
@@ -80,7 +74,10 @@ pub(crate) struct AssetDialog {
 }
 
 impl AssetDialog {
-    pub(crate) fn new(missing: Vec<String>, assets_url: String, install_dir: PathBuf) -> Self {
+    /// The dialog for the bundle's `missing` files (`startup::missing_assets`),
+    /// which also fetches whichever NitrOS-9 EOU images are missing.
+    pub(crate) fn new(mut missing: Vec<String>, assets_url: String, install_dir: PathBuf) -> Self {
+        missing.extend(crate::startup::missing_eou_assets());
         Self {
             missing,
             assets_url,
@@ -114,12 +111,15 @@ impl AssetDialog {
         if self.downloading() {
             return false;
         }
-        let still_missing = crate::missing_assets();
-        if still_missing.is_empty() {
+        self.pending = pending_sources();
+        if self.pending.is_empty() {
             return true;
         }
-        self.missing = still_missing;
-        self.pending = pending_sources();
+        self.missing = self
+            .pending
+            .iter()
+            .flat_map(|source| source.missing())
+            .collect();
         self.skippable = self.pending.iter().all(|source| !source.required());
         self.error = Some(self.failure_details());
         false
@@ -152,12 +152,11 @@ impl AssetDialog {
             .pending
             .iter()
             .map(|&source| {
-                Download::start(
-                    source,
-                    self.assets_url.clone(),
-                    self.install_dir.clone(),
-                    ctx,
-                )
+                let url = self.assets_url.clone();
+                let install_dir = self.install_dir.clone();
+                Download::start(source, ctx, move |progress| {
+                    source.fetch(&url, &install_dir, progress)
+                })
             })
             .collect();
         self.error = None;
@@ -234,6 +233,8 @@ impl AssetDialog {
                 .color(ui.visuals().strong_text_color()),
         );
         if self.pending.contains(&Source::Eou) {
+            // The EOU images come from a third-party site and add most of
+            // the download.
             let note = format!(
                 "Includes {EOU_TITLE} ({}) from {EOU_HOST}.",
                 megabytes(EOU_ARCHIVE_BYTES)
