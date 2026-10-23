@@ -3,7 +3,7 @@
 use clap::ValueEnum;
 use eframe::egui;
 
-use super::{SettingsAction, SettingsDialog, SettingsTab, url_override};
+use super::{SettingsAction, SettingsDialog, SettingsTab};
 use crate::cli::LogLevel;
 use crate::config;
 use crate::manager::DETAIL_SECTION_GAP;
@@ -213,10 +213,9 @@ fn download_source(ui: &mut egui::Ui, title: &str, draft: &mut String, default: 
         let label = ui.horizontal(|ui| {
             let label = ui.label(title);
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let reset = ui.add_enabled(
-                    url_override(draft, default).is_some(),
-                    egui::Button::new("Use default"),
-                );
+                let trimmed = draft.trim();
+                let has_override = !trimmed.is_empty() && trimmed != default;
+                let reset = ui.add_enabled(has_override, egui::Button::new("Use default"));
                 reset.widget_info(|| {
                     egui::WidgetInfo::labeled(
                         egui::WidgetType::Button,
