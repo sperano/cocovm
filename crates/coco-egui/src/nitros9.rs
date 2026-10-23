@@ -1,6 +1,6 @@
 //! The NitrOS-9 Ease of Use (EOU) images the NitrOS-9 EOU machine template
 //! (`manager::presets`) copies into each new machine. They aren't part of
-//! the app's asset bundle: the first-run asset dialog (`manager::assets`)
+//! the app's asset bundle: the New Machine dialog (`manager::eou_menu`)
 //! fetches L. Curtis Boyle's EOU 1.0.1 release archive next to the bundle,
 //! keeps only the two emulator images, and caches them under
 //! `paths::eou_dir`.
@@ -23,7 +23,7 @@ macro_rules! eou_version {
 }
 pub(crate) use eou_version;
 
-/// The release's name, as the asset dialog shows it.
+/// The release's name, as the New Machine dialog shows it.
 pub(crate) const EOU_TITLE: &str = concat!("NitrOS-9 Ease of Use ", eou_version!());
 
 /// Name of `paths::eou_dir` under the assets directory. Versioned, so a
@@ -38,7 +38,7 @@ pub(crate) const EOU_URL: &str =
     "https://www.lcurtisboyle.com/nitros9/EOU_Version1_0_1_(6809_ONLY)_04-07-2024.zip";
 
 /// Size of the archive at [`EOU_URL`], as its `Content-Length` reported on
-/// 2026-10-22; the asset dialog quotes it before the download starts.
+/// 2026-10-22; the New Machine dialog quotes it before the download starts.
 pub(crate) const EOU_ARCHIVE_BYTES: u64 = 58_226_559;
 
 /// SHA-256 of the archive at [`EOU_URL`] ([`EOU_ARCHIVE_BYTES`], served with
