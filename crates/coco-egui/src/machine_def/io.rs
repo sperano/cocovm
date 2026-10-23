@@ -247,9 +247,29 @@ fn check_single_rs232_slot(slots: &[toml::Value], path: &Path) -> Result<(), Str
 /// Load and validate one definition file (parse + schema check + hardware
 /// validation), warning about unknown keys along the way.
 fn load_one(path: &Path) -> Result<MachineDef, String> {
+    load_with_extras(path, &[]).map(|(def, _)| def)
+}
+
+/// [`load_one`] for a file that may also carry the top-level `extra_keys`
+/// (a template's `description`): they are taken out of the table before
+/// it is checked, so they neither warn nor land in `MachineDef::unknown`,
+/// and come back as the second value. [`save_with_extras`] writes them back.
+pub fn load_with_extras(
+    path: &Path,
+    extra_keys: &[&str],
+) -> Result<(MachineDef, toml::Table), String> {
     let contents = fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
-    let table: toml::Table =
+    let mut table: toml::Table =
         toml::from_str(&contents).map_err(|e| format!("{}: {e}", path.display()))?;
+    let extras = extra_keys
+        .iter()
+        .filter_map(|key| table.remove_entry(*key))
+        .collect();
+    Ok((def_from_table(table, path)?, extras))
+}
+
+/// The checked definition in `table`, read from `path`.
+fn def_from_table(table: toml::Table, path: &Path) -> Result<MachineDef, String> {
     warn_unknown_keys(&table, path);
     check_mpi_slots(&table, path)?;
     let mut def: MachineDef = table
@@ -312,6 +332,17 @@ pub fn def_path(dir: &Path, slug: &str) -> PathBuf {
 /// to a `.tmp` sibling and renames over the final path so a crash never
 /// leaves a partial file.
 pub fn save(dir: &Path, slug: &str, def: &MachineDef) -> Result<(), String> {
+    save_with_extras(dir, slug, def, &toml::Table::new())
+}
+
+/// [`save`], adding the top-level `extras` (as [`load_with_extras`]
+/// returns them) to the file.
+pub fn save_with_extras(
+    dir: &Path,
+    slug: &str,
+    def: &MachineDef,
+    extras: &toml::Table,
+) -> Result<(), String> {
     fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     let toml::Value::Table(mut table) =
         toml::Value::try_from(def).map_err(|e| format!("serializing {slug}: {e}"))?
@@ -323,6 +354,7 @@ pub fn save(dir: &Path, slug: &str, def: &MachineDef) -> Result<(), String> {
         ));
     };
     merge_unknown(&mut table, &def.unknown);
+    merge_unknown(&mut table, extras);
     let text = toml::to_string_pretty(&table).map_err(|e| format!("serializing {slug}: {e}"))?;
     let tmp_path = dir.join(format!("{slug}.toml.tmp"));
     let final_path = def_path(dir, slug);

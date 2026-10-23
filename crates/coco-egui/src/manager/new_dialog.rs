@@ -1,18 +1,20 @@
 //! The New Machine dialog behind the toolbar's New tile and the New machine
-//! hotkey: a choice between an empty machine and one of the built-in
-//! templates (`manager/presets.rs`), created on Create. Follows the delete
-//! confirmation's `egui::Modal` pattern (`manager/delete.rs`).
+//! hotkey: a choice between an empty machine and one of the templates
+//! (`manager/templates.rs`) in name order, created on Create. Follows the
+//! delete confirmation's `egui::Modal` pattern (`manager/delete.rs`).
 //!
-//! The NitrOS-9 EOU template needs downloaded images: while they are
-//! missing, its choice is off and the dialog offers their download beneath
-//! it (`manager/eou_menu.rs`). Create closes the dialog at once; reopened
-//! while a machine made from that template is still being written, the
-//! dialog shows a spinner there instead (`manager/eou_install.rs`).
+//! A template whose media folder lacks a file it names is listed but off,
+//! with the missing files beneath it. When those are the NitrOS-9 EOU
+//! images, the dialog offers their download there instead
+//! (`manager/eou_menu.rs`). Create closes the dialog at once; reopened
+//! while a large copy from a template is still running, the dialog shows a
+//! spinner beneath that template instead (`manager/template_install.rs`).
 
 use eframe::egui;
 
-use super::presets::Preset;
+use super::templates::{Template, media};
 use super::{DETAIL_SECTION_GAP, ManagerApp};
+use crate::nitros9::EOU_IMAGES;
 
 /// The dialog's heading.
 pub(crate) const NEW_DIALOG_TITLE: &str = "New Machine";
@@ -29,6 +31,11 @@ pub(crate) const CREATE_LABEL: &str = "Create";
 pub(crate) const CANCEL_LABEL: &str = "Cancel";
 /// Disabled-hover text of Create when the chosen template can't be created.
 const UNAVAILABLE_HOVER: &str = "This template can't be created right now";
+/// Beneath a template missing files from its media folder, before their names.
+const MISSING_PREFIX: &str = "Missing from the template's folder:";
+/// In place of the templates when there are none.
+pub(crate) const NO_TEMPLATES_TEXT: &str =
+    "No templates. To make one, right-click a powered-off machine and choose Save as Template.";
 
 /// Fixed width of the dialog's contents, so the descriptions wrap and the
 /// NitrOS-9 EOU download's progress bar keeps one width.
@@ -37,15 +44,18 @@ const DIALOG_WIDTH: f32 = 440.0;
 const DIALOG_INNER_MARGIN: i8 = 16;
 /// Vertical gap between two choices.
 const CHOICE_GAP: f32 = 6.0;
+/// Height past which the template choices scroll, so a long list keeps
+/// the dialog on screen.
+const CHOICES_MAX_HEIGHT: f32 = 360.0;
 
 /// The kind of machine the dialog creates.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 enum Choice {
     /// The default machine (`ManagerApp::create_machine_now`).
     #[default]
     Empty,
-    /// A machine built from a built-in template.
-    Template(Preset),
+    /// A machine made from the template with this slug.
+    Template(String),
 }
 
 /// The open dialog and its current choice.
@@ -65,7 +75,10 @@ impl ManagerApp {
     /// "New…" (toolbar tile and hotkey): open the dialog with the empty
     /// machine chosen, or leave an open one as it is.
     pub(super) fn open_new_dialog(&mut self) {
-        self.new_dialog.get_or_insert_default();
+        if self.new_dialog.is_none() {
+            self.templates.reload();
+            self.new_dialog = Some(NewDialog::default());
+        }
     }
 
     /// The New Machine modal, drawn once per `update()` while
@@ -83,7 +96,7 @@ impl ManagerApp {
             });
         match action {
             NewAction::Create(Choice::Empty) => self.create_machine_now(),
-            NewAction::Create(Choice::Template(preset)) => self.create_machine_from_preset(preset),
+            NewAction::Create(Choice::Template(slug)) => self.create_machine_from_template(&slug),
             NewAction::Idle if !modal.should_close() => self.new_dialog = Some(dialog),
             NewAction::Idle | NewAction::Cancel => {}
         }
@@ -103,15 +116,29 @@ impl ManagerApp {
             EMPTY_DESCRIPTION,
             true,
         );
-        for preset in Preset::ALL {
+        // Taken for the frame, so each choice can borrow `self` mutably.
+        let templates = std::mem::take(&mut self.templates.list);
+        egui::ScrollArea::vertical()
+            .max_height(CHOICES_MAX_HEIGHT)
+            .show(ui, |ui| {
+                for template in &templates {
+                    ui.add_space(CHOICE_GAP);
+                    self.template_choice(ui, &mut dialog.choice, template);
+                }
+            });
+        if templates.is_empty() {
             ui.add_space(CHOICE_GAP);
-            self.template_choice(ui, &mut dialog.choice, preset);
+            ui.add(egui::Label::new(egui::RichText::new(NO_TEMPLATES_TEXT).weak()).wrap());
         }
         ui.add_space(DETAIL_SECTION_GAP);
-        let creatable = match dialog.choice {
+        let creatable = match &dialog.choice {
             Choice::Empty => true,
-            Choice::Template(preset) => self.template_creatable(preset),
+            Choice::Template(slug) => templates
+                .iter()
+                .find(|template| &template.slug == slug)
+                .is_some_and(|template| self.template_creatable(template)),
         };
+        self.templates.list = templates;
         let mut action = NewAction::Idle;
         ui.horizontal(|ui| {
             if ui
@@ -119,7 +146,7 @@ impl ManagerApp {
                 .on_disabled_hover_text(UNAVAILABLE_HOVER)
                 .clicked()
             {
-                action = NewAction::Create(dialog.choice);
+                action = NewAction::Create(dialog.choice.clone());
             }
             if ui.button(CANCEL_LABEL).clicked() {
                 action = NewAction::Cancel;
@@ -128,41 +155,55 @@ impl ManagerApp {
         action
     }
 
-    /// `preset`'s choice, off while it can't be created, with the NitrOS-9
-    /// EOU install's spinner or the download of its images beneath it.
-    fn template_choice(&mut self, ui: &mut egui::Ui, chosen: &mut Choice, preset: Preset) {
-        let creatable = self.template_creatable(preset);
+    /// `template`'s choice, off while it can't be created, with the
+    /// spinner of a copy from it, the download of its missing NitrOS-9 EOU
+    /// images, or the names of its other missing files beneath it.
+    fn template_choice(&mut self, ui: &mut egui::Ui, chosen: &mut Choice, template: &Template) {
+        let creatable = self.template_creatable(template);
         radio_choice(
             ui,
             chosen,
-            Choice::Template(preset),
-            preset.name(),
-            preset.description(),
+            Choice::Template(template.slug.clone()),
+            template.name(),
+            &template.summary(),
             creatable,
         );
         if creatable {
             return;
         }
-        ui.indent(preset.name(), |ui| {
-            if self.eou_installing(preset) {
-                super::eou_install::eou_install_ui(ui);
+        ui.indent(&template.slug, |ui| {
+            if self.template_installing(&template.slug) {
+                super::template_install::install_spinner(ui);
+                return;
+            }
+            let media_dir = self.templates.dirs.media_dir(&template.slug);
+            let missing = self.missing_media(template);
+            if !missing.is_empty()
+                && missing
+                    .iter()
+                    .all(|file| EOU_IMAGES.contains(&file.as_str()))
+            {
+                self.eou_download_ui(ui, media_dir.as_deref());
             } else {
-                self.eou_download_ui(ui);
+                let text = format!("{MISSING_PREFIX} {}", missing.join(", "));
+                ui.colored_label(ui.visuals().warn_fg_color, text);
             }
         });
     }
 
-    /// Whether `preset` can be created now: its images are in, and it isn't
-    /// the NitrOS-9 EOU template while a machine made from it is being
-    /// written.
-    fn template_creatable(&self, preset: Preset) -> bool {
-        preset.available(self.eou_dir.as_deref()) && !self.eou_installing(preset)
+    /// Whether `template` can be created now: no file it names is missing,
+    /// and no machine made from it is being written.
+    fn template_creatable(&self, template: &Template) -> bool {
+        self.missing_media(template).is_empty() && !self.template_installing(&template.slug)
     }
 
-    /// Whether `preset` is NitrOS-9 EOU and a machine made from it is being
-    /// written.
-    fn eou_installing(&self, preset: Preset) -> bool {
-        preset == Preset::NitrOS9Eou && self.eou_install.is_some()
+    /// The files `template` names that its media folder lacks; all of them
+    /// without a data directory.
+    fn missing_media(&self, template: &Template) -> Vec<String> {
+        match self.templates.dirs.media_dir(&template.slug) {
+            Some(dir) => media::missing_files(&template.def, &dir),
+            None => media::relative_media(&template.def).files,
+        }
     }
 }
 

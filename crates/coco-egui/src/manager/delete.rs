@@ -263,7 +263,7 @@ impl ManagerApp {
             .map(|e| format!("“{}”", e.def.name))
             .collect();
         if users.is_empty() {
-            return Ok(());
+            return self.check_no_template_uses(&deleted.def.name, artifact_dir);
         }
         let whom = if users.len() == 1 {
             "that machine"
@@ -275,6 +275,75 @@ impl ManagerApp {
              {whom} first, or delete {whom} too.",
             deleted.def.name,
             artifact_dir.display(),
+            users.join(", "),
+        ))
+    }
+
+    /// Refuse to delete machine `name` while a template names a file inside
+    /// its `artifact_dir` by absolute path: the template's machines would
+    /// lose it. A template's relative paths resolve in its own media folder.
+    fn check_no_template_uses(&self, name: &str, artifact_dir: &Path) -> Result<(), String> {
+        let dir = lexically_normalized(artifact_dir);
+        let users: Vec<String> = self
+            .templates
+            .list
+            .iter()
+            .filter(|template| {
+                template.def.host_paths().into_iter().any(|raw| {
+                    let path = Path::new(raw);
+                    path.is_absolute() && lexically_normalized(path).starts_with(&dir)
+                })
+            })
+            .map(|template| format!("“{}”", template.name()))
+            .collect();
+        if users.is_empty() {
+            return Ok(());
+        }
+        let whom = if users.len() == 1 {
+            "the template"
+        } else {
+            "the templates"
+        };
+        Err(format!(
+            "Can't delete “{name}”: its data folder ({}) holds files used by {whom} {}. Delete \
+             {whom} in Settings first.",
+            artifact_dir.display(),
+            users.join(", "),
+        ))
+    }
+
+    /// Refuse to delete or replace template `slug` while a machine names a
+    /// file or folder inside its media folder (a user can pick any file by
+    /// absolute path), the way a machine's data folder is guarded.
+    pub(super) fn check_template_unused(&self, slug: &str) -> Result<(), String> {
+        let Some(media_dir) = self.templates.dirs.media_dir(slug) else {
+            return Ok(());
+        };
+        let dir = lexically_normalized(&media_dir);
+        // Without an artifacts root, relative paths resolve nowhere near `dir`.
+        let root = self.artifacts_root.as_deref().unwrap_or(Path::new(""));
+        let users: Vec<String> = self
+            .entries
+            .iter()
+            .filter(|entry| uses_folder(entry, root, &dir))
+            .map(|entry| format!("“{}”", entry.def.name))
+            .collect();
+        if users.is_empty() {
+            return Ok(());
+        }
+        let name = self
+            .templates
+            .find(slug)
+            .map_or(slug, |template| template.name());
+        let whom = if users.len() == 1 {
+            "that machine"
+        } else {
+            "those machines"
+        };
+        Err(format!(
+            "Can't delete the template “{name}”: its folder ({}) holds files used by {}. Remove \
+             them from {whom} first.",
+            media_dir.display(),
             users.join(", "),
         ))
     }

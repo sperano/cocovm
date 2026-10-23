@@ -34,7 +34,6 @@ mod control;
 mod delete;
 mod detail;
 mod detail_map;
-pub(crate) mod eou_install;
 mod eou_menu;
 mod exit;
 mod gamepad_service;
@@ -49,9 +48,12 @@ mod rename;
 pub(crate) mod reveal;
 mod roms;
 mod run;
+pub(crate) mod save_template;
 mod selection;
-mod settings;
+pub(crate) mod settings;
 mod sort;
+pub(crate) mod template_install;
+pub(crate) mod templates;
 mod thumbnails;
 mod toolbar;
 mod vm_windows;
@@ -282,10 +284,10 @@ pub struct ManagerApp {
     /// Installed cartridge directory (`paths::cartridges_dir()`) the About
     /// window counts images in; `None` like [`Self::roms_dir`], and in tests.
     pub(crate) cartridges_dir: Option<PathBuf>,
-    /// Downloaded NitrOS-9 EOU images (`paths::eou_dir()`) the NitrOS-9 EOU
-    /// template copies; `None` like [`Self::roms_dir`], and in tests, which
-    /// point it at fixtures.
-    pub(crate) eou_dir: Option<PathBuf>,
+    /// The templates the New Machine dialog offers, and the work on them
+    /// in flight (`manager/templates.rs`). Empty in tests unless one points
+    /// its directories at fixtures.
+    pub(crate) templates: templates::TemplateState,
     /// The New Machine dialog's NitrOS-9 EOU download
     /// (`manager/eou_menu.rs`), once started.
     pub(crate) eou_download: Option<asset_downloads::Download>,
@@ -296,9 +298,6 @@ pub struct ManagerApp {
     /// True when a CLI flag or env var supplied [`Self::eou_url`]; the
     /// Settings dialog then leaves it alone on save.
     pub(crate) eou_url_overridden: bool,
-    /// The NitrOS-9 EOU machine being written off the UI thread
-    /// (`manager/eou_install.rs`), while it is.
-    pub(crate) eou_install: Option<eou_install::PendingInstall>,
     /// Root of the per-machine artifact directories
     /// (`machine_def::artifacts_root()`), where each entry's
     /// [`THUMBNAIL_FILE`] and [`SUSPEND_STATE_FILE`] live under
@@ -461,11 +460,10 @@ impl ManagerApp {
             machines_dir,
             roms_dir: None,
             cartridges_dir: None,
-            eou_dir: None,
+            templates: templates::TemplateState::default(),
             eou_download: None,
             eou_url: crate::nitros9::EOU_URL.to_string(),
             eou_url_overridden: false,
-            eou_install: None,
             artifacts_root,
             entries,
             selection: Selection::default(),
@@ -509,7 +507,8 @@ impl eframe::App for ManagerApp {
     /// live VM's runtime into its persisted total, same as Stop. A flush
     /// failure is only logged — there's no dialog left to show it in.
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
-        self.finish_eou_install();
+        self.finish_template_installs();
+        self.finish_template_save();
         self.apply_pending_rename();
         for index in 0..self.entries.len() {
             self.fold_runtime_into_def(index);
@@ -547,7 +546,7 @@ impl eframe::App for ManagerApp {
         }
 
         self.update_check.poll();
-        self.poll_eou_install(ctx);
+        self.poll_template_installs(ctx);
         self.poll_menu_requests(ctx);
         self.welcome_image.service(ctx, self.selection.is_empty());
         self.thumbnail_loads_remaining = thumbnails::THUMBNAIL_LOADS_PER_UPDATE;
@@ -555,6 +554,7 @@ impl eframe::App for ManagerApp {
         // Apply a committed rename before any panel draws — row indices must
         // stay stable for the frame.
         self.apply_pending_rename();
+        self.open_requested_save_template();
 
         // The New machine hotkey opens New…; only fires with the manager window focused.
         // Settings' hotkey capture needs the raw press, so nothing here takes keys meanwhile.
@@ -610,6 +610,7 @@ impl eframe::App for ManagerApp {
         if !self.exit.is_pending() {
             self.draw_delete_confirmation(ctx);
             self.draw_new_dialog(ctx);
+            self.draw_save_template_dialog(ctx);
             self.draw_settings_dialog(ctx);
             if self.show_about {
                 crate::about::window(

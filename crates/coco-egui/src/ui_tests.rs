@@ -36,6 +36,7 @@ mod manager_settings_advanced_test;
 mod manager_settings_layout_test;
 mod manager_settings_mcp_test;
 mod manager_sort;
+mod manager_templates_test;
 mod manager_update_test;
 mod manager_window;
 mod quick_states_test;

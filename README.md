@@ -61,19 +61,29 @@ CoCoVM lists any missing runtime assets and asks before downloading the separate
 asset bundle. The NitrOS-9 Ease of Use 1.0.1 disk images aren't part of this
 step: the **New Machine** dialog offers to download them from
 [lcurtisboyle.com](https://www.lcurtisboyle.com/nitros9/) when you first want
-the NitrOS-9 template. On Linux and macOS, CoCoVM installs
-these files under `~/.local/share/cocovm/assets/`. ROM images remain copyrighted
+the NitrOS-9 template, and keeps them in that template's folder. On Linux and
+macOS, CoCoVM installs the other files under `~/.local/share/cocovm/assets/`.
+ROM images remain copyrighted
 by their respective owners and aren't covered by the source-code licenses in
 this repository. See [NOTICE.md](NOTICE.md) for details.
 
 The first launch also adds two starter machines: a CoCo 3 and a CoCo 2, each
 with Disk BASIC and a blank disk in drive 0. To create another machine, click
 **New**, and then choose an empty machine or a template in the **New Machine**
-dialog. The templates are the two starter machines, a CoCo 3 that runs HDB-DOS
-over the built-in DriveWire server, and a CoCo 3 that runs NitrOS-9 Ease of Use
-from its own copy of the downloaded disk images. To boot NitrOS-9, type `DOS` at
-the BASIC prompt. Until the NitrOS-9 images are downloaded, the dialog offers to
-download them instead.
+dialog. The built-in templates are the two starter machines, a CoCo 3 that runs
+HDB-DOS over the built-in DriveWire server, and a CoCo 3 that runs NitrOS-9 Ease
+of Use from its own copy of the downloaded disk images. To boot NitrOS-9, type
+`DOS` at the BASIC prompt. Until the NitrOS-9 images are downloaded, the dialog
+offers to download them instead.
+
+To make your own template, right-click a powered-off machine and choose **Save
+as Template…**. The template keeps the machine's settings and a copy of the
+files in the machine's data folder, such as its disks. Files elsewhere on your
+computer stay shared. Each machine you create from a template gets its own copy
+of those files. To rename or delete templates, built-in ones included, open the
+**Templates** tab in the settings dialog. Deleting a template doesn't affect the
+machines made from it. Templates are stored in the configuration directory's
+`templates/` folder, next to `machines/`.
 
 ## Build from source
 

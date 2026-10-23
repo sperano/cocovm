@@ -11,7 +11,6 @@ use std::path::{Path, PathBuf};
 
 use crate::machine_def;
 
-use super::presets::{self, Preset};
 use super::{
     MachineEntry, ManagerApp, NO_CONFIG_DIR, NO_DATA_DIR, SUSPEND_STATE_FILE, THUMBNAIL_FILE,
     suspend_state_path,
@@ -35,51 +34,19 @@ impl ManagerApp {
     /// create a default machine right now — saved to disk, inserted in the
     /// list, and selected with the Name field focused. Does NOT boot anything.
     pub(super) fn create_machine_now(&mut self) {
-        self.create_machine(None);
-    }
-
-    /// The New Machine dialog's templates: [`Self::create_machine_now`], but the
-    /// new machine starts as `preset` instead of the default CoCo 3.
-    pub(super) fn create_machine_from_preset(&mut self, preset: Preset) {
-        self.create_machine(Some(preset));
-    }
-
-    /// Create, save, insert, and select a machine built from `preset`, or the
-    /// default machine for `None`. The NitrOS-9 EOU template copies its
-    /// 128 MB system disk, so it is written on a background thread and
-    /// inserted once that finishes (`manager/eou_install.rs`).
-    fn create_machine(&mut self, preset: Option<Preset>) {
         let Some(dir) = self.machines_dir.clone() else {
             self.save_error = Some(NO_CONFIG_DIR.to_string());
             return;
         };
-        let name = preset.map_or_else(default_new_name, |preset| preset.name().to_string());
+        let name = default_new_name();
         let base = machine_def::slugify(&name);
-        if preset == Some(Preset::NitrOS9Eou) {
-            self.start_eou_install(dir, &base);
-            return;
-        }
         let slug = machine_def::unique_slug(&base, &|candidate| self.slug_taken(&dir, candidate));
-        let saved = match preset {
-            Some(preset) => presets::install(
-                preset,
-                &presets::InstallDirs {
-                    machines_dir: &dir,
-                    artifacts_root: self.artifacts_root.as_deref(),
-                    eou_dir: self.eou_dir.as_deref(),
-                },
-                &slug,
-                Some(created_today()),
-            ),
-            None => {
-                let def = machine_def::MachineDef::from_config(
-                    name,
-                    Some(created_today()),
-                    &MachineConfig::default(),
-                );
-                machine_def::save(&dir, &slug, &def).map(|()| def)
-            }
-        };
+        let def = machine_def::MachineDef::from_config(
+            name,
+            Some(created_today()),
+            &MachineConfig::default(),
+        );
+        let saved = machine_def::save(&dir, &slug, &def).map(|()| def);
         self.insert_created(slug, saved);
     }
 
@@ -88,7 +55,7 @@ impl ManagerApp {
     /// `entries` alone misses a file written by another instance.
     pub(super) fn slug_taken(&self, machines_dir: &Path, candidate: &str) -> bool {
         self.entries.iter().any(|e| e.slug == candidate)
-            || self.installing_slug() == Some(candidate)
+            || self.installing_slug(candidate)
             || machine_def::slug_on_disk(
                 Some(machines_dir),
                 self.artifacts_root.as_deref(),

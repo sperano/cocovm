@@ -2,6 +2,7 @@
 
 use crate::machine_def;
 
+use super::templates::{self, TemplateDirs, TemplateState};
 use super::{MachineEntry, ManagerApp, WINDOW_SIZE, assets, control, lifecycle, presets, rename};
 
 /// Open the manager as the application's main window. `config_path` is the
@@ -78,6 +79,15 @@ pub fn run(
         // Not fatal: the list starts with whatever was written, and New still works.
         eprintln!("coco: cannot create the starter machines: {error}");
     }
+    let template_dirs = TemplateDirs::user();
+    if let Err(error) = templates::seed::seed_builtins(
+        &template_dirs,
+        crate::paths::eou_dir().as_deref(),
+        Some(lifecycle::created_today()),
+    ) {
+        // Not fatal: the New Machine dialog lists whatever was written.
+        eprintln!("coco: cannot create the built-in templates: {error}");
+    }
     let entries = load_entries(machines_dir.as_deref());
     let machine_count = entries.len();
     // Fail before any window opens when the requested slug has no definition,
@@ -134,7 +144,7 @@ pub fn run(
             }
             app.roms_dir = crate::paths::roms_dir();
             app.cartridges_dir = crate::paths::cartridges_dir();
-            app.eou_dir = crate::paths::eou_dir();
+            app.templates = TemplateState::new(template_dirs);
             app.eou_url = eou_url;
             app.eou_url_overridden = eou_url_overridden;
             app.log_reload = Some(log_reload);

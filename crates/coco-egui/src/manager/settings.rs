@@ -18,7 +18,9 @@ use super::{ManagerApp, NO_CONFIG_DIR};
 
 mod hotkeys;
 mod layout;
+pub(crate) mod templates;
 use hotkeys::HotkeyEditor;
+use templates::TemplatesDraft;
 
 const DISABLED_CONTROL_PORT: u16 = 0;
 
@@ -44,6 +46,8 @@ pub(crate) struct SettingsDialog {
     /// Saved only; the check reads it at the next launch.
     check_for_updates: bool,
     hotkey_editor: HotkeyEditor,
+    /// The Templates tab's renames and deletes, applied on Save.
+    templates: TemplatesDraft,
     tab: SettingsTab,
     /// Preserved unchanged because the machine-list control owns this key.
     manager_sort: Option<ManagerSort>,
@@ -56,6 +60,7 @@ enum SettingsTab {
     Hotkeys,
     McpServer,
     Advanced,
+    Templates,
 }
 
 /// What [`SettingsDialog::draw`]'s button row asked for this frame.
@@ -115,6 +120,7 @@ impl SettingsDialog {
                 .check_for_updates
                 .unwrap_or(config::DEFAULT_CHECK_FOR_UPDATES),
             hotkey_editor: HotkeyEditor::new(hotkeys),
+            templates: TemplatesDraft::default(),
             tab: SettingsTab::General,
             manager_sort: file.manager_sort,
             error,
@@ -179,7 +185,10 @@ impl ManagerApp {
     /// Opens the Settings dialog, seeded from [`ManagerApp::config_path`]'s
     /// current file (toolbar's ⚙ tile).
     pub(super) fn open_settings_dialog(&mut self) {
-        self.settings = Some(SettingsDialog::open(self.config_path.as_deref()));
+        self.templates.reload();
+        let mut dialog = SettingsDialog::open(self.config_path.as_deref());
+        dialog.templates = TemplatesDraft::new(&self.templates.list);
+        self.settings = Some(dialog);
     }
 
     /// The Settings modal, drawn once per `update()` while
@@ -197,6 +206,7 @@ impl ManagerApp {
                     action = dialog.draw(ui);
                 }
             });
+        self.reveal_requested_template();
         match action {
             SettingsAction::None => {}
             SettingsAction::Cancel => self.settings = None,
@@ -207,10 +217,28 @@ impl ManagerApp {
         }
     }
 
+    /// The Templates tab's Show in … click of this frame, if any; a failure
+    /// shows in the dialog.
+    fn reveal_requested_template(&mut self) {
+        let Some(slug) = self
+            .settings
+            .as_mut()
+            .and_then(|dialog| dialog.templates.reveal.take())
+        else {
+            return;
+        };
+        if let Err(e) = self.reveal_template(&slug)
+            && let Some(dialog) = &mut self.settings
+        {
+            dialog.error = Some(e);
+        }
+    }
+
     /// Saves the draft and closes the dialog; applies the icons-only toggles,
     /// the welcome-image cycle, the hotkeys, `eou_url`, `log_level` and
-    /// `control_port` live unless a CLI/env override wins. A failure shows in
-    /// the dialog, which stays open with the old listener.
+    /// `control_port` live unless a CLI/env override wins, then the
+    /// Templates tab's edits. A failure shows in the dialog, which stays
+    /// open with the old listener and the template edits that failed.
     fn commit_settings(&mut self, ctx: &egui::Context) {
         let Some(dialog) = &mut self.settings else {
             return;
@@ -220,6 +248,13 @@ impl ManagerApp {
             dialog.error = Some(e);
             return;
         }
+        let template_edits = match dialog.templates.edits() {
+            Ok(edits) => edits,
+            Err(e) => {
+                dialog.error = Some(e);
+                return;
+            }
+        };
         let file = dialog.to_file_config();
         let live = LiveSettings::from_dialog(dialog);
         let log_level = (!self.log_level_overridden).then_some(dialog.log_level);
@@ -240,11 +275,13 @@ impl ManagerApp {
                 Some(port) => self.rebind_control(port, ctx),
                 None => Ok(()),
             }
-        });
+        })
+        .and_then(|()| self.apply_template_edits(&template_edits));
         match result {
             Ok(()) => self.settings = None,
             Err(e) => {
                 if let Some(dialog) = &mut self.settings {
+                    dialog.templates.sync(&self.templates.list);
                     dialog.error = Some(e);
                 }
             }

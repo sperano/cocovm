@@ -85,6 +85,10 @@ impl SettingsDialog {
                 (SettingsTab::Hotkeys, "Hotkeys"),
                 (SettingsTab::McpServer, "MCP server"),
                 (SettingsTab::Advanced, "Advanced"),
+                (
+                    SettingsTab::Templates,
+                    super::templates::TEMPLATES_TAB_LABEL,
+                ),
             ] {
                 ui.selectable_value(&mut self.tab, tab, label);
             }
@@ -110,6 +114,7 @@ impl SettingsDialog {
             SettingsTab::Hotkeys => self.hotkey_editor.draw(ui),
             SettingsTab::McpServer => self.draw_mcp_server(ui),
             SettingsTab::Advanced => self.draw_advanced(ui),
+            SettingsTab::Templates => self.templates.draw(ui),
         }
     }
 

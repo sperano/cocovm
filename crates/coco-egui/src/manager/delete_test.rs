@@ -498,3 +498,24 @@ fn dependents_first_orders_a_cycle_before_what_it_uses() {
         slugs(&["a", "b", "c"])
     );
 }
+
+/// Deleting a machine whose data folder holds a file a template names by
+/// absolute path is refused: machines made from the template would lose it.
+#[test]
+fn deleting_machine_whose_files_a_template_uses_is_refused() {
+    let machines_dir = TempDir::new("delete-template-defs");
+    let artifacts_root = TempDir::new("delete-template-root");
+    let mut manager = manager_with_artifacts(machines_dir.path(), artifacts_root.path());
+    let shared_disk = artifacts_root.path().join(TEST_SLUG).join(DISK_FILE);
+    let mut template = crate::manager::templates::tests::sample_template("borrowing", "Borrowing");
+    template.def.media.disk1 = Some(shared_disk.display().to_string());
+    manager.templates.list.push(template);
+
+    let error = manager
+        .delete_machine(0)
+        .expect_err("the delete must be refused");
+
+    assert!(error.contains("template “Borrowing”"), "{error}");
+    assert_eq!(manager.entries.len(), 1);
+    assert_eq!(fs::read(&shared_disk).expect("disk survives"), DISK_BYTES);
+}

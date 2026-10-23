@@ -1,3 +1,4 @@
+use std::path::Path;
 use std::sync::{Arc, mpsc};
 use std::time::Duration;
 
@@ -20,33 +21,36 @@ fn download_label() -> String {
     format!("Download {EOU_TITLE} ({})", megabytes(EOU_ARCHIVE_BYTES))
 }
 
-/// `app`'s EOU entry drawn on its own.
-fn entry_harness(app: ManagerApp) -> Harness<'static, ManagerApp> {
-    let mut harness =
-        Harness::new_ui_state(|ui, app: &mut ManagerApp| app.eou_download_ui(ui), app);
+/// `app`'s EOU entry for a template whose media folder is `media_dir`,
+/// drawn on its own.
+fn entry_harness(app: ManagerApp, media_dir: Option<&Path>) -> Harness<'static, ManagerApp> {
+    let media_dir = media_dir.map(Path::to_path_buf);
+    let mut harness = Harness::new_ui_state(
+        move |ui, app: &mut ManagerApp| app.eou_download_ui(ui, media_dir.as_deref()),
+        app,
+    );
     harness.run_steps(2);
     harness
 }
 
-fn app_with_eou_dir(eou_dir: Option<&std::path::Path>) -> ManagerApp {
-    let mut app = ManagerApp::new(None, None, None, Vec::new(), None);
-    app.eou_dir = eou_dir.map(std::path::Path::to_path_buf);
-    app
+fn app() -> ManagerApp {
+    ManagerApp::new(None, None, None, Vec::new(), None)
 }
 
 /// Before any download, the entry offers one, with its size.
 #[test]
 fn offers_the_download() {
     let eou = TempDir::new("eou-menu-offer");
-    let harness = entry_harness(app_with_eou_dir(Some(eou.path())));
+    let harness = entry_harness(app(), Some(eou.path()));
 
     harness.get_by_label(&download_label());
 }
 
-/// Without a data directory there is nowhere to put the images.
+/// Without a media folder (no data directory) there is nowhere to put the
+/// images.
 #[test]
 fn download_needs_a_data_dir() {
-    let harness = entry_harness(app_with_eou_dir(None));
+    let harness = entry_harness(app(), None);
 
     assert!(
         harness
@@ -64,10 +68,10 @@ fn running_download_shows_its_progress() {
     progress.set_total(Some(EOU_ARCHIVE_BYTES));
     progress.add(29_100_000);
     let (_tx, rx) = mpsc::channel();
-    let mut app = app_with_eou_dir(Some(eou.path()));
+    let mut app = app();
     app.eou_download = Some(Download::running(Source::Eou, progress, rx));
 
-    let harness = entry_harness(app);
+    let harness = entry_harness(app, Some(eou.path()));
 
     harness.get_by_label(Source::Eou.label());
     harness.get_by_label("29.1 MB of 58.2 MB");
@@ -80,10 +84,10 @@ fn failed_download_offers_a_retry() {
     let eou = TempDir::new("eou-menu-failed");
     let (tx, rx) = mpsc::channel();
     tx.send(Err("404".to_string())).unwrap();
-    let mut app = app_with_eou_dir(Some(eou.path()));
+    let mut app = app();
     app.eou_download = Some(Download::running(Source::Eou, Arc::default(), rx));
 
-    let harness = entry_harness(app);
+    let harness = entry_harness(app, Some(eou.path()));
 
     harness.get_by_label(FAILED_TEXT);
     harness.get_by_label(&download_label());
@@ -95,10 +99,10 @@ fn retry_starts_a_new_download() {
     let eou = TempDir::new("eou-menu-retry");
     let (tx, rx) = mpsc::channel();
     tx.send(Err("404".to_string())).unwrap();
-    let mut app = app_with_eou_dir(Some(eou.path()));
+    let mut app = app();
     app.eou_url = REFUSED_URL.to_string();
     app.eou_download = Some(Download::running(Source::Eou, Arc::default(), rx));
-    let mut harness = entry_harness(app);
+    let mut harness = entry_harness(app, Some(eou.path()));
 
     harness.get_by_label(&download_label()).click();
     harness.step();
