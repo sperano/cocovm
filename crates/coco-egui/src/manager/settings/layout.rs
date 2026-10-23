@@ -6,6 +6,7 @@ use eframe::egui;
 use super::{SettingsAction, SettingsDialog, SettingsTab};
 use crate::cli::LogLevel;
 use crate::config;
+use crate::control::{DEFAULT_PORT, MCP_PATH};
 use crate::manager::DETAIL_SECTION_GAP;
 
 const DIALOG_WIDTH: f32 = 560.0;
@@ -16,6 +17,7 @@ const HEADING_GAP: f32 = 8.0;
 const FOOTER_SEPARATOR_SPACING: f32 = 6.0;
 const CONTENT_MAX_HEIGHT: f32 = 260.0;
 const FIELD_WIDTH: f32 = 160.0;
+const CONTROL_PORT_FIELD_WIDTH: f32 = 80.0;
 const BUTTON_WIDTH: f32 = 80.0;
 /// Disabling the server is handled by its checkbox.
 const CONTROL_PORT_RANGE: std::ops::RangeInclusive<u16> = 1..=u16::MAX;
@@ -112,12 +114,34 @@ impl SettingsDialog {
     }
 
     fn draw_mcp_server(&mut self, ui: &mut egui::Ui) {
-        ui.checkbox(&mut self.mcp_enabled, "Enable MCP server");
-        ui.add_enabled_ui(self.mcp_enabled, |ui| {
-            ui.horizontal(|ui| {
-                let label = ui.label("Port");
-                ui.add(egui::DragValue::new(&mut self.control_port).range(CONTROL_PORT_RANGE))
-                    .labelled_by(label.id);
+        section(ui, "Local connection", |ui| {
+            ui.checkbox(&mut self.mcp_enabled, "Enable MCP server");
+            let explanation = if self.mcp_enabled {
+                "Allow MCP clients on this computer to control CoCoVM."
+            } else {
+                "Enable the server to let MCP clients on this computer control CoCoVM."
+            };
+            ui.add(egui::Label::new(egui::RichText::new(explanation).weak()).wrap());
+            ui.add_space(HEADING_GAP);
+            ui.add_enabled_ui(self.mcp_enabled, |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    let label = ui.label("Port");
+                    let size = egui::vec2(CONTROL_PORT_FIELD_WIDTH, ui.spacing().interact_size.y);
+                    let port = ui
+                        .add_sized(
+                            size,
+                            egui::DragValue::new(&mut self.control_port).range(CONTROL_PORT_RANGE),
+                        )
+                        .labelled_by(label.id);
+                    let tooltip = format!(
+                        "MCP client URL: http://{}:{}{MCP_PATH}",
+                        std::net::Ipv4Addr::LOCALHOST,
+                        self.control_port,
+                    );
+                    port.on_hover_text(&tooltip)
+                        .on_disabled_hover_text(&tooltip);
+                    ui.weak(format!("Default: {DEFAULT_PORT}"));
+                });
             });
         });
     }
