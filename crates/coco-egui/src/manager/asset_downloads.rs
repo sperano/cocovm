@@ -29,7 +29,8 @@ pub(crate) enum Source {
 }
 
 impl Source {
-    /// The progress bar's label.
+    /// What the files are called: the label [`Download::draw`] puts above
+    /// the bar, and the prefix of the asset dialog's failure details.
     pub(crate) const fn label(self) -> &'static str {
         match self {
             Self::Bundle => "ROMs, cartridges, and images",
