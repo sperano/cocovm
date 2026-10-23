@@ -1,8 +1,8 @@
-//! The downloads behind the first-run asset dialog (`manager::assets`):
-//! one background thread per file set ([`Source`]), all running at once,
-//! each drawn as a labelled progress bar.
+//! The downloads behind the first-run asset dialog (`manager::assets`) and
+//! the New Machine dialog's NitrOS-9 EOU entry (`manager::eou_menu`): one
+//! background thread per file set ([`Source`]), drawn as a labelled progress
+//! bar.
 
-use std::path::Path;
 use std::sync::{Arc, mpsc};
 use std::time::Duration;
 
@@ -17,83 +17,23 @@ const BYTES_PER_MB: f64 = 1_000_000.0;
 /// How often a progress bar redraws while its download runs.
 pub(crate) const PROGRESS_REPAINT_INTERVAL: Duration = Duration::from_millis(100);
 
-/// One set of files the asset dialog downloads.
+/// One set of files the manager downloads.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Source {
-    /// The app's asset bundle (`--assets-url`): ROMs, cartridges, and the
-    /// welcome images.
+    /// The app's asset bundle (`--assets-url`), from the asset dialog: ROMs,
+    /// cartridges, and the welcome images.
     Bundle,
     /// The NitrOS-9 EOU images the NitrOS-9 EOU template copies
-    /// (`nitros9.rs`).
+    /// (`nitros9.rs`), from the New Machine dialog.
     Eou,
 }
 
 impl Source {
-    /// Every source, in the order the dialog lists them.
-    pub(crate) const ALL: [Self; 2] = [Self::Bundle, Self::Eou];
-
     /// The progress bar's label.
     pub(crate) const fn label(self) -> &'static str {
         match self {
             Self::Bundle => "ROMs, cartridges, and images",
             Self::Eou => crate::nitros9::EOU_TITLE,
-        }
-    }
-
-    /// Whether the manager needs this source's files to open. The EOU
-    /// images only back one template, and they come from a third-party
-    /// site, so the dialog never waits for them: a failed download is
-    /// retried from the New Machine dialog.
-    pub(crate) const fn required(self) -> bool {
-        match self {
-            Self::Bundle => true,
-            Self::Eou => false,
-        }
-    }
-
-    /// Display paths of this source's files absent on disk.
-    pub(crate) fn missing(self) -> Vec<String> {
-        match self {
-            Self::Bundle => crate::startup::missing_assets(),
-            Self::Eou => crate::startup::missing_eou_assets(),
-        }
-    }
-
-    /// Download this source's files from `url` and install them under the
-    /// assets directory `install_dir`.
-    pub(crate) fn fetch(
-        self,
-        url: &str,
-        install_dir: &Path,
-        progress: Arc<Progress>,
-    ) -> Result<(), String> {
-        match self {
-            Self::Bundle => crate::startup::download_and_unpack_assets(url, install_dir, progress),
-            Self::Eou => crate::nitros9::download_eou(
-                url,
-                &install_dir.join(crate::nitros9::EOU_DIR_NAME),
-                progress,
-            ),
-        }
-        .map_err(|e| e.to_string())
-    }
-}
-
-/// Where each [`Source`] downloads from.
-#[derive(Debug, Clone)]
-pub(crate) struct SourceUrls {
-    /// `--assets-url` (`cli.rs`).
-    pub(crate) bundle: String,
-    /// `--eou-url` (`cli.rs`).
-    pub(crate) eou: String,
-}
-
-impl SourceUrls {
-    /// `source`'s URL.
-    pub(crate) fn get(&self, source: Source) -> &str {
-        match source {
-            Source::Bundle => &self.bundle,
-            Source::Eou => &self.eou,
         }
     }
 }
@@ -144,10 +84,6 @@ impl Download {
             progress,
             state: State::Running(rx),
         }
-    }
-
-    pub(crate) fn source(&self) -> Source {
-        self.source
     }
 
     pub(crate) fn is_running(&self) -> bool {

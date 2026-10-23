@@ -14,7 +14,6 @@ use unicode_width::{UnicodeWidthChar as _, UnicodeWidthStr as _};
 use coco_core::rom_db::KNOWN_CARTRIDGE_ROMS;
 
 use crate::download::{self, Progress};
-use crate::nitros9::missing_eou_images;
 use crate::paths;
 
 /// Seed the environment from a `.env` file, before anything reads it. Two
@@ -381,9 +380,8 @@ pub(crate) fn require_data_dir() -> std::path::PathBuf {
 /// [`bundled_cartridges`] image. Empty means no download is needed. The
 /// integration tests' disk images are not the app's business:
 /// `crates/test-assets` fetches its own bundle. The NitrOS-9 EOU images
-/// ([`missing_eou_assets`]) don't count either: they back one template and
-/// come from a third-party site, so they never hold the manager back. The
-/// asset dialog fetches them alongside the bundle when it opens anyway.
+/// (`nitros9::EOU_IMAGES`) don't count either: they back one template and
+/// come from a third-party site, so the New Machine dialog offers them.
 pub(crate) fn missing_assets() -> Vec<String> {
     let mut missing: Vec<String> = paths::images_dir()
         .filter(|dir| !dir_has_files(dir))
@@ -400,13 +398,6 @@ pub(crate) fn missing_assets() -> Vec<String> {
         ));
     }
     missing
-}
-
-/// The NitrOS-9 EOU images absent from [`paths::eou_dir`], as display paths.
-pub(crate) fn missing_eou_assets() -> Vec<String> {
-    paths::eou_dir()
-        .map(|dir| display_paths(&dir, missing_eou_images(&dir)))
-        .unwrap_or_default()
 }
 
 /// Each of `names` joined under `dir`, as a display path.

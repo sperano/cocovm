@@ -1,26 +1,24 @@
 //! The first-run asset download dialog: when startup finds bundle assets
 //! missing (`startup::missing_assets`), the window opens dialog-sized and
 //! shows only this prompt — the manager UI appears (and the window grows to
-//! its real size) only once the download has installed the bundle. Each
-//! missing file set ([`Source`]) downloads on its own background thread, all
-//! at once, with a progress bar per set, so the window stays live; Cancel
-//! quits the app. The dialog never waits for the NitrOS-9 EOU download: the
-//! New Machine dialog carries it on (`manager/eou_menu.rs`).
+//! its real size) only once the download has installed the bundle. The
+//! bundle downloads on a background thread with a progress bar, so the window
+//! stays live; Cancel quits the app. The NitrOS-9 EOU images are not part of
+//! it: the New Machine dialog offers them (`manager/eou_menu.rs`).
 
 use std::path::PathBuf;
 
 use eframe::egui;
 
-use super::asset_downloads::{Download, PROGRESS_REPAINT_INTERVAL, Source, SourceUrls, megabytes};
+use super::asset_downloads::{Download, PROGRESS_REPAINT_INTERVAL, Source};
 use super::{ManagerApp, WINDOW_SIZE};
-use crate::nitros9::{EOU_ARCHIVE_BYTES, EOU_TITLE};
 
 /// What the dialog asks before fetching anything.
 const PROMPT_TEXT: &str =
     "Download the ROMs, cartridges, and images CoCoVM needs to start your machines.";
 
-/// Window size while the dialog is the only content: room for a progress
-/// bar per [`Source`], with a failure message under them.
+/// Window size while the dialog is the only content: room for the progress
+/// bar, with a failure message under it.
 pub(crate) const DIALOG_WINDOW_SIZE: [f32; 2] = [480.0, 376.0];
 
 const CONTENT_MARGIN: i8 = 24;
@@ -42,8 +40,7 @@ const ICON_BYTES: &[u8] = include_bytes!("../../assets/cocovm-icon.png");
 /// What one dialog frame resolved to.
 pub(super) enum Verdict {
     Pending,
-    /// The required downloads finished and their files are all present.
-    /// Optional ones may still be running, or may have failed.
+    /// The download finished and the bundle's files are all present.
     Installed,
     /// The user declined — the app quits.
     Cancelled,
@@ -52,131 +49,84 @@ pub(super) enum Verdict {
 /// State of the dialog phase, held in [`ManagerApp::asset_dialog`] until
 /// the download succeeds (Cancel never clears it — the app closes instead).
 pub(crate) struct AssetDialog {
-    /// Display paths of the absent files of every [`Source`].
+    /// Display paths of the bundle's absent files.
     missing: Vec<String>,
-    /// Where each source is fetched from (`--assets-url` and `--eou-url`,
-    /// `cli.rs`).
-    urls: SourceUrls,
+    /// Where the bundle is fetched from (`--assets-url`, `cli.rs`).
+    url: String,
     /// Where the bundle unpacks (`paths::assets_dir`).
     install_dir: PathBuf,
-    /// The sources [`Self::start_download`] would fetch: those with missing
-    /// files.
-    pending: Vec<Source>,
-    /// The latest attempt's downloads, one per source it fetched; empty
-    /// before the first.
-    downloads: Vec<Download>,
+    /// The latest attempt's download; `None` before the first.
+    download: Option<Download>,
     /// Failure from the last attempt, shown above the buttons for a retry.
     error: Option<String>,
     icon: Option<egui::TextureHandle>,
 }
 
 impl AssetDialog {
-    /// The dialog for the bundle's `missing` files (`startup::missing_assets`),
-    /// which also fetches whichever NitrOS-9 EOU images are missing.
-    pub(crate) fn new(mut missing: Vec<String>, urls: SourceUrls, install_dir: PathBuf) -> Self {
-        missing.extend(crate::startup::missing_eou_assets());
+    /// The dialog for the bundle's `missing` files (`startup::missing_assets`).
+    pub(crate) fn new(missing: Vec<String>, url: String, install_dir: PathBuf) -> Self {
         Self {
             missing,
-            urls,
+            url,
             install_dir,
-            pending: pending_sources(),
-            downloads: Vec::new(),
+            download: None,
             error: None,
             icon: None,
         }
     }
 
-    /// Whether any download is still running.
+    /// Whether the download is still running.
     fn downloading(&self) -> bool {
-        self.downloads.iter().any(Download::is_running)
+        self.download.as_ref().is_some_and(Download::is_running)
     }
 
-    /// Whether a required source's download is still running: what the
-    /// dialog waits for. An optional one (the NitrOS-9 EOU images, from a
-    /// third-party site) never holds the manager back.
-    fn installing(&self) -> bool {
-        self.downloads
-            .iter()
-            .any(|download| download.is_running() && download.source().required())
-    }
-
-    /// Fold finished download threads' results back in. Returns whether
-    /// the required downloads completed successfully (the dialog's work is
-    /// done). One that still leaves files missing — a stale bundle behind a
-    /// new [`crate::startup::BUNDLED_ROMS`] or cartridge-manifest entry —
-    /// reads as a failure, not a silent close followed by a re-prompt on
-    /// every start.
+    /// Fold a finished download thread's result back in. Returns whether
+    /// the download completed successfully (the dialog's work is done). One
+    /// that still leaves files missing — a stale bundle behind a new
+    /// [`crate::startup::BUNDLED_ROMS`] or cartridge-manifest entry — reads
+    /// as a failure, not a silent close followed by a re-prompt on every
+    /// start.
     fn poll(&mut self) -> bool {
-        let was_installing = self.installing();
-        for download in &mut self.downloads {
-            download.poll();
-        }
-        if !was_installing || self.installing() {
+        let Some(download) = self.download.as_mut().filter(|d| d.is_running()) else {
+            return false;
+        };
+        download.poll();
+        if download.is_running() {
             return false;
         }
-        self.pending = pending_sources();
-        if !self.pending.iter().any(|source| source.required()) {
+        self.missing = crate::startup::missing_assets();
+        if self.missing.is_empty() {
             return true;
         }
-        self.missing = self
-            .pending
-            .iter()
-            .flat_map(|source| source.missing())
-            .collect();
         self.error = Some(self.failure_details());
         false
     }
 
-    /// The NitrOS-9 EOU download, running or finished, for the New Machine
-    /// dialog to carry on showing once this dialog closes (`manager/eou_menu.rs`).
-    fn into_eou_download(self) -> Option<Download> {
-        self.downloads
-            .into_iter()
-            .find(|download| download.source() == Source::Eou)
-    }
-
-    /// What went wrong in the finished attempt: each failed download's
-    /// error, or, when none failed, that the files are still not all there.
+    /// What went wrong in the finished attempt: the download's error, or,
+    /// when it succeeded, that the files are still not all there.
     fn failure_details(&self) -> String {
-        let errors: Vec<String> = self
-            .downloads
-            .iter()
-            .filter_map(|download| {
-                let error = download.error()?;
-                Some(format!("{}: {error}", download.source().label()))
-            })
-            .collect();
-        if errors.is_empty() {
-            "the downloaded files did not provide every missing file".to_string()
-        } else {
-            errors.join("\n")
+        match self.download.as_ref().and_then(Download::error) {
+            Some(error) => format!("{}: {error}", Source::Bundle.label()),
+            None => "the downloaded files did not provide every missing file".to_string(),
         }
     }
 
-    /// Start a download thread for every [`Self::pending`] source not
-    /// already downloading (a retry leaves a running EOU download alone).
-    /// Each thread's result comes back through its [`Download`]; its repaint
-    /// wakes the UI so [`Self::poll`] sees it promptly. Returns `false` when
-    /// no required file is missing any more, so there is nothing to wait for.
+    /// Start the download thread. Its result comes back through its
+    /// [`Download`]; its repaint wakes the UI so [`Self::poll`] sees it
+    /// promptly. Returns `false` when no file is missing any more, so there
+    /// is nothing to wait for.
     fn start_download(&mut self, ctx: &egui::Context) -> bool {
-        // An optional download may have finished since the last attempt.
-        self.pending = pending_sources();
-        self.downloads.retain(Download::is_running);
-        let running: Vec<Source> = self.downloads.iter().map(Download::source).collect();
-        let idle = self
-            .pending
-            .iter()
-            .filter(|source| !running.contains(source));
-        for &source in idle {
-            let url = self.urls.get(source).to_string();
-            let install_dir = self.install_dir.clone();
-            let download = Download::start(source, ctx, move |progress| {
-                source.fetch(&url, &install_dir, progress)
-            });
-            self.downloads.push(download);
+        if crate::startup::missing_assets().is_empty() {
+            return false;
         }
+        let url = self.url.clone();
+        let install_dir = self.install_dir.clone();
+        self.download = Some(Download::start(Source::Bundle, ctx, move |progress| {
+            crate::startup::download_and_unpack_assets(&url, &install_dir, progress)
+                .map_err(|e| e.to_string())
+        }));
         self.error = None;
-        self.installing()
+        true
     }
 
     /// Draw the dialog as the window's only content for one frame.
@@ -247,22 +197,9 @@ impl AssetDialog {
                 .size(BODY_SIZE)
                 .color(ui.visuals().strong_text_color()),
         );
-        if self.pending.contains(&Source::Eou) {
-            // The EOU images come from a third-party site and add most of
-            // the download.
-            let note = format!(
-                "Includes {EOU_TITLE} ({}) from {}. CoCoVM opens without \
-                waiting for it.",
-                megabytes(EOU_ARCHIVE_BYTES),
-                crate::download::host(&self.urls.eou)
-            );
-            ui.label(egui::RichText::new(note).color(secondary_color(ui)));
-        }
-        if !self.downloads.is_empty() {
+        if let Some(download) = &self.download {
             ui.add_space(TEXT_GAP);
-            for download in &self.downloads {
-                download.draw(ui);
-            }
+            download.draw(ui);
         }
         if let Some(err) = &self.error {
             ui.add_space(TEXT_GAP);
@@ -293,7 +230,7 @@ impl AssetDialog {
 
     /// Keep the actions visible even when a long error needs to scroll.
     fn draw_actions(&mut self, ui: &mut egui::Ui) -> Verdict {
-        if self.installing() {
+        if self.downloading() {
             ui.allocate_ui_with_layout(
                 egui::vec2(ui.available_width(), BUTTON_SIZE[1]),
                 egui::Layout::left_to_right(egui::Align::Center),
@@ -352,14 +289,6 @@ fn grow_to_manager_commands() -> [egui::ViewportCommand; 4] {
     ]
 }
 
-/// The sources with files missing on disk, in [`Source::ALL`] order.
-fn pending_sources() -> Vec<Source> {
-    Source::ALL
-        .into_iter()
-        .filter(|source| !source.missing().is_empty())
-        .collect()
-}
-
 fn secondary_color(ui: &egui::Ui) -> egui::Color32 {
     if ui.visuals().dark_mode {
         SECONDARY_DARK
@@ -380,10 +309,7 @@ impl ManagerApp {
         match dialog.draw(ctx) {
             Verdict::Pending => {}
             Verdict::Installed => {
-                self.eou_download = self
-                    .asset_dialog
-                    .take()
-                    .and_then(AssetDialog::into_eou_download);
+                self.asset_dialog = None;
                 for command in grow_to_manager_commands() {
                     ctx.send_viewport_cmd(command);
                 }
