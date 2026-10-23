@@ -32,6 +32,7 @@ mod manager_presets_test;
 mod manager_roms;
 mod manager_selection;
 mod manager_settings;
+mod manager_settings_advanced_test;
 mod manager_settings_layout_test;
 mod manager_settings_mcp_test;
 mod manager_sort;

@@ -58,9 +58,10 @@ fn small_window_keeps_actions_visible_while_scrolling_and_saves_edits() {
 
     scroll_to_end(&mut harness);
     click(&mut harness, "Advanced");
+    scroll_over(&mut harness, "Logging");
 
     let url = harness
-        .get_by_role_and_label(egui::accesskit::Role::TextInput, "Assets URL")
+        .get_by_role_and_label(egui::accesskit::Role::TextInput, "NitrOS-9 EOU URL")
         .rect();
     let save_after = harness.get_by_label("Save").rect();
     assert_eq!(
@@ -148,7 +149,11 @@ fn assert_actions_visible(harness: &ManagerHarness) {
 }
 
 fn scroll_to_end(harness: &mut ManagerHarness) {
-    harness.get_by_label("Toolbar icons only").hover();
+    scroll_over(harness, "Toolbar icons only");
+}
+
+fn scroll_over(harness: &mut ManagerHarness, label: &str) {
+    harness.get_by_label(label).hover();
     harness.step();
     harness.input_mut().events.push(egui::Event::MouseWheel {
         unit: egui::MouseWheelUnit::Point,
