@@ -25,6 +25,10 @@ const CHECK_FOR_UPDATES_LABEL: &str = "Check for updates at startup";
 const CHECK_FOR_UPDATES_HOVER: &str =
     "Ask GitHub for the latest release when CoCoVM starts. Takes effect at the next launch.";
 
+const ASSETS_URL_HOVER: &str =
+    "Download source for emulator assets. Leave empty to use the default.";
+const DOWNLOAD_SOURCES_HELP: &str = "Use the default download sources, or enter a mirror URL.";
+
 const EOU_URL_HOVER: &str = "Download source for the NitrOS-9 Ease of Use disk images. A \
     mirror must serve the same archive. Leave empty to use the default.";
 
@@ -135,36 +139,46 @@ impl SettingsDialog {
     }
 
     fn draw_advanced(&mut self, ui: &mut egui::Ui) {
-        egui::Grid::new("settings_fields")
-            .num_columns(2)
-            .show(ui, |ui| {
-                let label = ui.label("Log level");
-                egui::ComboBox::from_id_salt("settings_log_level")
-                    .width(FIELD_WIDTH)
-                    .selected_text(config::log_level_name(self.log_level))
-                    .show_ui(ui, |ui| {
-                        for level in LogLevel::value_variants() {
-                            ui.selectable_value(
-                                &mut self.log_level,
-                                *level,
-                                config::log_level_name(*level),
-                            );
-                        }
-                    })
-                    .response
-                    .labelled_by(label.id);
-                ui.end_row();
-            });
-        ui.add_space(ui.spacing().item_spacing.y);
-        let label = ui.label("Assets URL");
-        ui.add(egui::TextEdit::singleline(&mut self.assets_url).desired_width(f32::INFINITY))
-            .labelled_by(label.id)
-            .on_hover_text("Download source for emulator assets. Leave empty to use the default.");
-        ui.add_space(ui.spacing().item_spacing.y);
-        let label = ui.label("NitrOS-9 EOU URL");
-        ui.add(egui::TextEdit::singleline(&mut self.eou_url).desired_width(f32::INFINITY))
-            .labelled_by(label.id)
-            .on_hover_text(EOU_URL_HOVER);
+        section(ui, "Logging", |ui| self.draw_log_level(ui));
+        section(ui, "Download sources", |ui| {
+            ui.label(egui::RichText::new(DOWNLOAD_SOURCES_HELP).weak());
+            ui.add_space(ui.spacing().item_spacing.y);
+            download_source(
+                ui,
+                "Assets URL",
+                &mut self.assets_url,
+                crate::startup::DEFAULT_ASSETS_URL,
+                ASSETS_URL_HOVER,
+            );
+            ui.add_space(DETAIL_SECTION_GAP);
+            download_source(
+                ui,
+                "NitrOS-9 EOU URL",
+                &mut self.eou_url,
+                crate::nitros9::EOU_URL,
+                EOU_URL_HOVER,
+            );
+        });
+    }
+
+    fn draw_log_level(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            let label = ui.label("Log level");
+            egui::ComboBox::from_id_salt("settings_log_level")
+                .width(FIELD_WIDTH)
+                .selected_text(config::log_level_name(self.log_level))
+                .show_ui(ui, |ui| {
+                    for level in LogLevel::value_variants() {
+                        ui.selectable_value(
+                            &mut self.log_level,
+                            *level,
+                            config::log_level_name(*level),
+                        );
+                    }
+                })
+                .response
+                .labelled_by(label.id);
+        });
     }
 
     fn draw_actions(&self, ui: &mut egui::Ui) -> SettingsAction {
@@ -192,4 +206,43 @@ fn section(ui: &mut egui::Ui, title: &str, contents: impl FnOnce(&mut egui::Ui))
             contents(ui);
         });
     ui.add_space(DETAIL_SECTION_GAP);
+}
+
+fn download_source(ui: &mut egui::Ui, title: &str, draft: &mut String, default: &str, help: &str) {
+    ui.push_id(title, |ui| {
+        let label = ui.horizontal(|ui| {
+            let label = ui.label(title);
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let trimmed = draft.trim();
+                let has_override = !trimmed.is_empty() && trimmed != default;
+                let reset = ui.add_enabled(has_override, egui::Button::new("Use default"));
+                reset.widget_info(|| {
+                    egui::WidgetInfo::labeled(
+                        egui::WidgetType::Button,
+                        reset.enabled(),
+                        format!("Use default {title}"),
+                    )
+                });
+                if reset.clicked() {
+                    *draft = default.to_string();
+                }
+                help_on_hover_or_focus(reset, &format!("Restore the default {title}: {default}"));
+            });
+            label
+        });
+        let field = ui
+            .add(egui::TextEdit::singleline(draft).desired_width(f32::INFINITY))
+            .labelled_by(label.inner.id);
+        help_on_hover_or_focus(field, help);
+    });
+}
+
+fn help_on_hover_or_focus(response: egui::Response, help: &str) {
+    if response.has_focus() {
+        egui::Tooltip::for_widget(&response).show(|ui| {
+            ui.label(help);
+        });
+    } else {
+        response.on_hover_text(help);
+    }
 }
