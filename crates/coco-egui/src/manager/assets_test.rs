@@ -53,10 +53,11 @@ fn growing_from_dialog_resizes_after_unpinning_the_window() {
     }
 }
 
-/// The running download shows under its label with its own bar, and the
-/// footer says the work is under way instead of offering buttons.
+/// The running download's bar sits under the prompt, which already names
+/// the files, so the bar carries no label of its own; the footer says the
+/// work is under way instead of offering buttons.
 #[test]
-fn running_download_shows_a_progress_bar() {
+fn running_download_shows_an_unlabelled_progress_bar() {
     let bundle = Arc::new(Progress::default());
     bundle.set_total(Some(4_000_000));
     bundle.add(1_000_000);
@@ -66,7 +67,8 @@ fn running_download_shows_a_progress_bar() {
 
     let harness = dialog_harness(dialog);
 
-    harness.get_by_label(Source::Bundle.label());
+    harness.get_by_label(PROMPT_TEXT);
+    assert!(harness.query_by_label(Source::Bundle.label()).is_none());
     harness.get_by_label("1.0 MB of 4.0 MB");
     harness.get_by_label("Downloading and installing…");
     assert!(harness.query_by_label("Cancel").is_none());

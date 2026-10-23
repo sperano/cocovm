@@ -1,7 +1,7 @@
 //! The downloads behind the first-run asset dialog (`manager::assets`) and
 //! the New Machine dialog's NitrOS-9 EOU entry (`manager::eou_menu`): one
-//! background thread per file set ([`Source`]), drawn as a labelled progress
-//! bar.
+//! background thread per file set ([`Source`]), drawn as a progress bar,
+//! labelled where the surrounding text does not already name the files.
 
 use std::sync::{Arc, mpsc};
 use std::time::Duration;
@@ -116,6 +116,12 @@ impl Download {
     /// The source's label above a full-width progress bar.
     pub(crate) fn draw(&self, ui: &mut egui::Ui) {
         ui.label(self.source.label());
+        self.draw_bar(ui);
+    }
+
+    /// The full-width progress bar alone, for a dialog whose own text
+    /// already names what is downloading.
+    pub(crate) fn draw_bar(&self, ui: &mut egui::Ui) {
         let fraction = self.progress.fraction();
         let bar = match &self.state {
             State::Running(_) => match fraction {

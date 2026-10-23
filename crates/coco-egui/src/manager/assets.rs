@@ -198,8 +198,9 @@ impl AssetDialog {
                 .color(ui.visuals().strong_text_color()),
         );
         if let Some(download) = &self.download {
-            ui.add_space(TEXT_GAP);
-            download.draw(ui);
+            // PROMPT_TEXT already names the files, so the bar goes unlabelled.
+            ui.add_space(SECTION_GAP);
+            download.draw_bar(ui);
         }
         if let Some(err) = &self.error {
             ui.add_space(TEXT_GAP);
