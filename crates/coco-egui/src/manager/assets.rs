@@ -19,7 +19,7 @@ const PROMPT_TEXT: &str =
 
 /// Window size while the dialog is the only content: room for the progress
 /// bar, with a failure message under it.
-pub(crate) const DIALOG_WINDOW_SIZE: [f32; 2] = [480.0, 376.0];
+pub(crate) const DIALOG_WINDOW_SIZE: [f32; 2] = [480.0, 280.0];
 
 const CONTENT_MARGIN: i8 = 24;
 const FOOTER_MARGIN: i8 = 16;
