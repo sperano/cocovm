@@ -75,6 +75,9 @@ pub(crate) enum FileFate {
     /// Relative, but climbing out of the machine's data folder (`..`):
     /// saving is refused.
     Outside,
+    /// A share folder that is a symlink: not followed, so not copied, and
+    /// machines made from the template start with an empty share.
+    Linked,
 }
 
 impl FileFate {
@@ -99,6 +102,7 @@ impl FileLine {
             FileFate::Shared => format!("{} stays shared", self.path),
             FileFate::Missing => format!("{} is missing from the machine's folder", self.path),
             FileFate::Outside => format!("{} is outside the machine's folder", self.path),
+            FileFate::Linked => format!("{} is a link and isn't copied", self.path),
         }
     }
 }
@@ -138,8 +142,12 @@ pub(crate) fn file_lines(snapshot: &MachineDef, artifact_dir: Option<&Path>) -> 
             if outside(path) {
                 return Some((path, FileFate::Outside));
             }
-            let source = resolve(path).filter(|source| media::is_folder(source))?;
-            let bytes = media::tree_bytes(&source, skip.as_deref());
+            let source = resolve(path)?;
+            if source.is_symlink() {
+                return Some((path, FileFate::Linked));
+            }
+            let bytes =
+                media::is_folder(&source).then(|| media::tree_bytes(&source, skip.as_deref()))?;
             Some((path, FileFate::Copied(bytes)))
         })
         .map(|(path, fate)| FileLine {

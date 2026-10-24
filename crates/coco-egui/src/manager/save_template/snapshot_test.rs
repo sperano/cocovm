@@ -138,6 +138,26 @@ fn only_missing_and_outside_files_block_saving() {
     assert!(FileFate::Outside.blocks_save());
     assert!(!FileFate::Copied(0).blocks_save());
     assert!(!FileFate::Shared.blocks_save());
+    assert!(!FileFate::Linked.blocks_save());
+}
+
+/// A share folder that is a symlink is listed as not copied, without
+/// keeping Save off.
+#[cfg(unix)]
+#[test]
+fn file_lines_name_a_linked_share() {
+    let dir = TempDir::new("save-template-linked-share");
+    let elsewhere = TempDir::new("save-template-linked-share-target");
+    std::os::unix::fs::symlink(elsewhere.path(), dir.path().join(SHARE)).unwrap();
+    let mut def = Preset::CoCo3DriveWire.def(None);
+    def.media = MediaDTO::default();
+    def.drivewire.shares = vec![share(SHARE)];
+
+    let lines = file_lines(&def, Some(dir.path()));
+
+    let share_line = lines.iter().find(|line| line.path == SHARE).unwrap();
+    assert_eq!(share_line.fate, FileFate::Linked);
+    assert_eq!(share_line.text(), "work is a link and isn't copied");
 }
 
 /// A print folder inside a share is left out of that share's size.
