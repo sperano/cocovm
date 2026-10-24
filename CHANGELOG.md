@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-24
+
+### Added
+- Machine templates. **New** opens a New Machine dialog that offers an
+  empty machine or any template, each with a description. Built-in
+  templates cover a CoCo 3 with Disk BASIC, a CoCo 3 with HDB-DOS over
+  DriveWire, a CoCo 2 with Disk BASIC, and NitrOS-9 Ease of Use 1.0.1.
+  Every machine made from a template gets its own copy of the template's
+  disk and hard-disk images. ⌘N / Ctrl+N opens the same dialog.
+- A NitrOS-9 EOU template. The New Machine dialog downloads the EOU 1.0.1
+  images (58 MB) when you first want them, with a progress bar, and checks
+  them against a pinned SHA-256. Type `DOS` at the BASIC prompt to boot
+  NitrOS-9. The download URL can be changed with `--eou-url`,
+  `COCOVM_EOU_URL`, `eou_url` in `config.toml`, or the Settings dialog.
+- Save as Template. A powered-off machine's context menu can save it as a
+  template with a name and description. The dialog shows which files are
+  copied into the template and which stay shared.
+- A Templates tab in Settings to rename or delete any template, built-in
+  ones included. A deleted built-in template doesn't come back on the next
+  launch.
+- Starter machines. On the very first launch, CoCoVM creates a CoCo 3 and a
+  CoCo 2 Disk BASIC machine so there is something to start right away.
+
+### Changed
+- The first-run setup dialog downloads only the ROM and cartridge bundle,
+  with a progress bar and a shorter, friendlier explanation.
+- Deleting a machine now also removes its data folder: the disks and tapes
+  stored there, its suspend state, and its thumbnail. A delete is refused
+  when another machine or a template still uses a file in that folder.
+- Downloads time out when a server stops responding, and offer a retry.
+- The machine model is chosen with CoCo 1, CoCo 2, and CoCo 3 radio buttons.
+- The Settings dialog's Advanced tab groups Logging apart from Download
+  sources, and each source has a Use default button. The MCP tab groups its
+  controls, and hovering over the port shows the client URL.
+
+### Fixed
+- A new machine no longer picks up the disks and suspend state of a
+  deleted machine that had the same name.
+
 ## [0.8.0] - 2026-10-11
 
 ### Added
