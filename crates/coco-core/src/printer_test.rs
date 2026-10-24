@@ -85,3 +85,59 @@ fn owned_byte_estimate_accounts_for_rows_and_dot_capacity() {
         "each allocated row must include the conservative B-tree allowance"
     );
 }
+
+#[test]
+fn printer_capture_preallocates_its_bounded_capacity() {
+    let capture = PrinterCapture::default();
+
+    assert!(capture.bytes.capacity() >= PRINTER_CAPTURE_CAPACITY);
+}
+
+#[test]
+fn printer_capture_preserves_order_normalizes_cr_and_decodes_lossily() {
+    let mut capture = PrinterCapture::default();
+    for byte in [b'A', b'\r', b'\n', 0xFF, b'B', b'\r', b'C'] {
+        capture.push(byte);
+    }
+
+    assert_eq!(
+        capture.snapshot(),
+        PrinterCaptureSnapshot {
+            text: "A\n\u{fffd}B\nC".to_string(),
+            truncated: false,
+        }
+    );
+}
+
+#[test]
+fn printer_capture_retains_newest_bytes_and_reports_truncation() {
+    let mut capture = PrinterCapture::default();
+    for byte in 0..=PRINTER_CAPTURE_CAPACITY {
+        capture.push((byte % 251) as u8);
+    }
+
+    let retained: Vec<u8> = (1..=PRINTER_CAPTURE_CAPACITY)
+        .map(|byte| (byte % 251) as u8)
+        .collect();
+    let expected = to_host_text(&retained);
+    let snapshot = capture.snapshot();
+    assert_eq!(snapshot.text, String::from_utf8_lossy(&expected));
+    assert!(snapshot.truncated);
+}
+
+#[test]
+fn clearing_printer_capture_resets_text_and_truncation() {
+    let mut capture = PrinterCapture::default();
+    for _ in 0..=PRINTER_CAPTURE_CAPACITY {
+        capture.push(b'X');
+    }
+    capture.clear();
+
+    assert_eq!(
+        capture.snapshot(),
+        PrinterCaptureSnapshot {
+            text: String::new(),
+            truncated: false,
+        }
+    );
+}

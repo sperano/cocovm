@@ -15,6 +15,7 @@ use super::{
 
 mod load_binary;
 mod media;
+mod printer;
 mod state;
 mod vms;
 
@@ -480,6 +481,7 @@ pub fn definitions(include_annotations: bool) -> Vec<Value> {
         vms::suspend_vm(include_annotations),
         screen_text(include_annotations),
         screenshot(include_annotations),
+        printer::definition(include_annotations),
         type_text(include_annotations),
         enter_basic(include_annotations),
         press_keys(include_annotations),

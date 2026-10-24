@@ -87,6 +87,10 @@ pub enum Action {
     ScreenText,
     /// The current framebuffer as a PNG.
     Screenshot,
+    /// Captured printer-port text, optionally cleared after this snapshot.
+    ReadPrinter {
+        clear: bool,
+    },
     /// Type `text` through the symbolic type-ahead; replies once drained.
     TypeText {
         text: String,
@@ -305,7 +309,15 @@ pub enum Reply {
         width: u32,
         height: u32,
     },
+    Printer(PrinterOutput),
     Bytes(Vec<u8>),
+}
+
+/// Text captured from bytes delivered to a VM's printer port.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PrinterOutput {
+    pub text: String,
+    pub truncated: bool,
 }
 
 /// Decoded screen text, video mode, and a validated insertion position.

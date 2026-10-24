@@ -18,7 +18,8 @@
 //!   internal choice, not a hardware register, so the three pitch densities
 //!   (wiki `cocovm/dmp105-protocol` §1 Appendix G) share one exact integer grid.
 
-use std::collections::BTreeMap;
+use std::borrow::Borrow;
+use std::collections::{BTreeMap, VecDeque};
 use std::mem;
 use std::ops::ControlFlow;
 
@@ -38,11 +39,87 @@ pub const Y_UNITS_PER_INCH: u32 = 432;
 /// (and mid-line pitch changes) can share without rounding.
 pub const X_UNITS_PER_INCH: u32 = 3600;
 
+/// Maximum number of the newest printer bytes retained for remote inspection.
+pub const PRINTER_CAPTURE_CAPACITY: usize = 64 * 1024;
+
+const CR: u8 = b'\r';
+const LF: u8 = b'\n';
+
 /// Conservative per-row allowance for the B-tree node, key, allocator
 /// metadata, and unused node slots that `size_of::<BTreeMap>()` cannot see.
 const BTREE_ROW_ALLOCATION_OVERHEAD_ESTIMATE: usize = 128;
 /// Covers the sparsely occupied root node independently of row count.
 const BTREE_BASE_ALLOCATION_OVERHEAD_ESTIMATE: usize = 512;
+
+/// Agent-readable snapshot of the bytes delivered to the printer port.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PrinterCaptureSnapshot {
+    /// Captured bytes decoded lossily as UTF-8, with CR LF and lone CR line
+    /// endings normalized to LF.
+    pub text: String,
+    /// Whether the capture discarded bytes before the retained text.
+    pub truncated: bool,
+}
+
+/// Bounded, independent capture of bytes delivered to the printer port.
+#[derive(Debug)]
+pub(crate) struct PrinterCapture {
+    bytes: VecDeque<u8>,
+    truncated: bool,
+}
+
+impl Default for PrinterCapture {
+    fn default() -> Self {
+        Self {
+            bytes: VecDeque::with_capacity(PRINTER_CAPTURE_CAPACITY),
+            truncated: false,
+        }
+    }
+}
+
+impl PrinterCapture {
+    pub(crate) fn push(&mut self, byte: u8) {
+        if self.bytes.len() == PRINTER_CAPTURE_CAPACITY {
+            self.bytes.pop_front();
+            self.truncated = true;
+        }
+        self.bytes.push_back(byte);
+    }
+
+    pub(crate) fn snapshot(&self) -> PrinterCaptureSnapshot {
+        let normalized = to_host_text(&self.bytes);
+        PrinterCaptureSnapshot {
+            text: String::from_utf8_lossy(&normalized).into_owned(),
+            truncated: self.truncated,
+        }
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.bytes.clear();
+        self.truncated = false;
+    }
+}
+
+/// CR LF and lone CR become LF; every other byte is kept.
+pub(crate) fn to_host_text<I>(bytes: I) -> Vec<u8>
+where
+    I: IntoIterator,
+    I::Item: Borrow<u8>,
+{
+    let bytes = bytes.into_iter();
+    let mut text = Vec::with_capacity(bytes.size_hint().0);
+    let mut after_cr = false;
+    for byte in bytes {
+        let byte = *byte.borrow();
+        match byte {
+            CR => text.push(LF),
+            LF if after_cr => {}
+            _ => text.push(byte),
+        }
+        after_cr = byte == CR;
+    }
+    text
+}
 
 /// Snapshot of how much paper has been printed on: the furthest dot row
 /// reached and how much ink has been laid down. The frontend can poll it every

@@ -25,7 +25,7 @@ fn job(number: u64, part: u32, end: JobEnd) -> PrintJob {
 fn host_text_turns_every_guest_line_end_into_lf() {
     assert_eq!(to_host_text(b"a\rb\r\nc\n\rd\r"), b"a\nb\nc\n\nd\n");
     assert_eq!(to_host_text(b"\r\r\n"), b"\n\n");
-    assert_eq!(to_host_text(&[0, 0x1B, 0xFF]), [0, 0x1B, 0xFF]);
+    assert_eq!(to_host_text([0, 0x1B, 0xFF]), [0, 0x1B, 0xFF]);
 }
 
 #[test]

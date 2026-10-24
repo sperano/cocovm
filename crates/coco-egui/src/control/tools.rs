@@ -13,6 +13,7 @@ use super::tool_defs;
 mod load_binary;
 mod media;
 mod memory;
+mod printer;
 mod state;
 pub(super) mod vms;
 
@@ -85,6 +86,7 @@ fn dispatch(backend: &mut dyn Backend, params: Value) -> Result<Value, RpcError>
         "suspend_vm" => vms::dispatch_suspend_vm(backend, args),
         "screen_text" => dispatch_screen_text(backend, args),
         "screenshot" => dispatch_screenshot(backend, args),
+        "read_printer" => printer::dispatch(backend, args),
         "type_text" => dispatch_type_text(backend, args),
         "press_keys" => dispatch_press_keys(backend, args),
         "joystick" => dispatch_joystick(backend, args),

@@ -260,6 +260,48 @@ fn load_binary_rejects_a_suspended_vm_before_mutation() {
 }
 
 #[test]
+fn read_printer_requires_live_vm_and_clears_after_returning() {
+    let mut app = manager(vec![running_entry("live"), off_entry("cold")]);
+    let live = app
+        .entries
+        .iter()
+        .position(|entry| entry.slug == "live")
+        .unwrap();
+    app.entries[live]
+        .vm
+        .as_mut()
+        .unwrap()
+        .machine
+        .bus
+        .bitbanger
+        .print_bytes(b"LINE\r\n");
+
+    let first = dispatch(&mut app, "live", Action::ReadPrinter { clear: true });
+    assert_eq!(
+        first.try_recv().expect("immediate reply"),
+        Response::Ok(Reply::Printer(crate::control::PrinterOutput {
+            text: "LINE\n".to_string(),
+            truncated: false,
+        }))
+    );
+
+    let second = dispatch(&mut app, "live", Action::ReadPrinter { clear: false });
+    assert_eq!(
+        second.try_recv().expect("immediate reply"),
+        Response::Ok(Reply::Printer(crate::control::PrinterOutput {
+            text: String::new(),
+            truncated: false,
+        }))
+    );
+
+    let stopped = dispatch(&mut app, "cold", Action::ReadPrinter { clear: false });
+    let Response::Err(error) = stopped.try_recv().expect("immediate error") else {
+        panic!("expected powered-off VM error");
+    };
+    assert!(error.message.contains("not running"));
+}
+
+#[test]
 fn pending_wait_fails_in_the_update_that_pauses_its_vm() {
     let mut app = manager(vec![running_entry("live")]);
     let wait = dispatch(
