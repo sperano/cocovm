@@ -534,12 +534,12 @@ fn comparable_normalizes_and_lowercases_where_the_file_system_ignores_case() {
         .join("..")
         .join("Games");
 
-    let comparable = comparable(&spelled);
+    let got = comparable(&spelled);
 
-    if cfg!(any(windows, target_os = "macos")) {
+    if CASE_INSENSITIVE_FS {
         let lowered = expected.to_string_lossy().to_lowercase();
-        assert_eq!(comparable, PathBuf::from(lowered));
+        assert_eq!(got, PathBuf::from(lowered));
     } else {
-        assert_eq!(comparable, expected);
+        assert_eq!(got, expected);
     }
 }

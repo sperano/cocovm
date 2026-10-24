@@ -43,8 +43,9 @@ pub(crate) const CANCEL_LABEL: &str = "Cancel";
 pub(crate) const COPYING_TEXT: &str = "Copying the disk images into the template…";
 
 /// Why Save refuses a machine started (through the control server) since
-/// the dialog opened, or one gone meanwhile.
+/// the dialog opened.
 const STARTED_ERROR: &str = "Stop the machine before saving it as a template.";
+/// Why Save refuses a machine deleted or renamed since the dialog opened.
 const MACHINE_GONE: &str = "the machine no longer exists";
 
 /// The error of a save whose thread ended without a result.
@@ -274,11 +275,7 @@ impl ManagerApp {
         let replaced = dialog.clash(&self.templates.list).map(|t| t.slug.clone());
         let job = self
             .check_stopped(&dialog.slug)
-            .and_then(|()| {
-                replaced
-                    .as_deref()
-                    .map_or(Ok(()), |slug| self.check_template_unused(slug))
-            })
+            .and_then(|()| self.check_replaced_unused(replaced.as_deref()))
             .and_then(|()| self.prepare_save_template(dialog, replaced));
         let job = match job {
             Ok(job) => job,
@@ -303,11 +300,18 @@ impl ManagerApp {
     /// Refuse to save machine `slug` unless it is still listed and powered
     /// off: the control server can start it while the dialog is open.
     fn check_stopped(&self, slug: &str) -> Result<(), String> {
-        match self.entries.iter().find(|entry| entry.slug == slug) {
-            None => Err(MACHINE_GONE.to_string()),
-            Some(entry) if entry.is_alive() => Err(STARTED_ERROR.to_string()),
-            Some(_) => Ok(()),
+        let index = self.entry_index(slug).ok_or(MACHINE_GONE)?;
+        if self.entries[index].is_alive() {
+            Err(STARTED_ERROR.to_string())
+        } else {
+            Ok(())
         }
+    }
+
+    /// Refuse to replace template `replaced`, if any, while it is in use
+    /// (`ManagerApp::check_template_unused`).
+    fn check_replaced_unused(&mut self, replaced: Option<&str>) -> Result<(), String> {
+        replaced.map_or(Ok(()), |slug| self.check_template_unused(slug))
     }
 
     /// Claim a slug and media folder for `dialog`'s template and plan the

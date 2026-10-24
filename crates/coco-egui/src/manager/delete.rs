@@ -401,13 +401,16 @@ fn close_transitively(depends: &mut [Vec<bool>]) {
     }
 }
 
+/// Whether the platform's usual file system ignores case (Windows, macOS).
+const CASE_INSENSITIVE_FS: bool = cfg!(any(windows, target_os = "macos"));
+
 /// `path` as the delete guards compare it: [`lexically_normalized`], then
-/// lowercased where the usual file system ignores case (Windows, macOS),
-/// so a path spelled with other capitals still counts as inside a folder.
-/// On a case-sensitive volume there, this only refuses more deletes.
+/// lowercased where [`CASE_INSENSITIVE_FS`], so a path spelled with other
+/// capitals still counts as inside a folder. On a case-sensitive volume
+/// there, this only refuses more deletes.
 fn comparable(path: &Path) -> PathBuf {
     let normalized = lexically_normalized(path);
-    if cfg!(any(windows, target_os = "macos")) {
+    if CASE_INSENSITIVE_FS {
         PathBuf::from(normalized.to_string_lossy().to_lowercase())
     } else {
         normalized

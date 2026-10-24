@@ -19,7 +19,7 @@ const FAILED_TEXT: &str = "The NitrOS-9 EOU download failed.";
 
 /// Disabled-hover text of the download button while the download runs for
 /// another template: one runs at a time.
-pub(crate) const OTHER_DOWNLOAD_HOVER: &str =
+const OTHER_DOWNLOAD_HOVER: &str =
     "Wait for the NitrOS-9 EOU download of another template to finish";
 
 impl ManagerApp {

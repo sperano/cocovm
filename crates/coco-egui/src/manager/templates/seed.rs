@@ -126,7 +126,7 @@ fn write_record(record: &Path, ids: &[String]) -> Result<(), String> {
 /// the images while that lock is taken. The lock file stays: an instance
 /// waiting on it would otherwise lock a file another one no longer sees.
 fn move_eou_images(legacy: &Path, media_dir: &Path) {
-    if !legacy.is_dir() {
+    if !EOU_IMAGES.iter().any(|name| legacy.join(name).is_file()) {
         return;
     }
     let Some(_lock) = lock_legacy(legacy) else {

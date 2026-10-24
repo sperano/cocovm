@@ -271,19 +271,9 @@ impl ManagerApp {
             if let Some(level) = log_level {
                 self.relevel_logging(level)?;
             }
-            match port_change {
-                Some(port) => self.rebind_control(port, ctx),
-                None => Ok(()),
-            }
+            port_change.map_or(Ok(()), |port| self.move_control_port(port, ctx))
         })
-        .and_then(|()| {
-            // The listener is on the new port now: a failed template edit
-            // keeps the dialog open, and its next Save compares with that.
-            if let (Some(port), Some(dialog)) = (port_change, &mut self.settings) {
-                dialog.opened_control_port = port;
-            }
-            self.apply_template_edits(&template_edits)
-        });
+        .and_then(|()| self.apply_template_edits(&template_edits));
         match result {
             Ok(()) => self.settings = None,
             Err(e) => {
@@ -293,6 +283,17 @@ impl ManagerApp {
                 }
             }
         }
+    }
+
+    /// Rebind the control server to `port`, and take it as the open
+    /// dialog's port: a failed template edit keeps the dialog open, and its
+    /// next Save compares with the port the listener is on now.
+    fn move_control_port(&mut self, port: u16, ctx: &egui::Context) -> Result<(), String> {
+        self.rebind_control(port, ctx)?;
+        if let Some(dialog) = &mut self.settings {
+            dialog.opened_control_port = port;
+        }
+        Ok(())
     }
 
     /// Swap the live log filter to `level` through [`ManagerApp::log_reload`];
