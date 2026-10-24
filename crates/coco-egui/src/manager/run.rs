@@ -150,7 +150,7 @@ pub fn run(
             app.log_reload = Some(log_reload);
             app.log_level_overridden = log_level_overridden;
             if !missing.is_empty() {
-                app.asset_dialog = Some(assets::AssetDialog::new(missing, assets_url, assets_dir));
+                app.asset_dialog = Some(assets::AssetDialog::new(assets_url, assets_dir));
             }
             #[cfg(feature = "perf")]
             app.initialize_perf_scenario(&creation.egui_ctx)
