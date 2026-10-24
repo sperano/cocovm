@@ -213,14 +213,6 @@ impl AssetDialog {
         if self.downloading() {
             return;
         }
-        let count = self.missing.len();
-        ui.label(
-            egui::RichText::new(format!(
-                "{count} file{} to install.",
-                if count == 1 { "" } else { "s" }
-            ))
-            .color(secondary_color(ui)),
-        );
         ui.add_space(TEXT_GAP);
         ui.label(
             egui::RichText::new("These files include copyrighted software and artwork.")
