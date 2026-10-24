@@ -7,10 +7,10 @@ pub(super) fn definition(include_annotations: bool) -> Value {
         "read_printer",
         format!(
             "Read text captured from LLIST and PRINT #-2. The capture keeps the newest {} KiB, \
-             converts CR LF and lone CR line endings to LF, and replaces invalid UTF-8. If \
-             `clear` is true, \
-             the tool returns the snapshot first, and then clears the capture and its \
-             truncation marker.",
+             converts CR LF and lone CR line endings to LF, \
+             and replaces invalid UTF-8. If `clear` is true, \
+             the tool returns the snapshot first, \
+             and then clears the capture and its truncation marker.",
             coco_core::printer::PRINTER_CAPTURE_CAPACITY / 1024
         ),
         object_schema(

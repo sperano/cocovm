@@ -62,10 +62,19 @@ pub struct PrinterCaptureSnapshot {
 }
 
 /// Bounded, independent capture of bytes delivered to the printer port.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub(crate) struct PrinterCapture {
     bytes: VecDeque<u8>,
     truncated: bool,
+}
+
+impl Default for PrinterCapture {
+    fn default() -> Self {
+        Self {
+            bytes: VecDeque::with_capacity(PRINTER_CAPTURE_CAPACITY),
+            truncated: false,
+        }
+    }
 }
 
 impl PrinterCapture {

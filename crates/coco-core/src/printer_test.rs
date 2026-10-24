@@ -87,6 +87,13 @@ fn owned_byte_estimate_accounts_for_rows_and_dot_capacity() {
 }
 
 #[test]
+fn printer_capture_preallocates_its_bounded_capacity() {
+    let capture = PrinterCapture::default();
+
+    assert!(capture.bytes.capacity() >= PRINTER_CAPTURE_CAPACITY);
+}
+
+#[test]
 fn printer_capture_preserves_order_normalizes_cr_and_decodes_lossily() {
     let mut capture = PrinterCapture::default();
     for byte in [b'A', b'\r', b'\n', 0xFF, b'B', b'\r', b'C'] {
