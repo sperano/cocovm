@@ -87,14 +87,13 @@ impl ManagerApp {
             self.save_error = Some(NO_CONFIG_DIR.to_string());
             return;
         };
-        let Some(template) = self.templates.find(template_slug).cloned() else {
+        let Some(template) = self.templates.find(template_slug) else {
             self.save_error = Some(TEMPLATE_GONE.to_string());
             return;
         };
         let def = template.machine_def(Some(created_today()));
         let base = machine_def::slugify(template.name());
-        let relative = media::relative_media(&template.def);
-        if relative.files.is_empty() && relative.folders.is_empty() {
+        if media::relative_media(&template.def).is_empty() {
             let slug = machine_def::unique_slug(&base, &|candidate| {
                 self.slug_taken(&machines_dir, candidate)
             });
@@ -249,12 +248,12 @@ impl ManagerApp {
     }
 }
 
-/// The New Machine dialog's spinner beneath a template while a machine made
-/// from it is copied.
-pub(super) fn install_spinner(ui: &mut egui::Ui) {
+/// A spinner with `text` beside it, while a copy runs: beneath a template
+/// in the New Machine dialog, and in the Save as Template dialog.
+pub(super) fn copy_spinner(ui: &mut egui::Ui, text: &str) {
     ui.horizontal(|ui| {
         ui.spinner();
-        ui.label(COPYING_TEXT);
+        ui.label(text);
     });
 }
 

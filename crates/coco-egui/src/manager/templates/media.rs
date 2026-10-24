@@ -28,6 +28,13 @@ pub(crate) struct RelativeMedia {
     pub(crate) folders: Vec<String>,
 }
 
+impl RelativeMedia {
+    /// Whether the definition names nothing in its data folder.
+    pub(crate) fn is_empty(&self) -> bool {
+        self.files.is_empty() && self.folders.is_empty()
+    }
+}
+
 /// The paths `def` names relative to its data folder, without
 /// duplicates. The DriveWire print folder is left out: it holds the print
 /// jobs of the machine that printed them, not media. A relative
@@ -85,9 +92,11 @@ fn check_inside(path: &str) -> Result<(), String> {
 /// another.
 #[derive(Debug, Clone)]
 pub(crate) struct MediaCopy {
-    pub(crate) from: PathBuf,
+    from: PathBuf,
+    /// The destination, which the caller claimed ([`claim`]) and removes
+    /// on failure ([`discard`]).
     pub(crate) to: PathBuf,
-    pub(crate) media: RelativeMedia,
+    media: RelativeMedia,
 }
 
 impl MediaCopy {
@@ -163,14 +172,13 @@ fn copy_tree(source: &Path, target: &Path) -> Result<(), String> {
     let entries = fs::read_dir(source).map_err(|e| path_error(source, &e))?;
     for entry in entries {
         let entry = entry.map_err(|e| path_error(source, &e))?;
-        let file_type = entry
-            .file_type()
-            .map_err(|e| path_error(&entry.path(), &e))?;
+        let path = entry.path();
+        let file_type = entry.file_type().map_err(|e| path_error(&path, &e))?;
         let destination = target.join(entry.file_name());
         if file_type.is_dir() {
-            copy_tree(&entry.path(), &destination)?;
-        } else if file_type.is_file() || entry.path().is_file() {
-            copy_file(&entry.path(), &destination)?;
+            copy_tree(&path, &destination)?;
+        } else if file_type.is_file() || path.is_file() {
+            copy_file(&path, &destination)?;
         }
     }
     Ok(())

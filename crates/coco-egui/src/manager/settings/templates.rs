@@ -68,7 +68,7 @@ impl TemplatesDraft {
                     slug: template.slug.clone(),
                     saved_name: template.name().to_string(),
                     name: template.name().to_string(),
-                    summary: template.summary(),
+                    summary: template.summary().into_owned(),
                     delete: false,
                 })
                 .collect(),
@@ -88,7 +88,7 @@ impl TemplatesDraft {
             }
             if kept[..index]
                 .iter()
-                .any(|other| other.name.trim().eq_ignore_ascii_case(name))
+                .any(|other| templates::same_name(&other.name, name))
             {
                 return Err(format!("Two templates are named “{name}”"));
             }

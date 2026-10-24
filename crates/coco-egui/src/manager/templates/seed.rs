@@ -19,7 +19,7 @@ use crate::nitros9::{self, EOU_IMAGES};
 
 /// The file in the templates directory listing the [`Preset::id`]s already
 /// seeded, one per line. A dotfile, so it never loads as a template.
-pub(crate) const SEEDED_RECORD: &str = ".builtin-templates";
+const SEEDED_RECORD: &str = ".builtin-templates";
 
 /// Write every built-in template that [`SEEDED_RECORD`] doesn't list yet,
 /// dated `created`, and add it to the record. Holds the same kind of lock
@@ -47,7 +47,11 @@ pub(crate) fn seed_builtins(
         }
         let slug = seed_one(preset, dirs, defs, media_root, created.clone())?;
         seeded.push(preset.id().to_string());
-        write_record(&record, &seeded)?;
+        if let Err(error) = write_record(&record, &seeded) {
+            // Unrecorded, it would be seeded again beside this copy.
+            let _ = super::delete(dirs, &slug);
+            return Err(error);
+        }
         if preset == Preset::NitrOS9Eou
             && let Some(legacy) = legacy_eou_dir
         {
@@ -74,16 +78,20 @@ fn seed_one(
         def: preset.def(created),
         description: preset.description().to_string(),
     };
-    let written = if preset.has_blank_disk() {
-        place_blank_file(media_root, &slug, &blank_disk_file(BLANK_DISK_DRIVE))
-    } else {
-        Ok(())
-    }
-    .and_then(|()| super::save(defs, &template));
+    let written =
+        place_blank_disk(preset, media_root, &slug).and_then(|()| super::save(defs, &template));
     if written.is_err() {
         media::discard(&media_root.join(&slug));
     }
     written.map(|()| slug)
+}
+
+/// The blank floppy `preset` mounts, if any, in media folder `slug`.
+fn place_blank_disk(preset: Preset, media_root: &Path, slug: &str) -> Result<(), String> {
+    if !preset.has_blank_disk() {
+        return Ok(());
+    }
+    place_blank_file(media_root, slug, &blank_disk_file(BLANK_DISK_DRIVE))
 }
 
 /// The ids in `record`; none when it doesn't exist yet.
@@ -103,7 +111,8 @@ fn read_record(record: &Path) -> Result<Vec<String>, String> {
 /// Write `ids` to `record`, through a temporary sibling renamed into place.
 fn write_record(record: &Path, ids: &[String]) -> Result<(), String> {
     let tmp = record.with_extension("tmp");
-    let text: String = ids.iter().map(|id| format!("{id}\n")).collect();
+    let mut text = ids.join("\n");
+    text.push('\n');
     fs::write(&tmp, text).map_err(|e| format!("{}: {e}", tmp.display()))?;
     fs::rename(&tmp, record).map_err(|e| format!("{}: {e}", record.display()))
 }

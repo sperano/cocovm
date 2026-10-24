@@ -15,6 +15,8 @@
 //! to load is skipped with a warning, never fatal like a broken machine
 //! definition: a template is only a starting point.
 
+use std::borrow::Cow;
+use std::ffi::OsStr;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -27,7 +29,7 @@ pub(crate) mod seed;
 
 /// The top-level key a template file adds to the machine definition schema:
 /// the text the New Machine dialog shows under the template's name.
-pub(crate) const DESCRIPTION_KEY: &str = "description";
+const DESCRIPTION_KEY: &str = "description";
 
 /// Name of the templates directory under the config dir, and of the media
 /// root under the data dir.
@@ -63,16 +65,16 @@ impl Template {
 
     /// The text under the template's name: its description, or, without
     /// one, its model and memory.
-    pub(crate) fn summary(&self) -> String {
+    pub(crate) fn summary(&self) -> Cow<'_, str> {
         if !self.description.trim().is_empty() {
-            return self.description.clone();
+            return Cow::Borrowed(&self.description);
         }
         let hardware = &self.def.hardware;
-        format!(
+        Cow::Owned(format!(
             "{} with {}",
             crate::machine_label(hardware.variant.into()),
             crate::new_vm::ram_label(hardware.ram.into())
-        )
+        ))
     }
 }
 
@@ -169,9 +171,19 @@ impl TemplateState {
 }
 
 /// Sort `templates` by name, ignoring case, then by slug.
-pub(crate) fn sort_by_name(templates: &mut [Template]) {
-    templates
-        .sort_by_cached_key(|template| (template.name().to_lowercase(), template.slug.clone()));
+fn sort_by_name(templates: &mut [Template]) {
+    templates.sort_by_cached_key(|template| (name_key(template.name()), template.slug.clone()));
+}
+
+/// `name` as templates are told apart: trimmed, ignoring case.
+fn name_key(name: &str) -> String {
+    name.trim().to_lowercase()
+}
+
+/// Whether two template names are the same one, by [`name_key`]: Save as
+/// Template replaces such a template, and the Settings dialog refuses two.
+pub(crate) fn same_name(a: &str, b: &str) -> bool {
+    name_key(a) == name_key(b)
 }
 
 /// The slugs of the template files directly in `dir` (dotfiles skipped).
@@ -236,7 +248,7 @@ pub(crate) fn save(dir: &Path, template: &Template) -> Result<(), String> {
 /// from it keep working: they have their own copies.
 pub(crate) fn delete(dirs: &TemplateDirs, slug: &str) -> Result<(), String> {
     let dir = dirs.defs.as_deref().ok_or(super::NO_CONFIG_DIR)?;
-    if Path::new(slug).file_name() != Some(std::ffi::OsStr::new(slug)) {
+    if Path::new(slug).file_name() != Some(OsStr::new(slug)) {
         return Err(format!("refusing to delete the template {slug:?}"));
     }
     let path = machine_def::def_path(dir, slug);

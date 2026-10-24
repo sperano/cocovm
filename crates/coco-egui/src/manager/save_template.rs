@@ -42,6 +42,9 @@ pub(crate) const CANCEL_LABEL: &str = "Cancel";
 /// Shown while a large copy runs.
 pub(crate) const COPYING_TEXT: &str = "Copying the disk images into the template…";
 
+/// The error of a save whose thread ended without a result.
+const COPY_EXITED: &str = "the template copy exited unexpectedly";
+
 /// Fixed width of the dialog's contents.
 const DIALOG_WIDTH: f32 = 440.0;
 /// Space between the dialog's frame and its contents.
@@ -66,7 +69,15 @@ pub(crate) struct SaveTemplateDialog {
     /// The last failed save's error.
     error: Option<String>,
     /// A large copy running on its own thread.
-    pending: Option<mpsc::Receiver<Result<(), String>>>,
+    pending: Option<PendingSave>,
+}
+
+/// A save running on its own thread.
+struct PendingSave {
+    /// Its outcome, once it has one.
+    result: mpsc::Receiver<Result<(), String>>,
+    /// The media folder it claimed, removed if the thread dies.
+    folder: PathBuf,
 }
 
 /// What the dialog's buttons asked for this frame.
@@ -97,7 +108,7 @@ impl SaveTemplateDialog {
         let name = self.name.trim();
         templates
             .iter()
-            .find(|template| template.name().trim().eq_ignore_ascii_case(name))
+            .find(|template| templates::same_name(template.name(), name))
     }
 }
 
@@ -175,13 +186,16 @@ impl ManagerApp {
         let Some(pending) = &dialog.pending else {
             return false;
         };
-        let result = match pending.try_recv() {
+        let result = match pending.result.try_recv() {
             Ok(result) => result,
             Err(mpsc::TryRecvError::Empty) => {
                 ctx.request_repaint_after(PROGRESS_REPAINT_INTERVAL);
                 return false;
             }
-            Err(mpsc::TryRecvError::Disconnected) => Err(COPY_EXITED.to_string()),
+            Err(mpsc::TryRecvError::Disconnected) => {
+                media::discard(&pending.folder);
+                Err(COPY_EXITED.to_string())
+            }
         };
         dialog.pending = None;
         self.finish_save_template(dialog, result)
@@ -234,10 +248,7 @@ impl ManagerApp {
         }
         ui.add_space(DETAIL_SECTION_GAP);
         if busy {
-            ui.horizontal(|ui| {
-                ui.spinner();
-                ui.label(COPYING_TEXT);
-            });
+            super::template_install::copy_spinner(ui, COPYING_TEXT);
             return DialogAction::Idle;
         }
         let missing = dialog
@@ -267,11 +278,12 @@ impl ManagerApp {
             }
         };
         if job.copy.in_background() {
+            let folder = job.copy.to.clone();
             let (tx, rx) = mpsc::channel();
             std::thread::spawn(move || {
                 let _ = tx.send(job.run());
             });
-            dialog.pending = Some(rx);
+            dialog.pending = Some(PendingSave { result: rx, folder });
             return false;
         }
         let result = job.run();
@@ -285,9 +297,9 @@ impl ManagerApp {
         dialog: &SaveTemplateDialog,
         replaced: Option<String>,
     ) -> Result<SaveJob, String> {
-        let dirs = self.templates.dirs.clone();
-        let defs = dirs.defs.clone().ok_or(NO_CONFIG_DIR)?;
-        let media_root = dirs.media_root.clone().ok_or(NO_DATA_DIR)?;
+        let dirs = &self.templates.dirs;
+        let defs = dirs.defs.as_deref().ok_or(NO_CONFIG_DIR)?;
+        let media_root = dirs.media_root.as_deref().ok_or(NO_DATA_DIR)?;
         let name = dialog.name.trim().to_string();
         let def = snapshot(
             &dialog.def,
@@ -297,23 +309,23 @@ impl ManagerApp {
         );
         let from = match &dialog.artifact_dir {
             Some(dir) => dir.clone(),
-            None if relative_media(&def) == media::RelativeMedia::default() => PathBuf::new(),
+            None if relative_media(&def).is_empty() => PathBuf::new(),
             None => return Err(NO_DATA_DIR.to_string()),
         };
-        let slug = media::claim(&media_root, &machine_def::slugify(&name), &|candidate| {
+        let slug = media::claim(media_root, &machine_def::slugify(&name), &|candidate| {
             dirs.slug_taken(candidate)
         })?;
         let to = media_root.join(&slug);
         let copy = MediaCopy::new(&def, from, to.clone()).inspect_err(|_| media::discard(&to))?;
         Ok(SaveJob {
             copy,
-            defs,
+            defs: defs.to_path_buf(),
             template: Template {
                 slug,
                 def,
                 description: dialog.description.trim().to_string(),
             },
-            dirs,
+            dirs: dirs.clone(),
             replaced,
         })
     }
@@ -328,14 +340,17 @@ impl ManagerApp {
         else {
             return;
         };
-        if let Ok(Err(error)) = pending.recv() {
-            eprintln!("coco: saving template: {error}");
-        }
+        let error = match pending.result.recv() {
+            Ok(Ok(())) => return,
+            Ok(Err(error)) => error,
+            Err(mpsc::RecvError) => {
+                media::discard(&pending.folder);
+                COPY_EXITED.to_string()
+            }
+        };
+        eprintln!("coco: saving template: {error}");
     }
 }
-
-/// The error of a save whose thread ended without a result.
-const COPY_EXITED: &str = "the template copy exited unexpectedly";
 
 /// The work behind Save: copy, write, and delete the replaced template.
 struct SaveJob {

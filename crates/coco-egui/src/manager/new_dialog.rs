@@ -12,6 +12,7 @@
 
 use eframe::egui;
 
+use super::template_install::COPYING_TEXT;
 use super::templates::{Template, media};
 use super::{DETAIL_SECTION_GAP, ManagerApp};
 use crate::nitros9::EOU_IMAGES;
@@ -116,14 +117,19 @@ impl ManagerApp {
             EMPTY_DESCRIPTION,
             true,
         );
-        // Taken for the frame, so each choice can borrow `self` mutably.
+        // Taken for the frame, so each choice can borrow `self` mutably;
+        // nothing a choice calls reads the list.
         let templates = std::mem::take(&mut self.templates.list);
+        let mut creatable = dialog.choice == Choice::Empty;
         egui::ScrollArea::vertical()
             .max_height(CHOICES_MAX_HEIGHT)
             .show(ui, |ui| {
                 for template in &templates {
                     ui.add_space(CHOICE_GAP);
-                    self.template_choice(ui, &mut dialog.choice, template);
+                    let available = self.template_choice(ui, &mut dialog.choice, template);
+                    if matches!(&dialog.choice, Choice::Template(slug) if *slug == template.slug) {
+                        creatable = available;
+                    }
                 }
             });
         if templates.is_empty() {
@@ -131,13 +137,6 @@ impl ManagerApp {
             ui.add(egui::Label::new(egui::RichText::new(NO_TEMPLATES_TEXT).weak()).wrap());
         }
         ui.add_space(DETAIL_SECTION_GAP);
-        let creatable = match &dialog.choice {
-            Choice::Empty => true,
-            Choice::Template(slug) => templates
-                .iter()
-                .find(|template| &template.slug == slug)
-                .is_some_and(|template| self.template_creatable(template)),
-        };
         self.templates.list = templates;
         let mut action = NewAction::Idle;
         ui.horizontal(|ui| {
@@ -157,9 +156,18 @@ impl ManagerApp {
 
     /// `template`'s choice, off while it can't be created, with the
     /// spinner of a copy from it, the download of its missing NitrOS-9 EOU
-    /// images, or the names of its other missing files beneath it.
-    fn template_choice(&mut self, ui: &mut egui::Ui, chosen: &mut Choice, template: &Template) {
-        let creatable = self.template_creatable(template);
+    /// images, or the names of its other missing files beneath it. Returns
+    /// whether it can be created now: no file it names is missing, and no
+    /// machine made from it is being written.
+    fn template_choice(
+        &mut self,
+        ui: &mut egui::Ui,
+        chosen: &mut Choice,
+        template: &Template,
+    ) -> bool {
+        let installing = self.template_installing(&template.slug);
+        let missing = self.missing_media(template);
+        let creatable = missing.is_empty() && !installing;
         radio_choice(
             ui,
             chosen,
@@ -169,32 +177,23 @@ impl ManagerApp {
             creatable,
         );
         if creatable {
-            return;
+            return true;
         }
         ui.indent(&template.slug, |ui| {
-            if self.template_installing(&template.slug) {
-                super::template_install::install_spinner(ui);
-                return;
-            }
-            let media_dir = self.templates.dirs.media_dir(&template.slug);
-            let missing = self.missing_media(template);
-            if !missing.is_empty()
-                && missing
-                    .iter()
-                    .all(|file| EOU_IMAGES.contains(&file.as_str()))
+            if installing {
+                super::template_install::copy_spinner(ui, COPYING_TEXT);
+            } else if missing
+                .iter()
+                .all(|file| EOU_IMAGES.contains(&file.as_str()))
             {
+                let media_dir = self.templates.dirs.media_dir(&template.slug);
                 self.eou_download_ui(ui, media_dir.as_deref());
             } else {
                 let text = format!("{MISSING_PREFIX} {}", missing.join(", "));
                 ui.colored_label(ui.visuals().warn_fg_color, text);
             }
         });
-    }
-
-    /// Whether `template` can be created now: no file it names is missing,
-    /// and no machine made from it is being written.
-    fn template_creatable(&self, template: &Template) -> bool {
-        self.missing_media(template).is_empty() && !self.template_installing(&template.slug)
+        false
     }
 
     /// The files `template` names that its media folder lacks; all of them
