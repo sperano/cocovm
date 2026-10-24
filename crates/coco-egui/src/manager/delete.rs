@@ -314,11 +314,27 @@ impl ManagerApp {
 
     /// Refuse to delete or replace template `slug` while a machine names a
     /// file or folder inside its media folder (a user can pick any file by
-    /// absolute path), the way a machine's data folder is guarded.
-    pub(super) fn check_template_unused(&self, slug: &str) -> Result<(), String> {
+    /// absolute path), the way a machine's data folder is guarded, and while
+    /// a machine is being copied from it or its EOU images download into it.
+    pub(super) fn check_template_unused(&mut self, slug: &str) -> Result<(), String> {
         let Some(media_dir) = self.templates.dirs.media_dir(slug) else {
             return Ok(());
         };
+        let name = self
+            .templates
+            .find(slug)
+            .map_or(slug, |template| template.name())
+            .to_string();
+        if self.template_installing(slug) {
+            return Err(format!(
+                "Can't delete the template “{name}” while a machine is copied from it."
+            ));
+        }
+        if self.eou_downloading_into(&media_dir) {
+            return Err(format!(
+                "Can't delete the template “{name}” while its disk images download."
+            ));
+        }
         let dir = lexically_normalized(&media_dir);
         // Without an artifacts root, relative paths resolve nowhere near `dir`.
         let root = self.artifacts_root.as_deref().unwrap_or(Path::new(""));
@@ -331,10 +347,6 @@ impl ManagerApp {
         if users.is_empty() {
             return Ok(());
         }
-        let name = self
-            .templates
-            .find(slug)
-            .map_or(slug, |template| template.name());
         let whom = if users.len() == 1 {
             "that machine"
         } else {

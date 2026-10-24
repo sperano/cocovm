@@ -49,10 +49,23 @@ impl ManagerApp {
             .clicked()
         {
             let url = self.eou_url.clone();
+            self.eou_download_dir = Some(media_dir.clone());
             self.eou_download = Some(Download::start(Source::Eou, ui.ctx(), move |progress| {
                 nitros9::download_eou(&url, &media_dir, progress).map_err(|e| e.to_string())
             }));
         }
+    }
+}
+
+impl ManagerApp {
+    /// Whether the EOU download is still writing into `media_dir`, after
+    /// taking its result if it has one.
+    pub(super) fn eou_downloading_into(&mut self, media_dir: &Path) -> bool {
+        let Some(download) = &mut self.eou_download else {
+            return false;
+        };
+        download.poll();
+        download.is_running() && self.eou_download_dir.as_deref() == Some(media_dir)
     }
 }
 

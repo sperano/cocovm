@@ -291,6 +291,8 @@ pub struct ManagerApp {
     /// The New Machine dialog's NitrOS-9 EOU download
     /// (`manager/eou_menu.rs`), once started.
     pub(crate) eou_download: Option<asset_downloads::Download>,
+    /// The template media folder [`Self::eou_download`] writes into.
+    eou_download_dir: Option<PathBuf>,
     /// Where the New Machine dialog's NitrOS-9 EOU download comes from:
     /// `--eou-url` (`cli.rs`), [`crate::nitros9::EOU_URL`] by default, or, in
     /// tests, a URL that fails without reaching the network.
@@ -462,6 +464,7 @@ impl ManagerApp {
             cartridges_dir: None,
             templates: templates::TemplateState::default(),
             eou_download: None,
+            eou_download_dir: None,
             eou_url: crate::nitros9::EOU_URL.to_string(),
             eou_url_overridden: false,
             artifacts_root,

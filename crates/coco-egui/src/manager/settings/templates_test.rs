@@ -1,7 +1,7 @@
 use super::*;
 use crate::machine_def::tests::TempDir;
 use crate::manager::MachineEntry;
-use crate::manager::templates::tests::{TemplateFixture, sample_template};
+use crate::manager::templates::tests::{EOU_TEMPLATE, TemplateFixture, sample_template};
 
 /// A draft over templates named `names`, slugged by position.
 fn draft(names: &[&str]) -> TemplatesDraft {
@@ -168,4 +168,39 @@ fn deleting_a_template_keeps_its_machines() {
             .join("coco-3-disk-basic/disk0.dsk")
             .is_file()
     );
+}
+
+/// A template a machine is being copied from, or whose EOU images are
+/// downloading into its folder, can't be deleted meanwhile: the copy or
+/// the download would fail, or refill a folder nothing lists.
+#[test]
+fn busy_template_is_not_deleted() {
+    use crate::manager::asset_downloads::{Download, Source};
+    use crate::manager::template_install::PendingInstall;
+
+    let templates = TemplateFixture::seeded("settings-templates-busy");
+    let artifacts = TempDir::new("settings-templates-busy-artifacts");
+    let mut app = app(&templates, &artifacts);
+    let (_install_tx, install_rx) = std::sync::mpsc::channel();
+    let installing = "coco-3-disk-basic".to_string();
+    let pending = PendingInstall::new("new-machine".to_string(), installing.clone(), install_rx);
+    app.templates.installs.push(pending);
+    let (_download_tx, download_rx) = std::sync::mpsc::channel();
+    app.eou_download = Some(Download::running(
+        Source::Eou,
+        std::sync::Arc::default(),
+        download_rx,
+    ));
+    app.eou_download_dir = Some(templates.media_dir(EOU_TEMPLATE));
+    let edits = TemplateEdits {
+        deletes: vec![installing, EOU_TEMPLATE.to_string()],
+        ..TemplateEdits::default()
+    };
+
+    let error = app.apply_template_edits(&edits).unwrap_err();
+
+    assert!(error.contains("copied from it"), "{error}");
+    assert!(error.contains("download"), "{error}");
+    assert!(app.templates.find("coco-3-disk-basic").is_some());
+    assert!(app.templates.find(EOU_TEMPLATE).is_some());
 }
