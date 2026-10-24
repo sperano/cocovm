@@ -49,8 +49,6 @@ pub(super) enum Verdict {
 /// State of the dialog phase, held in [`ManagerApp::asset_dialog`] until
 /// the download succeeds (Cancel never clears it — the app closes instead).
 pub(crate) struct AssetDialog {
-    /// Display paths of the bundle's absent files.
-    missing: Vec<String>,
     /// Where the bundle is fetched from (`--assets-url`, `cli.rs`).
     url: String,
     /// Where the bundle unpacks (`paths::assets_dir`).
@@ -63,10 +61,9 @@ pub(crate) struct AssetDialog {
 }
 
 impl AssetDialog {
-    /// The dialog for the bundle's `missing` files (`startup::missing_assets`).
-    pub(crate) fn new(missing: Vec<String>, url: String, install_dir: PathBuf) -> Self {
+    /// The dialog that fetches the bundle from `url` into `install_dir`.
+    pub(crate) fn new(url: String, install_dir: PathBuf) -> Self {
         Self {
-            missing,
             url,
             install_dir,
             download: None,
@@ -94,8 +91,7 @@ impl AssetDialog {
         if download.is_running() {
             return false;
         }
-        self.missing = crate::startup::missing_assets();
-        if self.missing.is_empty() {
+        if crate::startup::missing_assets().is_empty() {
             return true;
         }
         self.error = Some(self.failure_details());

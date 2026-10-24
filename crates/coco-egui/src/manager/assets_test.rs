@@ -23,7 +23,6 @@ fn dialog_harness(dialog: AssetDialog) -> Harness<'static, AssetDialog> {
 /// A dialog fetching into an unused directory.
 fn dialog() -> AssetDialog {
     AssetDialog::new(
-        vec!["coco3.rom".to_string()],
         "http://unused.invalid/bundle.tgz".to_string(),
         std::env::temp_dir().join("cocovm-asset-dialog-unused"),
     )
