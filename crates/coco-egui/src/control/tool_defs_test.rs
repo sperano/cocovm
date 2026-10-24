@@ -8,6 +8,7 @@ const EXPECTED_NAMES: &[&str] = &[
     "suspend_vm",
     "screen_text",
     "screenshot",
+    "read_printer",
     "type_text",
     "enter_basic",
     "press_keys",
@@ -124,6 +125,7 @@ fn annotations_classify_read_only_and_mutating_tools() {
         ("suspend_vm", false, true, true),
         ("screen_text", true, false, true),
         ("screenshot", true, false, true),
+        ("read_printer", false, true, false),
         ("type_text", false, true, false),
         ("enter_basic", false, true, false),
         ("press_keys", false, true, false),
@@ -182,6 +184,7 @@ fn only_tools_with_structured_results_declare_an_output_schema() {
         [
             "list_vms",
             "screen_text",
+            "read_printer",
             "enter_basic",
             "wait_for_text",
             "peek"

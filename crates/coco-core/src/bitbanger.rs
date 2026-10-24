@@ -36,6 +36,7 @@ use std::rc::Rc;
 use serde::{Deserialize, Serialize};
 
 use crate::dmp::{DmpHandle, DmpModel};
+use crate::printer::{PrinterCapture, PrinterCaptureSnapshot};
 
 /// PIA1 Port A bit 1 ($FF20): the TX line to the printer. 1 = mark/idle
 /// (high), 0 = space. Only meaningful as an output when PIA1 DDRA bit 1 is
@@ -248,6 +249,11 @@ pub struct BitBanger {
     /// restores to zero rather than failing to load.
     #[serde(default)]
     bytes_out: u64,
+    /// Host-observation buffer, separate from the selected emulated sink.
+    /// It is intentionally absent from save states: restoring emulated state
+    /// starts a fresh observation session instead of replaying old output.
+    #[serde(skip)]
+    capture: PrinterCapture,
     /// The trait object is serialized through the small state enum in
     /// [`sink_serde`], not directly — the DMP-105/paper state must survive
     /// a snapshot even though the sink itself doesn't own a serializable shape.
@@ -264,6 +270,7 @@ impl Default for BitBanger {
             last_mark: true,
             state: RxState::Idle,
             bytes_out: 0,
+            capture: PrinterCapture::default(),
             sink: Box::new(NoopSink),
         }
     }
@@ -301,9 +308,17 @@ impl BitBanger {
     /// sink, counted in [`Self::bytes_out`] like decoded bytes.
     pub fn print_bytes(&mut self, bytes: &[u8]) {
         for &byte in bytes {
-            self.sink.write_byte(byte);
+            self.deliver_byte(byte);
         }
-        self.bytes_out += bytes.len() as u64;
+    }
+
+    /// Snapshot captured printer output and optionally clear it afterward.
+    pub fn read_capture(&mut self, clear: bool) -> PrinterCaptureSnapshot {
+        let snapshot = self.capture.snapshot();
+        if clear {
+            self.capture.clear();
+        }
+        snapshot
     }
 
     /// Current BUSY (PIA1 PB0) level: false = ready, true = busy.
@@ -394,8 +409,7 @@ impl BitBanger {
                     } else if sample <= DATA_BITS {
                         bits |= u8::from(pa1_mark) << (sample - 1);
                     } else if pa1_mark {
-                        self.sink.write_byte(bits);
-                        self.bytes_out += 1;
+                        self.deliver_byte(bits);
                     } else {
                         // Stop bit read space: framing error, discard the
                         // byte, and resync from Idle.
@@ -422,6 +436,12 @@ impl BitBanger {
     fn sample_threshold(&self, sample: u8) -> u32 {
         let scaled = u64::from(self.bit_period) * (2 * u64::from(sample) + 1);
         (scaled / 2) as u32
+    }
+
+    fn deliver_byte(&mut self, byte: u8) {
+        self.sink.write_byte(byte);
+        self.capture.push(byte);
+        self.bytes_out += 1;
     }
 }
 

@@ -118,6 +118,14 @@ fn every_listed_tool_round_trips_through_the_mock() {
                 height: 240,
             }],
         ),
+        (
+            "read_printer",
+            json!({}),
+            vec![Reply::Printer(crate::control::PrinterOutput {
+                text: "READY\n".to_string(),
+                truncated: false,
+            })],
+        ),
         ("type_text", json!({"text": "HI\n"}), vec![Reply::Done]),
         (
             "enter_basic",

@@ -69,6 +69,16 @@ impl ManagerApp {
                     .and_then(|idx| self.vm_ref(idx).screenshot());
                 reply.reply(response(result));
             }
+            Action::ReadPrinter { clear } => {
+                let result = self.resolve_alive(&vm).map(|idx| {
+                    let captured = self.vm_mut(idx).machine.bus.bitbanger.read_capture(clear);
+                    Reply::Printer(crate::control::PrinterOutput {
+                        text: captured.text,
+                        truncated: captured.truncated,
+                    })
+                });
+                reply.reply(response(result));
+            }
             Action::TypeText { text } => {
                 self.start_deferred(reply, vm, false, |app| {
                     let fields = app.start_remote_typing(&text)?;

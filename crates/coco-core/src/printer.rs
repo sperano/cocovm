@@ -18,7 +18,7 @@
 //!   internal choice, not a hardware register, so the three pitch densities
 //!   (wiki `cocovm/dmp105-protocol` §1 Appendix G) share one exact integer grid.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::mem;
 use std::ops::ControlFlow;
 
@@ -38,11 +38,58 @@ pub const Y_UNITS_PER_INCH: u32 = 432;
 /// (and mid-line pitch changes) can share without rounding.
 pub const X_UNITS_PER_INCH: u32 = 3600;
 
+/// Maximum number of the newest printer bytes retained for remote inspection.
+pub const PRINTER_CAPTURE_CAPACITY: usize = 64 * 1024;
+
 /// Conservative per-row allowance for the B-tree node, key, allocator
 /// metadata, and unused node slots that `size_of::<BTreeMap>()` cannot see.
 const BTREE_ROW_ALLOCATION_OVERHEAD_ESTIMATE: usize = 128;
 /// Covers the sparsely occupied root node independently of row count.
 const BTREE_BASE_ALLOCATION_OVERHEAD_ESTIMATE: usize = 512;
+
+/// Agent-readable snapshot of the bytes delivered to the printer port.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PrinterCaptureSnapshot {
+    /// Captured bytes decoded lossily as UTF-8, with CoCo CR line endings
+    /// normalized to LF.
+    pub text: String,
+    /// Whether the capture discarded bytes before the retained text.
+    pub truncated: bool,
+}
+
+/// Bounded, independent capture of bytes delivered to the printer port.
+#[derive(Debug, Default)]
+pub(crate) struct PrinterCapture {
+    bytes: VecDeque<u8>,
+    truncated: bool,
+}
+
+impl PrinterCapture {
+    pub(crate) fn push(&mut self, byte: u8) {
+        if self.bytes.len() == PRINTER_CAPTURE_CAPACITY {
+            self.bytes.pop_front();
+            self.truncated = true;
+        }
+        self.bytes.push_back(byte);
+    }
+
+    pub(crate) fn snapshot(&self) -> PrinterCaptureSnapshot {
+        let normalized: Vec<u8> = self
+            .bytes
+            .iter()
+            .map(|&byte| if byte == b'\r' { b'\n' } else { byte })
+            .collect();
+        PrinterCaptureSnapshot {
+            text: String::from_utf8_lossy(&normalized).into_owned(),
+            truncated: self.truncated,
+        }
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.bytes.clear();
+        self.truncated = false;
+    }
+}
 
 /// Snapshot of how much paper has been printed on: the furthest dot row
 /// reached and how much ink has been laid down. The frontend can poll it every

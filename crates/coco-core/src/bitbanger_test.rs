@@ -277,3 +277,45 @@ fn start_and_stop_file_capture_gate_decoded_bytes() {
     assert_eq!(contents, b"A");
     let _ = std::fs::remove_file(&path);
 }
+
+#[test]
+fn decoded_and_drivewire_bytes_share_capture_and_keep_sink_output() {
+    let sink = CaptureSink::new();
+    let mut bb = BitBanger::new();
+    bb.set_sink(Box::new(sink.clone()));
+
+    feed_byte(&mut bb, b'A', DEFAULT_BIT_PERIOD, TICK_SIZE);
+    bb.print_bytes(b"B\r");
+
+    assert_eq!(sink.bytes(), b"AB\r");
+    assert_eq!(bb.read_capture(false).text, "AB\n");
+}
+
+#[test]
+fn capture_survives_sink_swaps_and_clear_happens_after_read() {
+    let first_sink = CaptureSink::new();
+    let second_sink = CaptureSink::new();
+    let mut bb = BitBanger::new();
+    bb.set_sink(Box::new(first_sink.clone()));
+    bb.print_bytes(b"FIRST");
+    bb.set_sink(Box::new(second_sink.clone()));
+    bb.print_bytes(b"SECOND");
+
+    assert_eq!(bb.read_capture(true).text, "FIRSTSECOND");
+    assert_eq!(bb.read_capture(false).text, "");
+    assert_eq!(first_sink.bytes(), b"FIRST");
+    assert_eq!(second_sink.bytes(), b"SECOND");
+}
+
+#[test]
+fn capture_is_ephemeral_across_serialization() {
+    let mut bb = BitBanger::new();
+    bb.print_bytes(b"before save");
+    let mut bytes = Vec::new();
+    ciborium::into_writer(&bb, &mut bytes).unwrap();
+
+    let mut restored: BitBanger = ciborium::from_reader(bytes.as_slice()).unwrap();
+
+    assert_eq!(restored.read_capture(false).text, "");
+    assert_eq!(restored.bytes_out(), b"before save".len() as u64);
+}
