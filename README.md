@@ -81,8 +81,9 @@ as Template…**. The template keeps the machine's settings and a copy of each
 disk, tape, and cartridge file and DriveWire share folder that the machine uses
 from its data folder. Other files in that folder, such as print jobs, aren't
 copied, and files elsewhere on your computer stay shared. A share folder that's
-a symbolic link isn't copied, so a machine created from the template starts
-without that share's files. Each machine you
+a symbolic link isn't copied: a machine created from the template keeps the
+share in its settings, but the share's folder doesn't exist until you create it
+or choose another folder. Each machine you
 create from a template gets its own copy of the copied files. To rename or
 delete templates, built-in ones included, open the **Templates** tab in the
 settings dialog. Deleting a template doesn't affect the machines made from it.
