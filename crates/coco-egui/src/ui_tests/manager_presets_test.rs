@@ -1,27 +1,32 @@
 //! The toolbar's New Machine dialog: New opens it with an empty machine
-//! chosen, it lists every built-in template beside that, and Create makes
-//! the chosen machine on the spot.
+//! chosen, it lists every template beside that, and Create makes the
+//! chosen machine on the spot.
 
 use eframe::egui;
 use egui_kittest::kittest::{NodeT, Queryable};
 
 use crate::machine_def::tests::TempDir;
 use crate::manager::NO_CONFIG_DIR;
-use crate::manager::eou_install::{COPYING_TEXT, PendingInstall};
-use crate::manager::new_dialog::{CANCEL_LABEL, CREATE_LABEL, EMPTY_LABEL, NEW_DIALOG_TITLE};
+use crate::manager::new_dialog::{
+    CANCEL_LABEL, CREATE_LABEL, EMPTY_LABEL, NEW_DIALOG_TITLE, NO_TEMPLATES_TEXT,
+};
 use crate::manager::presets::Preset;
-use crate::nitros9::EOU_IMAGES;
+use crate::manager::template_install::{COPYING_TEXT, PendingInstall};
+use crate::manager::templates::tests::{EOU_TEMPLATE, TemplateFixture};
 
 use super::harness::*;
 
-/// Fills a temporary NitrOS-9 EOU images directory, so the template can be
-/// created.
-fn eou_images(name: &str) -> TempDir {
-    let eou = TempDir::new(name);
-    for image in EOU_IMAGES {
-        std::fs::write(eou.path().join(image), b"eou image").unwrap();
-    }
-    eou
+/// A manager over fresh machine directories and the seeded `templates`.
+fn template_harness(name: &str, templates: &TemplateFixture) -> (ManagerHarness, TempDir, TempDir) {
+    let machines = TempDir::new(&format!("{name}-machines"));
+    let artifacts = TempDir::new(&format!("{name}-artifacts"));
+    let mut harness = manager_harness_with_artifacts(
+        Some(machines.path().to_path_buf()),
+        Some(artifacts.path().to_path_buf()),
+        Vec::new(),
+    );
+    harness.state_mut().templates = templates.state();
+    (harness, machines, artifacts)
 }
 
 /// The dialog lists every template; creating one saves, inserts, and
@@ -29,15 +34,9 @@ fn eou_images(name: &str) -> TempDir {
 /// dir, and closes the dialog.
 #[test]
 fn new_dialog_creates_a_machine_from_a_template() {
-    let machines = TempDir::new("new-dialog-machines");
-    let artifacts = TempDir::new("new-dialog-artifacts");
-    let mut harness = manager_harness_with_artifacts(
-        Some(machines.path().to_path_buf()),
-        Some(artifacts.path().to_path_buf()),
-        Vec::new(),
-    );
-    let eou = eou_images("new-dialog-eou");
-    harness.state_mut().eou_dir = Some(eou.path().to_path_buf());
+    let templates = TemplateFixture::seeded("new-dialog");
+    templates.fill_eou(1);
+    let (mut harness, machines, artifacts) = template_harness("new-dialog", &templates);
 
     click(&mut harness, "New");
     harness.get_by_label(NEW_DIALOG_TITLE);
@@ -79,8 +78,8 @@ fn new_dialog_creates_a_machine_from_a_template() {
 /// Cancel closes the dialog without creating anything.
 #[test]
 fn new_dialog_cancel_creates_nothing() {
-    let machines = TempDir::new("new-dialog-cancel-machines");
-    let mut harness = manager_harness(Some(machines.path().to_path_buf()), Vec::new());
+    let templates = TemplateFixture::seeded("new-dialog-cancel");
+    let (mut harness, machines, _artifacts) = template_harness("new-dialog-cancel", &templates);
 
     click(&mut harness, "New");
     click(&mut harness, Preset::CoCo3DiskBasic.name());
@@ -108,13 +107,8 @@ fn new_dialog_escape_creates_nothing() {
 /// The New machine hotkey leaves an open dialog's choice alone.
 #[test]
 fn new_hotkey_keeps_the_open_dialogs_choice() {
-    let machines = TempDir::new("new-dialog-hotkey-machines");
-    let artifacts = TempDir::new("new-dialog-hotkey-artifacts");
-    let mut harness = manager_harness_with_artifacts(
-        Some(machines.path().to_path_buf()),
-        Some(artifacts.path().to_path_buf()),
-        Vec::new(),
-    );
+    let templates = TemplateFixture::seeded("new-dialog-hotkey");
+    let (mut harness, _machines, _artifacts) = template_harness("new-dialog-hotkey", &templates);
 
     click(&mut harness, "New");
     click(&mut harness, Preset::CoCo2DiskBasic.name());
@@ -127,15 +121,12 @@ fn new_hotkey_keeps_the_open_dialogs_choice() {
     assert_eq!(state.entries[0].def.name, Preset::CoCo2DiskBasic.name());
 }
 
-/// Without the NitrOS-9 EOU images, the dialog turns the template off and
+/// Without its NitrOS-9 EOU images, the dialog turns the template off and
 /// offers their download beneath it; the other templates stay available.
 #[test]
 fn new_dialog_offers_the_eou_download_when_images_are_missing() {
-    let machines = TempDir::new("new-dialog-no-eou-machines");
-    let eou = TempDir::new("new-dialog-no-eou");
-    let mut harness =
-        manager_harness_with_artifacts(Some(machines.path().to_path_buf()), None, Vec::new());
-    harness.state_mut().eou_dir = Some(eou.path().to_path_buf());
+    let templates = TemplateFixture::seeded("new-dialog-no-eou");
+    let (mut harness, _machines, _artifacts) = template_harness("new-dialog-no-eou", &templates);
 
     click(&mut harness, "New");
 
@@ -149,18 +140,42 @@ fn new_dialog_offers_the_eou_download_when_images_are_missing() {
     assert!(!disk_basic.accesskit_node().is_disabled());
 }
 
-/// While a NitrOS-9 EOU machine is being written, the dialog turns the
-/// template off and shows a spinner beneath it, so it can't be picked again
-/// meanwhile.
+/// A template missing another file is off, with the file named beneath it.
 #[test]
-fn new_dialog_shows_a_running_eou_install() {
-    let machines = TempDir::new("new-dialog-eou-install-machines");
-    let eou = eou_images("new-dialog-eou-install");
-    let mut harness =
-        manager_harness_with_artifacts(Some(machines.path().to_path_buf()), None, Vec::new());
+fn new_dialog_names_a_templates_missing_files() {
+    let templates = TemplateFixture::seeded("new-dialog-missing");
+    let template = templates
+        .dirs()
+        .load_all()
+        .into_iter()
+        .find(|template| template.slug == "coco-3-disk-basic")
+        .expect("the template is seeded");
+    let drive0 = template
+        .def
+        .media
+        .disk0
+        .expect("the template names drive 0's file");
+    std::fs::remove_file(templates.media_dir("coco-3-disk-basic").join(&drive0)).unwrap();
+    let (mut harness, _machines, _artifacts) = template_harness("new-dialog-missing", &templates);
+
+    click(&mut harness, "New");
+
+    let choice = harness.get_by_label(Preset::CoCo3DiskBasic.name());
+    assert!(choice.accesskit_node().is_disabled());
+    harness.get_by_label(&format!("Missing from the template's folder: {drive0}"));
+}
+
+/// While a machine is copied from a template, the dialog turns that
+/// template off and shows a spinner beneath it, so it can't be picked
+/// again meanwhile.
+#[test]
+fn new_dialog_shows_a_running_install() {
+    let templates = TemplateFixture::seeded("new-dialog-install");
+    templates.fill_eou(1);
+    let (mut harness, _machines, _artifacts) = template_harness("new-dialog-install", &templates);
     let (_tx, rx) = std::sync::mpsc::channel();
-    harness.state_mut().eou_dir = Some(eou.path().to_path_buf());
-    harness.state_mut().eou_install = Some(PendingInstall::new("nitros-9-eou".to_string(), rx));
+    let pending = PendingInstall::new(EOU_TEMPLATE.to_string(), EOU_TEMPLATE.to_string(), rx);
+    harness.state_mut().templates.installs.push(pending);
 
     click(&mut harness, "New");
 
@@ -169,6 +184,20 @@ fn new_dialog_shows_a_running_eou_install() {
     assert!(eou_choice.accesskit_node().is_disabled());
     let disk_basic = harness.get_by_label(Preset::CoCo3DiskBasic.name());
     assert!(!disk_basic.accesskit_node().is_disabled());
+}
+
+/// With every template deleted, the dialog says how to make one; the
+/// empty machine is still there.
+#[test]
+fn new_dialog_without_templates_says_how_to_make_one() {
+    let machines = TempDir::new("new-dialog-none-machines");
+    let mut harness = manager_harness(Some(machines.path().to_path_buf()), Vec::new());
+
+    click(&mut harness, "New");
+
+    harness.get_by_label(NO_TEMPLATES_TEXT);
+    click(&mut harness, CREATE_LABEL);
+    assert_eq!(harness.state().entries.len(), 1);
 }
 
 /// A Create that fails with nothing selected shows its error in the

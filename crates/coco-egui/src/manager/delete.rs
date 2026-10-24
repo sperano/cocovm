@@ -155,11 +155,7 @@ impl ManagerApp {
         // A slug refused here is refused by the delete itself.
         let folders: Vec<Option<PathBuf>> = slugs
             .iter()
-            .map(|slug| {
-                artifact_dir(root, slug)
-                    .ok()
-                    .map(|d| lexically_normalized(&d))
-            })
+            .map(|slug| artifact_dir(root, slug).ok().map(|d| comparable(&d)))
             .collect();
         slugs
             .iter()
@@ -248,13 +244,13 @@ impl ManagerApp {
     /// path, or a relative one climbing out with `..`): removing the dir
     /// would take that file from the other machine. A running machine counts
     /// what it has mounted now as well as what its definition names. Paths
-    /// are compared lexically, without following symlinks.
+    /// are compared lexically, without following symlinks ([`comparable`]).
     fn check_data_folder_unshared(&self, index: usize, artifact_dir: &Path) -> Result<(), String> {
         let Some(root) = self.artifacts_root.as_deref() else {
             return Ok(());
         };
         let deleted = &self.entries[index];
-        let dir = lexically_normalized(artifact_dir);
+        let dir = comparable(artifact_dir);
         let users: Vec<String> = self
             .entries
             .iter()
@@ -263,7 +259,7 @@ impl ManagerApp {
             .map(|e| format!("“{}”", e.def.name))
             .collect();
         if users.is_empty() {
-            return Ok(());
+            return self.check_no_template_uses(&deleted.def.name, artifact_dir);
         }
         let whom = if users.len() == 1 {
             "that machine"
@@ -278,16 +274,97 @@ impl ManagerApp {
             users.join(", "),
         ))
     }
+
+    /// Refuse to delete machine `name` while a template names a file inside
+    /// its `artifact_dir` by absolute path: the template's machines would
+    /// lose it. A template's relative paths resolve in its own media folder.
+    fn check_no_template_uses(&self, name: &str, artifact_dir: &Path) -> Result<(), String> {
+        let dir = comparable(artifact_dir);
+        let users: Vec<String> = self
+            .templates
+            .list
+            .iter()
+            .filter(|template| {
+                template.def.host_paths().into_iter().any(|raw| {
+                    let path = Path::new(raw);
+                    path.is_absolute() && comparable(path).starts_with(&dir)
+                })
+            })
+            .map(|template| format!("“{}”", template.name()))
+            .collect();
+        if users.is_empty() {
+            return Ok(());
+        }
+        let whom = if users.len() == 1 {
+            "the template"
+        } else {
+            "the templates"
+        };
+        Err(format!(
+            "Can't delete “{name}”: its data folder ({}) holds files used by {whom} {}. Delete \
+             {whom} in Settings first.",
+            artifact_dir.display(),
+            users.join(", "),
+        ))
+    }
+
+    /// Refuse to delete or replace template `slug` while a machine names a
+    /// file or folder inside its media folder (a user can pick any file by
+    /// absolute path), the way a machine's data folder is guarded, and while
+    /// a machine is being copied from it or its EOU images download into it.
+    pub(super) fn check_template_unused(&mut self, slug: &str) -> Result<(), String> {
+        let Some(media_dir) = self.templates.dirs.media_dir(slug) else {
+            return Ok(());
+        };
+        let name = self
+            .templates
+            .find(slug)
+            .map_or(slug, |template| template.name())
+            .to_string();
+        if self.template_installing(slug) {
+            return Err(format!(
+                "Can't delete the template “{name}” while a machine is copied from it."
+            ));
+        }
+        if self.eou_downloading_into(&media_dir) {
+            return Err(format!(
+                "Can't delete the template “{name}” while its disk images download."
+            ));
+        }
+        let dir = comparable(&media_dir);
+        // Without an artifacts root, relative paths resolve nowhere near `dir`.
+        let root = self.artifacts_root.as_deref().unwrap_or(Path::new(""));
+        let users: Vec<String> = self
+            .entries
+            .iter()
+            .filter(|entry| uses_folder(entry, root, &dir))
+            .map(|entry| format!("“{}”", entry.def.name))
+            .collect();
+        if users.is_empty() {
+            return Ok(());
+        }
+        let whom = if users.len() == 1 {
+            "that machine"
+        } else {
+            "those machines"
+        };
+        Err(format!(
+            "Can't delete the template “{name}”: its folder ({}) holds files used by {}. Remove \
+             them from {whom} first.",
+            media_dir.display(),
+            users.join(", "),
+        ))
+    }
 }
 
-/// Whether `entry` names a path inside `dir` (lexically normalized) in its
+/// Whether `entry` names a path inside `dir` ([`comparable`]) in its
 /// definition or, while running, in the media its VM has mounted: a runtime
 /// Insert can mount a file the definition doesn't name.
 fn uses_folder(entry: &MachineEntry, root: &Path, dir: &Path) -> bool {
     // Resolved like `machine_def::resolve_media_path`, against the injected
     // root.
     let own_dir = root.join(&entry.slug);
-    let inside = |path: &Path| lexically_normalized(&own_dir.join(path)).starts_with(dir);
+    let inside = |path: &Path| comparable(&own_dir.join(path)).starts_with(dir);
     entry
         .def
         .host_paths()
@@ -321,6 +398,22 @@ fn close_transitively(depends: &mut [Vec<bool>]) {
                 *cell |= reach;
             }
         }
+    }
+}
+
+/// Whether the platform's usual file system ignores case (Windows, macOS).
+const CASE_INSENSITIVE_FS: bool = cfg!(any(windows, target_os = "macos"));
+
+/// `path` as the delete guards compare it: [`lexically_normalized`], then
+/// lowercased where [`CASE_INSENSITIVE_FS`], so a path spelled with other
+/// capitals still counts as inside a folder. On a case-sensitive volume
+/// there, this only refuses more deletes.
+fn comparable(path: &Path) -> PathBuf {
+    let normalized = lexically_normalized(path);
+    if CASE_INSENSITIVE_FS {
+        PathBuf::from(normalized.to_string_lossy().to_lowercase())
+    } else {
+        normalized
     }
 }
 

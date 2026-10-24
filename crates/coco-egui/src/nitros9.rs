@@ -1,9 +1,9 @@
 //! The NitrOS-9 Ease of Use (EOU) images the NitrOS-9 EOU machine template
 //! (`manager::presets`) copies into each new machine. They aren't part of
 //! the app's asset bundle: the New Machine dialog (`manager::eou_menu`)
-//! fetches L. Curtis Boyle's EOU 1.0.1 release archive next to the bundle,
-//! keeps only the two emulator images, and caches them under
-//! `paths::eou_dir`.
+//! fetches L. Curtis Boyle's EOU 1.0.1 release archive, keeps only the two
+//! emulator images, and writes them into the template's media folder
+//! (`manager::templates`).
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read};
@@ -26,8 +26,8 @@ pub(crate) use eou_version;
 /// The release's name, as the New Machine dialog shows it.
 pub(crate) const EOU_TITLE: &str = concat!("NitrOS-9 Ease of Use ", eou_version!());
 
-/// Name of `paths::eou_dir` under the assets directory. Versioned, so a
-/// later EOU release lands in a fresh directory and gets downloaded again.
+/// Name of `paths::eou_dir`, where earlier releases downloaded the images,
+/// under the assets directory.
 pub(crate) const EOU_DIR_NAME: &str = concat!("nitros9-eou-", eou_version!());
 
 /// L. Curtis Boyle's EOU release for the 6809 (the CoCo 3's stock CPU),
@@ -66,7 +66,7 @@ const PARTIAL_SUFFIX: &str = ".part";
 
 /// The file under the EOU directory whose lock [`download_eou`] holds, so
 /// two app instances never write the same [`PARTIAL_SUFFIX`] files at once.
-const LOCK_FILE: &str = ".download.lock";
+pub(crate) const LOCK_FILE: &str = ".download.lock";
 
 /// The [`EOU_IMAGES`] not present as files under `dir`.
 pub(crate) fn missing_eou_images(dir: &Path) -> Vec<&'static str> {

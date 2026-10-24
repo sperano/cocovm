@@ -44,7 +44,7 @@ pub use share_dto::{DriveWireShareDTO, ShareAccessDTO};
 // production writers go through `HardwareDTO::from_config`.
 #[cfg(test)]
 pub use dto::DisplayDTO;
-pub use io::{DEF_EXTENSION, def_path, load_all, save};
+pub use io::{DEF_EXTENSION, def_path, load_all, load_with_extras, save, save_with_extras};
 
 /// Schema version this build writes, and the newest it accepts on load.
 /// Bump only on a breaking change to the TOML shape.

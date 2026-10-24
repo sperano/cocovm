@@ -1,14 +1,12 @@
-//! Built-in machine templates: ready-made definitions the toolbar's New Machine
-//! dialog offers next to the empty machine, and the starter machines
-//! written on a real first run ([`seed_first_run`]).
+//! Built-in machine templates: the definitions the app writes into the
+//! templates directory (`manager/templates/seed.rs`), where they become
+//! ordinary template files the user can rename or delete, and the starter
+//! machines written on a real first run ([`seed_first_run`]).
 //!
-//! A template is compiled in, not a file: picking one creates an ordinary,
-//! independent machine (unique slug, its own artifact dir) with nothing
-//! linking it back, so a later release can change a template without
-//! touching anyone's existing machines. Templates use only what the app's
-//! asset download already fetched: the bundle's DOS ROMs
-//! (`machine_def::DosRom`) and the NitrOS-9 EOU images (`nitros9.rs`), which
-//! each EOU machine gets its own copy of.
+//! Templates use only what the app's asset download already fetched: the
+//! bundle's DOS ROMs (`machine_def::DosRom`) and the NitrOS-9 EOU images
+//! (`nitros9.rs`), which the New Machine dialog downloads into the EOU
+//! template's own media folder.
 
 use std::ffi::OsString;
 use std::fs::{self, File, OpenOptions};
@@ -18,16 +16,10 @@ use coco_core::{MachineConfig, MachineVariant, MemorySize};
 
 use super::detail_map::{blank_disk_file, place_blank_file};
 use crate::machine_def::{self, CartridgeDTO, DosRom, MachineDef};
-use crate::nitros9::{EOU_BOOT_DISK, EOU_IMAGES, EOU_SYSTEM_VHD, eou_version, missing_eou_images};
-
-/// Why the NitrOS-9 EOU template can't be created: its images were never
-/// downloaded (their download failed or is still running, or the install
-/// predates the template) or are gone. The New Machine dialog offers the download
-/// instead.
-pub(crate) const EOU_NOT_DOWNLOADED: &str = "the NitrOS-9 EOU images are not downloaded";
+use crate::nitros9::{EOU_BOOT_DISK, EOU_SYSTEM_VHD, eou_version};
 
 /// Floppy drive of the blank disk a Disk BASIC template mounts.
-const BLANK_DISK_DRIVE: usize = 0;
+pub(super) const BLANK_DISK_DRIVE: usize = 0;
 
 /// Appended to the machines directory's name (behind a leading dot) to name
 /// the sibling directory [`seed_first_run`] fills before moving it into place.
@@ -55,7 +47,7 @@ pub(crate) enum Preset {
 }
 
 impl Preset {
-    /// Every template, in the order the New Machine dialog lists them.
+    /// Every built-in template, in the order they are seeded.
     pub(crate) const ALL: [Self; 4] = [
         Self::CoCo3DiskBasic,
         Self::CoCo3DriveWire,
@@ -69,7 +61,19 @@ impl Preset {
     /// dialog has downloaded its images.
     pub(crate) const FIRST_RUN: [Self; 2] = [Self::CoCo3DiskBasic, Self::CoCo2DiskBasic];
 
-    /// Choice label, and the new machine's display name (and slug source).
+    /// The stable id the templates directory's seeding record keeps
+    /// (`manager/templates/seed.rs`), so a template the user deleted is
+    /// never seeded again. Never change one: the template would come back.
+    pub(crate) const fn id(self) -> &'static str {
+        match self {
+            Self::CoCo3DiskBasic => "coco3-disk-basic",
+            Self::CoCo3DriveWire => "coco3-drivewire",
+            Self::CoCo2DiskBasic => "coco2-disk-basic",
+            Self::NitrOS9Eou => "nitros9-eou",
+        }
+    }
+
+    /// The template's name, and the slug source of its file.
     pub(crate) const fn name(self) -> &'static str {
         match self {
             Self::CoCo3DiskBasic => "CoCo 3 Disk BASIC",
@@ -79,7 +83,7 @@ impl Preset {
         }
     }
 
-    /// The template's description, under its choice in the New Machine dialog.
+    /// The template's description, saved in its file.
     pub(crate) const fn description(self) -> &'static str {
         match self {
             Self::CoCo3DiskBasic => {
@@ -104,20 +108,11 @@ impl Preset {
     }
 
     /// Whether the template mounts a blank floppy in [`BLANK_DISK_DRIVE`],
-    /// which [`install`] must create in the machine's artifact dir.
-    const fn has_blank_disk(self) -> bool {
+    /// which seeding must create in its media folder.
+    pub(super) const fn has_blank_disk(self) -> bool {
         match self {
             Self::CoCo3DiskBasic | Self::CoCo2DiskBasic => true,
             Self::CoCo3DriveWire | Self::NitrOS9Eou => false,
-        }
-    }
-
-    /// Whether the template can be created with the NitrOS-9 EOU images in
-    /// `eou_dir`: only [`Self::NitrOS9Eou`] needs them.
-    pub(crate) fn available(self, eou_dir: Option<&Path>) -> bool {
-        match self {
-            Self::NitrOS9Eou => eou_dir.is_some_and(|dir| missing_eou_images(dir).is_empty()),
-            Self::CoCo3DiskBasic | Self::CoCo3DriveWire | Self::CoCo2DiskBasic => true,
         }
     }
 
@@ -139,8 +134,8 @@ impl Preset {
             def.media.disk0 = Some(blank_disk_file(BLANK_DISK_DRIVE));
         }
         if self == Self::NitrOS9Eou {
-            // Relative, so they resolve in the machine's artifact dir, where
-            // [`install`] copies them.
+            // Relative, so they resolve in the template's media folder, and
+            // in each machine's artifact dir, which gets a copy of them.
             def.media.disk0 = Some(EOU_BOOT_DISK.to_string());
             def.media.vhd0 = Some(EOU_SYSTEM_VHD.to_string());
         }
@@ -167,41 +162,6 @@ fn coco2_config() -> MachineConfig {
     }
 }
 
-/// Write `preset` as machine `slug`: its media into the artifact dir under
-/// `artifacts_root` first (blank images, or copies of the NitrOS-9 EOU
-/// images in `eou_dir`), then its definition into `machines_dir`, so a
-/// failure never leaves a definition pointing at a missing image. Returns
-/// the saved definition.
-pub(super) fn install(
-    preset: Preset,
-    dirs: &InstallDirs<'_>,
-    slug: &str,
-    created: Option<String>,
-) -> Result<MachineDef, String> {
-    let def = preset.def(created);
-    place_media(preset, dirs.artifacts_root, slug)?;
-    let eou_copies = (preset == Preset::NitrOS9Eou)
-        .then(|| place_eou_images(dirs, slug))
-        .transpose()?;
-    machine_def::save(dirs.machines_dir, slug, &def).inspect_err(|_| {
-        // A 128 MB copy no definition points at is worth reclaiming.
-        if let Some(artifact_dir) = &eou_copies {
-            discard_eou_images(artifact_dir);
-        }
-    })?;
-    Ok(def)
-}
-
-/// Where [`install`] writes a machine and finds what it copies.
-pub(super) struct InstallDirs<'a> {
-    /// `config_dir()/machines`, for the definition.
-    pub(super) machines_dir: &'a Path,
-    /// `data_dir()/machines`, holding each machine's artifact dir.
-    pub(super) artifacts_root: Option<&'a Path>,
-    /// `paths::eou_dir`, the downloaded NitrOS-9 EOU images.
-    pub(super) eou_dir: Option<&'a Path>,
-}
-
 /// Create `preset`'s blank media in machine `slug`'s artifact dir under
 /// `artifacts_root`.
 fn place_media(preset: Preset, artifacts_root: Option<&Path>, slug: &str) -> Result<(), String> {
@@ -210,50 +170,6 @@ fn place_media(preset: Preset, artifacts_root: Option<&Path>, slug: &str) -> Res
         place_blank_file(root, slug, &blank_disk_file(BLANK_DISK_DRIVE))?;
     }
     Ok(())
-}
-
-/// Copy the downloaded [`EOU_IMAGES`] into machine `slug`'s artifact dir,
-/// which it returns. A failure removes the copies it made, and the dir while
-/// it is empty, such as the one the New Machine dialog created to claim `slug`
-/// (`manager/eou_install.rs`).
-fn place_eou_images(dirs: &InstallDirs<'_>, slug: &str) -> Result<PathBuf, String> {
-    let root = dirs.artifacts_root.ok_or(super::NO_DATA_DIR)?;
-    let artifact_dir = root.join(slug);
-    let copied = dirs
-        .eou_dir
-        .ok_or_else(|| EOU_NOT_DOWNLOADED.to_string())
-        .and_then(|eou_dir| copy_eou_images(eou_dir, &artifact_dir));
-    if copied.is_err() {
-        discard_eou_images(&artifact_dir);
-    }
-    copied.map(|()| artifact_dir)
-}
-
-/// Copy the [`EOU_IMAGES`] from `eou_dir` into `artifact_dir`, so the new
-/// machine writes to its own system disk and never to the downloaded one.
-///
-/// The 128 MB VHD can take seconds on a hard disk, so the New Machine dialog calls
-/// this through [`install`] on a thread of its own (`manager/eou_install.rs`).
-fn copy_eou_images(eou_dir: &Path, artifact_dir: &Path) -> Result<(), String> {
-    if !missing_eou_images(eou_dir).is_empty() {
-        return Err(EOU_NOT_DOWNLOADED.to_string());
-    }
-    fs::create_dir_all(artifact_dir).map_err(|e| format!("{}: {e}", artifact_dir.display()))?;
-    EOU_IMAGES.into_iter().try_for_each(|name| {
-        let target = artifact_dir.join(name);
-        fs::copy(eou_dir.join(name), &target)
-            .map(drop)
-            .map_err(|e| format!("{}: {e}", target.display()))
-    })
-}
-
-/// Remove the [`EOU_IMAGES`] from `artifact_dir`, then the dir itself while
-/// it is empty. Best effort: what stays only makes the slug count as taken.
-pub(super) fn discard_eou_images(artifact_dir: &Path) {
-    for name in EOU_IMAGES {
-        let _ = fs::remove_file(artifact_dir.join(name));
-    }
-    let _ = fs::remove_dir(artifact_dir);
 }
 
 /// On a real first run — `machines_dir` does not exist yet — write the
@@ -322,7 +238,7 @@ fn machines_dir_present(machines_dir: &Path) -> bool {
 /// manager fails with a plain OS error (ENOLCK). Refusing there would leave
 /// the user without starter machines on every launch, to guard against a
 /// race that needs two instances started at the same moment.
-fn lock_seeding(machines_dir: &Path) -> Result<File, String> {
+pub(super) fn lock_seeding(machines_dir: &Path) -> Result<File, String> {
     let path = sibling_path(machines_dir, SEED_LOCK_SUFFIX)?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
@@ -334,10 +250,7 @@ fn lock_seeding(machines_dir: &Path) -> Result<File, String> {
         .open(&path)
         .map_err(|e| format!("{}: {e}", path.display()))?;
     if let Err(e) = file.lock() {
-        eprintln!(
-            "coco: {}: locking: {e}; seeding the starter machines unlocked",
-            path.display()
-        );
+        eprintln!("coco: {}: locking: {e}; seeding unlocked", path.display());
     }
     Ok(file)
 }

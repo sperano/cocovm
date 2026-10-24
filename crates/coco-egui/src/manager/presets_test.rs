@@ -6,37 +6,12 @@ use coco_core::{MachineVariant, MemorySize, MonitorType, VDGVariant};
 
 use super::*;
 use crate::machine_def::tests::TempDir;
-use crate::manager::{ManagerApp, NO_DATA_DIR};
+use crate::manager::ManagerApp;
 
 const CREATED: &str = "2026-10-21";
 
 fn created() -> Option<String> {
     Some(CREATED.to_string())
-}
-
-/// Stand-in bytes for the downloaded EOU images.
-const FAKE_EOU_IMAGE: &[u8] = b"eou image";
-
-/// A directory holding stand-ins for both downloaded EOU images.
-fn eou_fixture() -> TempDir {
-    let dir = TempDir::new("preset-eou-images");
-    for name in EOU_IMAGES {
-        fs::write(dir.path().join(name), FAKE_EOU_IMAGE).unwrap();
-    }
-    dir
-}
-
-/// [`install`]'s directories.
-fn dirs<'a>(
-    machines_dir: &'a Path,
-    artifacts_root: Option<&'a Path>,
-    eou_dir: Option<&'a Path>,
-) -> InstallDirs<'a> {
-    InstallDirs {
-        machines_dir,
-        artifacts_root,
-        eou_dir,
-    }
 }
 
 /// Every template converts to a config the core accepts, and its
@@ -85,89 +60,32 @@ fn presets_have_the_promised_hardware() {
     assert_eq!(drivewire.media.disk0, None);
 }
 
+/// The NitrOS-9 EOU template boots its images from Disk BASIC, named
+/// relatively so they resolve in the template's media folder and in each
+/// machine's own copy.
+#[test]
+fn eou_preset_names_its_images_relatively() {
+    let def = Preset::NitrOS9Eou.def(None);
+    assert_eq!(def.media.disk0.as_deref(), Some(EOU_BOOT_DISK));
+    assert_eq!(def.media.vhd0.as_deref(), Some(EOU_SYSTEM_VHD));
+    assert_eq!(def.peripherals.cartridge.dos_rom(), Some(DosRom::DiskBasic));
+}
+
+/// Every template has its own seeding id.
+#[test]
+fn preset_ids_are_distinct() {
+    let mut ids: Vec<&str> = Preset::ALL.iter().map(|preset| preset.id()).collect();
+    ids.sort_unstable();
+    ids.dedup();
+    assert_eq!(ids.len(), Preset::ALL.len());
+}
+
 /// A template's definition is named after the template and dated as given.
 #[test]
 fn preset_def_takes_its_name_and_date() {
     let def = Preset::CoCo3DriveWire.def(created());
     assert_eq!(def.name, "CoCo 3 DriveWire (HDB-DOS)");
     assert_eq!(def.created.as_deref(), Some(CREATED));
-}
-
-/// `install` writes a definition that loads back unchanged, plus the blank
-/// floppy its `[media].disk0` names.
-#[test]
-fn install_round_trips_and_places_the_blank_disk() {
-    let eou = eou_fixture();
-    for preset in Preset::ALL {
-        let machines = TempDir::new("preset-install-machines");
-        let artifacts = TempDir::new("preset-install-artifacts");
-        let slug = machine_def::slugify(preset.name());
-
-        let def = install(
-            preset,
-            &dirs(machines.path(), Some(artifacts.path()), Some(eou.path())),
-            &slug,
-            created(),
-        )
-        .unwrap_or_else(|e| panic!("{preset:?} must install: {e}"));
-
-        let loaded = machine_def::load_all(machines.path()).expect("installed preset loads");
-        assert_eq!(loaded, vec![(slug.clone(), def.clone())]);
-        // Without a drive 0 image, no blank floppy may be written either.
-        let blank = blank_disk_file(BLANK_DISK_DRIVE);
-        let disk = artifacts
-            .path()
-            .join(&slug)
-            .join(def.media.disk0.as_deref().unwrap_or(&blank));
-        assert_eq!(
-            disk.is_file(),
-            def.media.disk0.is_some(),
-            "{preset:?}: {}",
-            disk.display()
-        );
-    }
-}
-
-/// A template with a blank disk needs the artifact root; without one it
-/// fails before writing a definition that would point at a missing image.
-#[test]
-fn install_without_artifact_root_writes_nothing() {
-    let machines = TempDir::new("preset-no-artifacts");
-    let error = install(
-        Preset::CoCo3DiskBasic,
-        &dirs(machines.path(), None, None),
-        "coco-3-disk-basic",
-        None,
-    )
-    .unwrap_err();
-    assert_eq!(error, NO_DATA_DIR);
-    assert!(!machine_def::def_path(machines.path(), "coco-3-disk-basic").exists());
-}
-
-/// Picking the same template twice in the manager makes two independent
-/// machines under distinct slugs, each with its own blank floppy.
-#[test]
-fn creating_a_preset_twice_gives_each_copy_its_own_slug() {
-    let machines = TempDir::new("preset-twice-machines");
-    let artifacts = TempDir::new("preset-twice-artifacts");
-    let mut app = ManagerApp::new(
-        None,
-        Some(machines.path().to_path_buf()),
-        Some(artifacts.path().to_path_buf()),
-        Vec::new(),
-        None,
-    );
-
-    app.create_machine_from_preset(Preset::CoCo3DiskBasic);
-    app.create_machine_from_preset(Preset::CoCo3DiskBasic);
-
-    assert_eq!(app.save_error, None);
-    let mut slugs: Vec<&str> = app.entries.iter().map(|e| e.slug.as_str()).collect();
-    slugs.sort_unstable();
-    assert_eq!(slugs, ["coco-3-disk-basic", "coco-3-disk-basic-2"]);
-    for slug in slugs {
-        assert!(artifacts.path().join(slug).join("disk0.dsk").is_file());
-    }
 }
 
 /// A missing machines directory is a first run: the starter templates are
@@ -187,33 +105,6 @@ fn first_run_seeds_the_starter_machines() {
         assert_eq!(def.created.as_deref(), Some(CREATED));
         assert!(artifacts.path().join(slug).join("disk0.dsk").is_file());
     }
-}
-
-/// A slug whose artifact dir outlived its machine is not reused: the new
-/// machine's blank disk must not be the old machine's disk.
-#[test]
-fn new_machine_skips_a_slug_with_leftover_artifacts() {
-    let machines = TempDir::new("preset-leftover-machines");
-    let artifacts = TempDir::new("preset-leftover-artifacts");
-    let old_disk = artifacts.path().join("coco-3-disk-basic").join("disk0.dsk");
-    fs::create_dir_all(old_disk.parent().unwrap()).unwrap();
-    fs::write(&old_disk, b"old machine's files").unwrap();
-    let mut app = ManagerApp::new(
-        None,
-        Some(machines.path().to_path_buf()),
-        Some(artifacts.path().to_path_buf()),
-        Vec::new(),
-        None,
-    );
-
-    app.create_machine_from_preset(Preset::CoCo3DiskBasic);
-
-    assert_eq!(app.entries[0].slug, "coco-3-disk-basic-2");
-    let new_disk = artifacts
-        .path()
-        .join("coco-3-disk-basic-2")
-        .join("disk0.dsk");
-    assert_eq!(fs::metadata(new_disk).unwrap().len(), 0);
 }
 
 /// Plain New skips a leftover artifact dir the same way.
@@ -301,13 +192,8 @@ fn seeding_discards_a_crashed_run() {
     let staging = staging_dir(&machines).unwrap();
     for preset in Preset::FIRST_RUN {
         let slug = machine_def::slugify(preset.name());
-        install(
-            preset,
-            &dirs(&staging, Some(artifacts.path()), None),
-            &slug,
-            None,
-        )
-        .unwrap();
+        machine_def::save(&staging, &slug, &preset.def(None)).unwrap();
+        place_media(preset, Some(artifacts.path()), &slug).unwrap();
     }
     let kept = artifacts.path().join("coco-2-disk-basic").join("disk0.dsk");
     fs::write(&kept, b"user data").unwrap();
@@ -380,114 +266,4 @@ fn concurrent_first_runs_seed_once() {
     assert_eq!(slugs, ["coco-2-disk-basic", "coco-3-disk-basic"]);
     assert!(!staging_dir(&machines).unwrap().exists());
     assert_eq!(fs::read_dir(artifacts.path()).unwrap().count(), slugs.len());
-}
-
-/// Each template boots through the production launch path with the
-/// installed ROMs: its DOS ROM loads and its blank floppy mounts. The
-/// relative `disk0` is pointed at the placed file, since launch resolves it
-/// against the real data directory.
-#[test]
-fn every_preset_launches() {
-    // The test bundle's EOU pair is the release's two images.
-    let eou_dir = test_assets::disk(test_assets::disk::EOU_BOOT)
-        .parent()
-        .expect("test disks live in a directory")
-        .to_path_buf();
-    for preset in Preset::ALL {
-        if !preset.available(Some(&eou_dir)) {
-            eprintln!("skipping {preset:?}: the EOU test images are not present");
-            continue;
-        }
-        let machines = TempDir::new("preset-launch-machines");
-        let artifacts = TempDir::new("preset-launch-artifacts");
-        let slug = machine_def::slugify(preset.name());
-        let mut def = install(
-            preset,
-            &dirs(machines.path(), Some(artifacts.path()), Some(&eou_dir)),
-            &slug,
-            None,
-        )
-        .unwrap_or_else(|e| panic!("{preset:?} must install: {e}"));
-        for media in [&mut def.media.disk0, &mut def.media.vhd0]
-            .into_iter()
-            .flatten()
-        {
-            *media = artifacts
-                .path()
-                .join(&slug)
-                .join(&*media)
-                .display()
-                .to_string();
-        }
-
-        let mut app = crate::launch::launch_machine(&def, &slug)
-            .unwrap_or_else(|e| panic!("{preset:?} must launch: {e}"));
-        assert!(
-            app.machine.bus.cart.as_disk_cart().is_some(),
-            "{preset:?} must have its FD-502 installed"
-        );
-        assert_eq!(
-            app.disk_paths[BLANK_DISK_DRIVE].is_some(),
-            def.media.disk0.is_some(),
-            "{preset:?}: drive 0 mount"
-        );
-        assert_eq!(
-            app.vhd_paths[0].is_some(),
-            def.media.vhd0.is_some(),
-            "{preset:?}: VHD mount"
-        );
-    }
-}
-
-/// The EOU template copies both images into the new machine's artifact
-/// dir, where its relative media names resolve, and leaves the downloaded
-/// ones untouched.
-#[test]
-fn eou_install_copies_the_images() {
-    let machines = TempDir::new("preset-eou-machines");
-    let artifacts = TempDir::new("preset-eou-artifacts");
-    let eou = eou_fixture();
-    let slug = machine_def::slugify(Preset::NitrOS9Eou.name());
-
-    let def = install(
-        Preset::NitrOS9Eou,
-        &dirs(machines.path(), Some(artifacts.path()), Some(eou.path())),
-        &slug,
-        None,
-    )
-    .unwrap();
-
-    assert_eq!(def.media.disk0.as_deref(), Some(EOU_BOOT_DISK));
-    assert_eq!(def.media.vhd0.as_deref(), Some(EOU_SYSTEM_VHD));
-    assert_eq!(def.peripherals.cartridge.dos_rom(), Some(DosRom::DiskBasic));
-    for name in EOU_IMAGES {
-        let copy = artifacts.path().join(&slug).join(name);
-        assert_eq!(fs::read(&copy).unwrap(), FAKE_EOU_IMAGE, "{name}");
-        assert!(eou.path().join(name).is_file(), "{name} stays downloaded");
-    }
-}
-
-/// Without the downloaded images the EOU template is unavailable and
-/// installs nothing: no definition, no artifact dir.
-#[test]
-fn eou_install_without_images_writes_nothing() {
-    let machines = TempDir::new("preset-eou-missing-machines");
-    let artifacts = TempDir::new("preset-eou-missing-artifacts");
-    let empty = TempDir::new("preset-eou-missing-images");
-    let slug = machine_def::slugify(Preset::NitrOS9Eou.name());
-
-    for eou_dir in [None, Some(empty.path())] {
-        assert!(!Preset::NitrOS9Eou.available(eou_dir));
-        let error = install(
-            Preset::NitrOS9Eou,
-            &dirs(machines.path(), Some(artifacts.path()), eou_dir),
-            &slug,
-            None,
-        )
-        .unwrap_err();
-        assert_eq!(error, EOU_NOT_DOWNLOADED);
-    }
-    assert!(!machine_def::def_path(machines.path(), &slug).exists());
-    assert!(!artifacts.path().join(&slug).exists());
-    assert!(Preset::CoCo3DiskBasic.available(None));
 }

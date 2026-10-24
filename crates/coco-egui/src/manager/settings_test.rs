@@ -13,12 +13,15 @@ use tracing_subscriber::{EnvFilter, Registry, reload};
 use std::num::NonZeroU32;
 
 use super::SettingsDialog;
+use super::templates::TemplatesDraft;
 use crate::cli::LogLevel;
 use crate::config::{FileConfig, ManagerSort};
 use crate::control::ControlServer;
 use crate::hotkeys::{DEFAULT_HOTKEYS, Hotkey, HotkeyAction};
+use crate::machine_def;
 use crate::machine_def::tests::TempDir;
 use crate::manager::ManagerApp;
+use crate::manager::templates::tests::TemplateFixture;
 
 #[test]
 fn defaults_collapse_to_an_empty_file_config() {
@@ -310,6 +313,35 @@ fn commit_leaves_a_cli_env_port_override_alone() {
         Some(0),
         "the file still records the toggle"
     );
+}
+
+/// A port move that succeeds while a template edit fails leaves the dialog
+/// open, with the port it moved to as the new baseline: the next Save must
+/// not rebind again.
+#[test]
+fn commit_remembers_the_moved_port_when_a_template_edit_fails() {
+    let dir = TempDir::new("settings-port-template-fails");
+    let templates = TemplateFixture::seeded("settings-port-template-fails");
+    let target = free_port();
+    let mut manager = manager_with_listener(&dir, target);
+    manager.templates = templates.state();
+    let mut draft = TemplatesDraft::new(&manager.templates.list);
+    let slug = draft.rows[0].slug.clone();
+    draft.rows[0].name = "Renamed".to_string();
+    manager.settings.as_mut().expect("dialog open").templates = draft;
+    // The rename can't load the template's file.
+    std::fs::remove_file(machine_def::def_path(
+        templates.dirs().defs.as_deref().expect("defs dir"),
+        &slug,
+    ))
+    .unwrap();
+
+    manager.commit_settings(&egui::Context::default());
+
+    let dialog = manager.settings.as_ref().expect("dialog must stay open");
+    assert!(dialog.error.is_some(), "the failed rename is shown");
+    assert_eq!(manager.control_port(), target);
+    assert_eq!(dialog.opened_control_port, target);
 }
 
 /// A port already in use: the file is saved, but the dialog stays open

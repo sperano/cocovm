@@ -458,7 +458,7 @@ impl ManagerApp {
 
     /// Commit a Name-field draft. A slug-preserving edit saves only the
     /// definition; a slug-changing edit queues one pre-draw transaction.
-    fn commit_name(&mut self, index: usize, edit: &mut EditState) {
+    pub(super) fn commit_name(&mut self, index: usize, edit: &mut EditState) {
         let trimmed = edit.name.trim().to_string();
         if trimmed.is_empty() || trimmed == self.entries[index].def.name {
             edit.name = self.entries[index].def.name.clone();

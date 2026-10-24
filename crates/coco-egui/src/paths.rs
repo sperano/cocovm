@@ -61,9 +61,11 @@ pub fn cartridges_dir() -> Option<PathBuf> {
     assets_dir().map(|d| d.join("cartridges"))
 }
 
-/// Directory for the NitrOS-9 EOU images the New Machine dialog downloads
-/// next to the bundle (`~/.local/share/cocovm/assets/nitros9-eou-1.0.1` on
-/// Linux/macOS; `nitros9.rs`).
+/// Directory where releases before user templates downloaded the NitrOS-9
+/// EOU images (`~/.local/share/cocovm/assets/nitros9-eou-1.0.1` on
+/// Linux/macOS; `nitros9.rs`). Seeding the built-in templates moves them
+/// from here into the EOU template's media folder
+/// (`manager/templates/seed.rs`).
 pub fn eou_dir() -> Option<PathBuf> {
     assets_dir().map(|d| d.join(crate::nitros9::EOU_DIR_NAME))
 }

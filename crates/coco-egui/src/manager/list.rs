@@ -7,6 +7,7 @@ use eframe::egui;
 
 use super::bulk::BulkAction;
 use super::reveal::SHOW_CONFIG_LABEL;
+use super::save_template::{SAVE_TEMPLATE_LABEL, STOP_FIRST_HOVER};
 use super::selection::Step;
 use super::sort::SortKey;
 use super::{
@@ -310,6 +311,17 @@ impl ManagerApp {
             ui.separator();
             if ui.button(SHOW_CONFIG_LABEL).clicked() {
                 self.reveal_config(i);
+                ui.close();
+            }
+            if ui
+                .add_enabled(
+                    !self.entries[i].is_alive(),
+                    egui::Button::new(SAVE_TEMPLATE_LABEL),
+                )
+                .on_disabled_hover_text(STOP_FIRST_HOVER)
+                .clicked()
+            {
+                self.request_save_template(self.entries[i].slug.clone());
                 ui.close();
             }
             ui.separator();

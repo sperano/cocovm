@@ -46,7 +46,7 @@ impl ManagerApp {
 }
 
 /// Launch the host file manager on `path` ([`reveal_command`]).
-fn reveal(path: &Path) -> Result<(), String> {
+pub(super) fn reveal(path: &Path) -> Result<(), String> {
     spawn_and_reap(&mut reveal_command(path))
 }
 
