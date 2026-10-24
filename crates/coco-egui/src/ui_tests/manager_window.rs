@@ -167,7 +167,7 @@ fn asset_dialog_cancel_quits_without_downloading() {
     harness.step();
 
     harness.get_by_label(
-        "Download the ROMs, cartridges, and images CoCoVM needs to start your machines.",
+        "To start a machine, CoCoVM needs to download some ROMs, cartridges, and images.",
     );
     assert!(
         harness.query_by_label("New").is_none(),
