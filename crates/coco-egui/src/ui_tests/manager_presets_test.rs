@@ -144,14 +144,25 @@ fn new_dialog_offers_the_eou_download_when_images_are_missing() {
 #[test]
 fn new_dialog_names_a_templates_missing_files() {
     let templates = TemplateFixture::seeded("new-dialog-missing");
-    std::fs::remove_file(templates.media_dir("coco-3-disk-basic").join("disk0.dsk")).unwrap();
+    let template = templates
+        .dirs()
+        .load_all()
+        .into_iter()
+        .find(|template| template.slug == "coco-3-disk-basic")
+        .expect("the template is seeded");
+    let drive0 = template
+        .def
+        .media
+        .disk0
+        .expect("the template names drive 0's file");
+    std::fs::remove_file(templates.media_dir("coco-3-disk-basic").join(&drive0)).unwrap();
     let (mut harness, _machines, _artifacts) = template_harness("new-dialog-missing", &templates);
 
     click(&mut harness, "New");
 
     let choice = harness.get_by_label(Preset::CoCo3DiskBasic.name());
     assert!(choice.accesskit_node().is_disabled());
-    harness.get_by_label("Missing from the template's folder: disk0.dsk");
+    harness.get_by_label(&format!("Missing from the template's folder: {drive0}"));
 }
 
 /// While a machine is copied from a template, the dialog turns that

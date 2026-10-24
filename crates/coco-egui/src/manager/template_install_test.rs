@@ -430,6 +430,12 @@ fn every_builtin_template_launches() {
             .flatten()
         {
             let copy = fixture.artifacts.path().join(&entry.slug).join(&*media);
+            assert!(
+                copy.is_file(),
+                "{}: {} must be installed",
+                template.slug,
+                copy.display()
+            );
             *media = copy.display().to_string();
         }
 

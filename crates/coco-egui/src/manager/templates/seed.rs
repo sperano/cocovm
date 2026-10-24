@@ -7,7 +7,7 @@
 //! installs, and one the user deleted never comes back. A release that
 //! changes a built-in template never touches the user's file.
 
-use std::fs;
+use std::fs::{self, File, OpenOptions, TryLockError};
 use std::io;
 use std::path::Path;
 
@@ -118,10 +118,20 @@ fn write_record(record: &Path, ids: &[String]) -> Result<(), String> {
 }
 
 /// Move the [`EOU_IMAGES`] an earlier release downloaded into `legacy`
-/// into the EOU template's `media_dir`, then remove `legacy` once nothing
-/// else is in it. Best effort: an image left behind only means the New
-/// Machine dialog offers the download again.
+/// into the EOU template's `media_dir`. Best effort: an image left behind
+/// only means the New Machine dialog offers the download again.
+///
+/// An earlier release still running can be downloading into `legacy`, so
+/// the move holds its download lock (`nitros9::download_eou`), and leaves
+/// the images while that lock is taken. The lock file stays: an instance
+/// waiting on it would otherwise lock a file another one no longer sees.
 fn move_eou_images(legacy: &Path, media_dir: &Path) {
+    if !legacy.is_dir() {
+        return;
+    }
+    let Some(_lock) = lock_legacy(legacy) else {
+        return;
+    };
     for name in EOU_IMAGES {
         let source = legacy.join(name);
         if !source.is_file() {
@@ -145,8 +155,38 @@ fn move_eou_images(legacy: &Path, media_dir: &Path) {
             );
         }
     }
-    let _ = fs::remove_file(legacy.join(nitros9::LOCK_FILE));
-    let _ = fs::remove_dir(legacy);
+}
+
+/// `legacy`'s download lock, taken without waiting, since seeding runs at
+/// launch. `None` while a download holds it, or when the lock file can't
+/// be opened (the images couldn't move out of a folder that refuses it
+/// either). When the lock can't be taken at all (a platform or NFS mount
+/// without locks), the move warns and goes ahead unlocked, as the download
+/// does.
+fn lock_legacy(legacy: &Path) -> Option<File> {
+    let path = legacy.join(nitros9::LOCK_FILE);
+    let file = OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(&path)
+        .inspect_err(|e| eprintln!("coco: {}: {e}; leaving the EOU images", path.display()))
+        .ok()?;
+    match file.try_lock() {
+        Ok(()) => {}
+        Err(TryLockError::WouldBlock) => {
+            eprintln!(
+                "coco: {}: a NitrOS-9 EOU download is running there; leaving its images",
+                legacy.display()
+            );
+            return None;
+        }
+        Err(TryLockError::Error(e)) => eprintln!(
+            "coco: {}: locking: {e}; moving the EOU images unlocked",
+            path.display()
+        ),
+    }
+    Some(file)
 }
 
 #[cfg(test)]

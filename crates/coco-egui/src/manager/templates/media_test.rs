@@ -1,6 +1,6 @@
 use super::*;
 use crate::machine_def::tests::TempDir;
-use crate::machine_def::{CartridgeDTO, DriveWireShareDTO, ShareAccessDTO};
+use crate::machine_def::{CartridgeDTO, DriveWireShareDTO, MediaDTO, ShareAccessDTO};
 use crate::manager::presets::Preset;
 
 /// A definition naming a relative disk, a relative VHD in a subfolder, an
@@ -66,6 +66,90 @@ fn copy_writes_files_and_folders() {
         b"notes"
     );
     assert!(!target.join("prints").exists());
+}
+
+/// A relative share folder, and a print folder inside it.
+const SHARE: &str = "work";
+const PRINT_SUBFOLDER: &str = "prints";
+const NOTES: &[u8] = b"notes";
+const PRINT_JOB: &[u8] = b"a long print job";
+
+/// A DriveWire machine sharing the relative folder `SHARE` and printing to
+/// `print_folder`, with no disk media.
+fn sharing_and_printing(print_folder: &str) -> MachineDef {
+    let mut def = Preset::CoCo3DriveWire.def(None);
+    def.media = MediaDTO::default();
+    def.drivewire.shares = vec![DriveWireShareDTO {
+        name: "work".to_string(),
+        path: SHARE.to_string(),
+        access: ShareAccessDTO::ReadWrite,
+    }];
+    def.drivewire.printer.output = PrintOutputDTO::Folder;
+    def.drivewire.printer.folder = print_folder.to_string();
+    def
+}
+
+/// A data folder holding the share with a note and, inside it, a print job.
+fn data_folder_with_prints() -> TempDir {
+    let from = TempDir::new("media-share-prints");
+    let prints = from.path().join(SHARE).join(PRINT_SUBFOLDER);
+    fs::create_dir_all(&prints).unwrap();
+    fs::write(from.path().join(SHARE).join("notes.txt"), NOTES).unwrap();
+    fs::write(prints.join("job.txt"), PRINT_JOB).unwrap();
+    from
+}
+
+/// A print folder that is also a share is the print folder: it isn't
+/// listed as a share folder to copy, however the path is spelled.
+#[test]
+fn a_print_folder_equal_to_a_share_is_not_a_share_folder() {
+    for spelling in [SHARE, "./work", "work/."] {
+        let media = relative_media(&sharing_and_printing(spelling));
+        assert!(media.folders.is_empty(), "{spelling}");
+        assert!(media.files.is_empty(), "{spelling}");
+        assert_eq!(media.print_folder.as_deref(), Some(spelling));
+    }
+}
+
+/// A print folder inside a share is neither copied nor counted with it.
+#[test]
+fn a_print_folder_inside_a_share_is_not_copied() {
+    let from = data_folder_with_prints();
+    let to = TempDir::new("media-share-prints-to");
+    let target = to.path().join("new");
+    let def = sharing_and_printing(&format!("{SHARE}/{PRINT_SUBFOLDER}"));
+    let copy = MediaCopy::new(&def, from.path().to_path_buf(), target.clone()).unwrap();
+
+    assert_eq!(copy.bytes(), NOTES.len() as u64);
+    copy.run().unwrap();
+
+    assert_eq!(
+        fs::read(target.join(SHARE).join("notes.txt")).unwrap(),
+        NOTES
+    );
+    assert!(!target.join(SHARE).join(PRINT_SUBFOLDER).exists());
+}
+
+/// A share that is a symlink to a folder elsewhere is left alone: it is
+/// neither copied nor counted, so a link can't pull in files from outside
+/// the data folder.
+#[cfg(unix)]
+#[test]
+fn a_share_that_links_outside_is_not_copied() {
+    let from = TempDir::new("media-share-link-from");
+    let outside = TempDir::new("media-share-link-outside");
+    let to = TempDir::new("media-share-link-to");
+    fs::write(outside.path().join("secret.txt"), PRINT_JOB).unwrap();
+    std::os::unix::fs::symlink(outside.path(), from.path().join(SHARE)).unwrap();
+    let target = to.path().join("new");
+    let mut def = sharing_and_printing("prints");
+    def.drivewire.printer.output = PrintOutputDTO::Off;
+    let copy = MediaCopy::new(&def, from.path().to_path_buf(), target.clone()).unwrap();
+
+    assert_eq!(copy.bytes(), 0);
+    copy.run().unwrap();
+
+    assert!(!target.join(SHARE).exists());
 }
 
 /// A missing file fails the copy; a missing share folder is skipped.

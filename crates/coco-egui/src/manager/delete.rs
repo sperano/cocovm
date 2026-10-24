@@ -155,11 +155,7 @@ impl ManagerApp {
         // A slug refused here is refused by the delete itself.
         let folders: Vec<Option<PathBuf>> = slugs
             .iter()
-            .map(|slug| {
-                artifact_dir(root, slug)
-                    .ok()
-                    .map(|d| lexically_normalized(&d))
-            })
+            .map(|slug| artifact_dir(root, slug).ok().map(|d| comparable(&d)))
             .collect();
         slugs
             .iter()
@@ -248,13 +244,13 @@ impl ManagerApp {
     /// path, or a relative one climbing out with `..`): removing the dir
     /// would take that file from the other machine. A running machine counts
     /// what it has mounted now as well as what its definition names. Paths
-    /// are compared lexically, without following symlinks.
+    /// are compared lexically, without following symlinks ([`comparable`]).
     fn check_data_folder_unshared(&self, index: usize, artifact_dir: &Path) -> Result<(), String> {
         let Some(root) = self.artifacts_root.as_deref() else {
             return Ok(());
         };
         let deleted = &self.entries[index];
-        let dir = lexically_normalized(artifact_dir);
+        let dir = comparable(artifact_dir);
         let users: Vec<String> = self
             .entries
             .iter()
@@ -283,7 +279,7 @@ impl ManagerApp {
     /// its `artifact_dir` by absolute path: the template's machines would
     /// lose it. A template's relative paths resolve in its own media folder.
     fn check_no_template_uses(&self, name: &str, artifact_dir: &Path) -> Result<(), String> {
-        let dir = lexically_normalized(artifact_dir);
+        let dir = comparable(artifact_dir);
         let users: Vec<String> = self
             .templates
             .list
@@ -291,7 +287,7 @@ impl ManagerApp {
             .filter(|template| {
                 template.def.host_paths().into_iter().any(|raw| {
                     let path = Path::new(raw);
-                    path.is_absolute() && lexically_normalized(path).starts_with(&dir)
+                    path.is_absolute() && comparable(path).starts_with(&dir)
                 })
             })
             .map(|template| format!("“{}”", template.name()))
@@ -335,7 +331,7 @@ impl ManagerApp {
                 "Can't delete the template “{name}” while its disk images download."
             ));
         }
-        let dir = lexically_normalized(&media_dir);
+        let dir = comparable(&media_dir);
         // Without an artifacts root, relative paths resolve nowhere near `dir`.
         let root = self.artifacts_root.as_deref().unwrap_or(Path::new(""));
         let users: Vec<String> = self
@@ -361,14 +357,14 @@ impl ManagerApp {
     }
 }
 
-/// Whether `entry` names a path inside `dir` (lexically normalized) in its
+/// Whether `entry` names a path inside `dir` ([`comparable`]) in its
 /// definition or, while running, in the media its VM has mounted: a runtime
 /// Insert can mount a file the definition doesn't name.
 fn uses_folder(entry: &MachineEntry, root: &Path, dir: &Path) -> bool {
     // Resolved like `machine_def::resolve_media_path`, against the injected
     // root.
     let own_dir = root.join(&entry.slug);
-    let inside = |path: &Path| lexically_normalized(&own_dir.join(path)).starts_with(dir);
+    let inside = |path: &Path| comparable(&own_dir.join(path)).starts_with(dir);
     entry
         .def
         .host_paths()
@@ -402,6 +398,19 @@ fn close_transitively(depends: &mut [Vec<bool>]) {
                 *cell |= reach;
             }
         }
+    }
+}
+
+/// `path` as the delete guards compare it: [`lexically_normalized`], then
+/// lowercased where the usual file system ignores case (Windows, macOS),
+/// so a path spelled with other capitals still counts as inside a folder.
+/// On a case-sensitive volume there, this only refuses more deletes.
+fn comparable(path: &Path) -> PathBuf {
+    let normalized = lexically_normalized(path);
+    if cfg!(any(windows, target_os = "macos")) {
+        PathBuf::from(normalized.to_string_lossy().to_lowercase())
+    } else {
+        normalized
     }
 }
 

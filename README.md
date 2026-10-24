@@ -77,13 +77,16 @@ of Use from its own copy of the downloaded disk images. To boot NitrOS-9, type
 offers to download them instead.
 
 To make your own template, right-click a powered-off machine and choose **Save
-as Template…**. The template keeps the machine's settings and a copy of the
-files in the machine's data folder, such as its disks. Files elsewhere on your
-computer stay shared. Each machine you create from a template gets its own copy
-of those files. To rename or delete templates, built-in ones included, open the
-**Templates** tab in the settings dialog. Deleting a template doesn't affect the
-machines made from it. Templates are stored in the configuration directory's
-`templates/` folder, next to `machines/`.
+as Template…**. The template keeps the machine's settings and a copy of each
+disk, tape, and cartridge file and DriveWire share folder that the machine uses
+from its data folder. Other files in that folder, such as print jobs, aren't
+copied, and files elsewhere on your computer stay shared. Each machine you
+create from a template gets its own copy of the copied files. To rename or
+delete templates, built-in ones included, open the **Templates** tab in the
+settings dialog. Deleting a template doesn't affect the machines made from it.
+Each template's settings file is stored in the configuration directory's
+`templates/` folder, next to `machines/`, and its copied files are stored in
+the data directory's `templates/<slug>/` folder.
 
 ## Build from source
 

@@ -119,7 +119,7 @@ fn seeding_skips_a_leftover_media_folder() {
 }
 
 /// The EOU images an earlier release downloaded move into the EOU
-/// template's media folder, and their old folder goes.
+/// template's media folder; the lock file stays in the old folder.
 #[test]
 fn seeding_moves_legacy_eou_images() {
     let fixture = TemplateFixture::new("seed-legacy-eou");
@@ -137,7 +137,33 @@ fn seeding_moves_legacy_eou_images() {
         let moved = fixture.media_dir(EOU_TEMPLATE).join(name);
         assert_eq!(std::fs::read(moved).unwrap(), name.as_bytes());
     }
-    assert!(!cache.exists());
+    for name in EOU_IMAGES {
+        assert!(!cache.join(name).exists(), "{name} moved out");
+    }
+    assert!(cache.join(nitros9::LOCK_FILE).is_file());
+}
+
+/// While another handle holds the legacy download lock, the images stay in
+/// the legacy folder, and the template is still seeded.
+#[test]
+fn seeding_leaves_legacy_images_while_a_download_holds_the_lock() {
+    let fixture = TemplateFixture::new("seed-legacy-locked");
+    let legacy = crate::machine_def::tests::TempDir::new("seed-legacy-locked-cache");
+    let cache = legacy.path().join("nitros9-eou");
+    std::fs::create_dir_all(&cache).unwrap();
+    for name in EOU_IMAGES {
+        std::fs::write(cache.join(name), name).unwrap();
+    }
+    let download = std::fs::File::create(cache.join(nitros9::LOCK_FILE)).unwrap();
+    download.lock().unwrap();
+
+    seed_builtins(&fixture.dirs(), Some(&cache), None).unwrap();
+
+    for name in EOU_IMAGES {
+        assert_eq!(std::fs::read(cache.join(name)).unwrap(), name.as_bytes());
+        assert!(!fixture.media_dir(EOU_TEMPLATE).join(name).exists());
+    }
+    assert!(slugs(&fixture).contains(&EOU_TEMPLATE.to_string()));
 }
 
 /// Without a data directory there is nowhere to put media: nothing is

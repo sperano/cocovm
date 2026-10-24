@@ -17,24 +17,36 @@ const DOWNLOAD_HOVER: &str = "Download the NitrOS-9 EOU disk images this templat
 /// Shown under a failed download, above its retry button.
 const FAILED_TEXT: &str = "The NitrOS-9 EOU download failed.";
 
+/// Disabled-hover text of the download button while the download runs for
+/// another template: one runs at a time.
+pub(crate) const OTHER_DOWNLOAD_HOVER: &str =
+    "Wait for the NitrOS-9 EOU download of another template to finish";
+
 impl ManagerApp {
-    /// Beneath a template missing the NitrOS-9 EOU images: the running
-    /// download's progress bar, or a button that starts (or retries) it
-    /// into `media_dir`, the template's media folder.
+    /// Beneath a template missing the NitrOS-9 EOU images: the download's
+    /// progress bar while it runs into `media_dir`, the template's media
+    /// folder, or a button that starts (or retries) it there. While it
+    /// runs for another template, the button is off.
     pub(super) fn eou_download_ui(&mut self, ui: &mut egui::Ui, media_dir: Option<&Path>) {
+        let label = format!("Download {EOU_TITLE} ({})", megabytes(EOU_ARCHIVE_BYTES));
+        let here = media_dir.is_some() && self.eou_download_dir.as_deref() == media_dir;
         if let Some(download) = &mut self.eou_download {
             download.poll();
             if download.is_running() {
-                download.draw(ui);
                 ui.ctx().request_repaint_after(PROGRESS_REPAINT_INTERVAL);
+                if here {
+                    download.draw(ui);
+                } else {
+                    ui.add_enabled(false, egui::Button::new(label))
+                        .on_disabled_hover_text(OTHER_DOWNLOAD_HOVER);
+                }
                 return;
             }
-            if let Some(error) = download.error() {
+            if here && let Some(error) = download.error() {
                 ui.colored_label(ui.visuals().error_fg_color, FAILED_TEXT)
                     .on_hover_text(error);
             }
         }
-        let label = format!("Download {EOU_TITLE} ({})", megabytes(EOU_ARCHIVE_BYTES));
         let Some(media_dir) = media_dir.map(Path::to_path_buf) else {
             ui.add_enabled(false, egui::Button::new(label))
                 .on_disabled_hover_text(super::NO_DATA_DIR);

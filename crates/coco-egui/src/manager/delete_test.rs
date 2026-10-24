@@ -519,3 +519,27 @@ fn deleting_machine_whose_files_a_template_uses_is_refused() {
     assert_eq!(manager.entries.len(), 1);
     assert_eq!(fs::read(&shared_disk).expect("disk survives"), DISK_BYTES);
 }
+
+/// The guards' path form drops `.` and cancels `..`, and lowercases exactly
+/// where the usual file system ignores case (Windows, macOS).
+#[test]
+fn comparable_normalizes_and_lowercases_where_the_file_system_ignores_case() {
+    let root = TempDir::new("delete-comparable");
+    let expected = root.path().join("Data").join("Games");
+    let spelled = root
+        .path()
+        .join("Data")
+        .join(".")
+        .join("Other")
+        .join("..")
+        .join("Games");
+
+    let comparable = comparable(&spelled);
+
+    if cfg!(any(windows, target_os = "macos")) {
+        let lowered = expected.to_string_lossy().to_lowercase();
+        assert_eq!(comparable, PathBuf::from(lowered));
+    } else {
+        assert_eq!(comparable, expected);
+    }
+}

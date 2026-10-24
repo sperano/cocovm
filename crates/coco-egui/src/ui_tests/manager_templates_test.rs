@@ -2,6 +2,7 @@
 //! saves it as a template, and the Settings dialog's Templates tab renames
 //! and deletes templates on Save.
 
+use eframe::egui::accesskit::Role;
 use egui_kittest::kittest::{NodeT, Queryable};
 
 use crate::machine_def::tests::TempDir;
@@ -113,4 +114,64 @@ fn settings_cancel_keeps_a_marked_template() {
 
     assert_eq!(harness.state().templates.list.len(), Preset::ALL.len());
     assert!(templates.media_dir("coco-2-disk-basic").exists());
+}
+
+/// The text typed after a template's name in the Templates tab.
+const NAME_SUFFIX: &str = " Renamed";
+
+/// The first template's name field gets [`NAME_SUFFIX`] appended, and the
+/// draft takes it.
+fn type_into_first_name(harness: &mut ManagerHarness) {
+    let name = Preset::CoCo2DiskBasic.name();
+    harness
+        .get_by(|node| node.role() == Role::TextInput && node.value().as_deref() == Some(name))
+        .focus();
+    harness.step();
+    harness
+        .get_by(|node| node.role() == Role::TextInput && node.value().as_deref() == Some(name))
+        .type_text(NAME_SUFFIX);
+    harness.step();
+}
+
+/// A name typed into a row applies on Save: the template file carries the
+/// new name under the same slug.
+#[test]
+fn settings_rename_applies_on_save() {
+    let templates = TemplateFixture::seeded("ui-settings-rename");
+    let dir = TempDir::new("ui-settings-rename-config");
+    let mut harness = templates_settings(&dir, &templates);
+    let renamed = format!("{}{NAME_SUFFIX}", Preset::CoCo2DiskBasic.name());
+
+    type_into_first_name(&mut harness);
+    click(&mut harness, "Save");
+
+    assert!(harness.state().settings.is_none(), "the dialog closes");
+    let template = templates
+        .dirs()
+        .load_all()
+        .into_iter()
+        .find(|template| template.slug == "coco-2-disk-basic")
+        .expect("the slug is kept");
+    assert_eq!(template.name(), renamed);
+    assert_eq!(harness.state().templates.list.len(), Preset::ALL.len());
+}
+
+/// Cancel drops a typed rename: the template keeps its name.
+#[test]
+fn settings_cancel_drops_a_rename() {
+    let templates = TemplateFixture::seeded("ui-settings-rename-cancel");
+    let dir = TempDir::new("ui-settings-rename-cancel-config");
+    let mut harness = templates_settings(&dir, &templates);
+
+    type_into_first_name(&mut harness);
+    click(&mut harness, "Cancel");
+
+    assert!(harness.state().settings.is_none(), "the dialog closes");
+    let template = templates
+        .dirs()
+        .load_all()
+        .into_iter()
+        .find(|template| template.slug == "coco-2-disk-basic")
+        .expect("the template stays");
+    assert_eq!(template.name(), Preset::CoCo2DiskBasic.name());
 }

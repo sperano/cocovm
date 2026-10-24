@@ -1,12 +1,14 @@
 use std::fs;
 use std::time::Duration;
 
+use super::snapshot::FileFate;
 use super::*;
 use crate::machine_def::StatsDTO;
 use crate::machine_def::tests::TempDir;
 use crate::manager::MachineEntry;
 use crate::manager::presets::Preset;
 use crate::manager::templates::tests::TemplateFixture;
+use crate::save_state::tests::boot_app;
 
 /// The machine the tests save.
 const SLUG: &str = "games";
@@ -156,19 +158,69 @@ fn replace_is_refused_while_a_machine_uses_the_template() {
 /// dropped.
 #[test]
 fn live_machine_opens_no_dialog() {
+    for running in [false, true] {
+        let fixture = Fixture::new(
+            "save-template-live",
+            TemplateFixture::new("save-template-live"),
+            b"",
+        );
+        let mut app = fixture.app();
+        if running {
+            app.entries[0].vm = Some(Box::new(boot_app()));
+        } else {
+            app.entries[0].suspended = true;
+        }
+
+        app.request_save_template(SLUG.to_string());
+        app.open_requested_save_template();
+
+        assert!(app.templates.save_dialog.is_none(), "running: {running}");
+        assert!(app.templates.save_request.is_none(), "running: {running}");
+    }
+}
+
+/// A machine started (by the control server) while the dialog is open is
+/// refused on Save, and no template is written.
+#[test]
+fn save_is_refused_once_the_machine_has_started() {
+    for running in [false, true] {
+        let fixture = Fixture::new(
+            "save-template-started",
+            TemplateFixture::new("save-template-started"),
+            b"data",
+        );
+        let mut app = fixture.app();
+        let mut dialog = open(&mut app);
+        if running {
+            app.entries[0].vm = Some(Box::new(boot_app()));
+        } else {
+            app.entries[0].suspended = true;
+        }
+
+        assert!(!app.commit_save_template(&mut dialog), "running: {running}");
+
+        assert_eq!(dialog.error.as_deref(), Some(STARTED_ERROR));
+        assert!(app.templates.find("games-coco").is_none());
+        assert!(!fixture.templates.media_dir("games-coco").exists());
+    }
+}
+
+/// A machine removed while the dialog is open can't be saved.
+#[test]
+fn save_is_refused_once_the_machine_is_gone() {
     let fixture = Fixture::new(
-        "save-template-live",
-        TemplateFixture::new("save-template-live"),
-        b"",
+        "save-template-gone",
+        TemplateFixture::new("save-template-gone"),
+        b"data",
     );
     let mut app = fixture.app();
-    app.entries[0].suspended = true;
+    let mut dialog = open(&mut app);
+    app.entries.clear();
 
-    app.request_save_template(SLUG.to_string());
-    app.open_requested_save_template();
+    assert!(!app.commit_save_template(&mut dialog));
 
-    assert!(app.templates.save_dialog.is_none());
-    assert!(app.templates.save_request.is_none());
+    assert_eq!(dialog.error.as_deref(), Some(MACHINE_GONE));
+    assert!(app.templates.find("games-coco").is_none());
 }
 
 /// A Name-field draft is committed before the dialog opens, renaming the

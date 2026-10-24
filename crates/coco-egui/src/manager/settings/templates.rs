@@ -41,11 +41,14 @@ pub(crate) struct TemplateRow {
     pub(crate) delete: bool,
 }
 
+/// A rename Save applies: `(slug, new name)`.
+pub(crate) type Rename = (String, String);
+
 /// What Save applies.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct TemplateEdits {
-    /// `(slug, new name)` for each renamed template.
-    pub(crate) renames: Vec<(String, String)>,
+    /// One for each renamed template.
+    pub(crate) renames: Vec<Rename>,
     /// The slugs of the templates to delete.
     pub(crate) deletes: Vec<String>,
 }
@@ -141,8 +144,10 @@ impl TemplatesDraft {
 impl ManagerApp {
     /// Apply `edits` from a Settings save: the deletes, each refused while
     /// a machine uses a file in the template's folder
-    /// (`ManagerApp::check_template_unused`), then the renames. Every edit
-    /// is tried; the errors of those that failed come back together.
+    /// (`ManagerApp::check_template_unused`), then the renames, each
+    /// refused while a template left after the deletes keeps its new name
+    /// ([`split_renames`]). Every edit is tried; the errors of those that
+    /// failed come back together.
     pub(super) fn apply_template_edits(&mut self, edits: &TemplateEdits) -> Result<(), String> {
         let mut errors = Vec::new();
         for slug in &edits.deletes {
@@ -151,9 +156,16 @@ impl ManagerApp {
                 .and_then(|()| templates::delete(&self.templates.dirs, slug));
             errors.extend(deleted.err());
         }
-        for (slug, name) in &edits.renames {
+        self.templates.reload();
+        let (renames, refused) = split_renames(&self.templates.list, &edits.renames);
+        for (slug, name) in renames {
             errors.extend(self.rename_template(slug, name).err());
         }
+        errors.extend(
+            refused
+                .into_iter()
+                .map(|(_, name)| format!("Another template is still named “{name}”")),
+        );
         self.templates.reload();
         if errors.is_empty() {
             Ok(())
@@ -174,6 +186,36 @@ impl ManagerApp {
     pub(super) fn reveal_template(&self, slug: &str) -> Result<(), String> {
         let dir = self.templates.dirs.defs.as_deref().ok_or(NO_CONFIG_DIR)?;
         crate::manager::reveal::reveal(&crate::machine_def::def_path(dir, slug))
+    }
+}
+
+/// `renames` split into those that apply to `templates` (the ones left
+/// after the deletes) and those refused: a rename is refused while another
+/// template would keep or take its new name, as one whose delete failed
+/// does. A refused rename keeps its template's old name, which can make
+/// another rename clash, so the split repeats until nothing changes.
+fn split_renames<'a>(
+    templates: &'a [Template],
+    renames: &'a [Rename],
+) -> (Vec<&'a Rename>, Vec<&'a Rename>) {
+    let mut applied: Vec<&Rename> = renames.iter().collect();
+    let mut refused = Vec::new();
+    loop {
+        let final_name = |template: &'a Template| {
+            applied
+                .iter()
+                .find(|(slug, _)| *slug == template.slug)
+                .map_or(template.name(), |(_, name)| name.as_str())
+        };
+        let clash = applied.iter().position(|(slug, name)| {
+            templates.iter().any(|template| {
+                template.slug != *slug && templates::same_name(final_name(template), name)
+            })
+        });
+        let Some(index) = clash else {
+            return (applied, refused);
+        };
+        refused.push(applied.remove(index));
     }
 }
 

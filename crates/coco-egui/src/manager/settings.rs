@@ -276,7 +276,14 @@ impl ManagerApp {
                 None => Ok(()),
             }
         })
-        .and_then(|()| self.apply_template_edits(&template_edits));
+        .and_then(|()| {
+            // The listener is on the new port now: a failed template edit
+            // keeps the dialog open, and its next Save compares with that.
+            if let (Some(port), Some(dialog)) = (port_change, &mut self.settings) {
+                dialog.opened_control_port = port;
+            }
+            self.apply_template_edits(&template_edits)
+        });
         match result {
             Ok(()) => self.settings = None,
             Err(e) => {

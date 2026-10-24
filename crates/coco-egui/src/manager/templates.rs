@@ -243,27 +243,27 @@ pub(crate) fn save(dir: &Path, template: &Template) -> Result<(), String> {
     machine_def::save_with_extras(dir, &template.slug, &template.def, &extras)
 }
 
-/// Delete template `slug`: its file first, so a failure never leaves a
-/// listed template without its media, then its media folder. Machines made
-/// from it keep working: they have their own copies.
+/// Delete template `slug`: its media folder first, then its file, so a
+/// failure leaves the template listed for another Delete (the New Machine
+/// dialog names the files it lost) rather than a media folder nothing
+/// lists. Machines made from it keep working: they have their own copies.
 pub(crate) fn delete(dirs: &TemplateDirs, slug: &str) -> Result<(), String> {
     let dir = dirs.defs.as_deref().ok_or(super::NO_CONFIG_DIR)?;
     if Path::new(slug).file_name() != Some(OsStr::new(slug)) {
         return Err(format!("refusing to delete the template {slug:?}"));
     }
+    if let Some(media_dir) = dirs.media_dir(slug) {
+        match fs::remove_dir_all(&media_dir) {
+            Ok(()) => {}
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+            Err(e) => return Err(format!("{}: {e}", media_dir.display())),
+        }
+    }
     let path = machine_def::def_path(dir, slug);
     match fs::remove_file(&path) {
-        Ok(()) => {}
-        Err(e) if e.kind() == io::ErrorKind::NotFound => {}
-        Err(e) => return Err(format!("{}: {e}", path.display())),
-    }
-    let Some(media_dir) = dirs.media_dir(slug) else {
-        return Ok(());
-    };
-    match fs::remove_dir_all(&media_dir) {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
-        Err(e) => Err(format!("{}: {e}", media_dir.display())),
+        Err(e) => Err(format!("{}: {e}", path.display())),
     }
 }
 

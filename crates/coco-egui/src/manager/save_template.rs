@@ -24,7 +24,7 @@ use super::{DETAIL_SECTION_GAP, ManagerApp, NO_CONFIG_DIR, NO_DATA_DIR};
 use crate::machine_def::{self, MachineDef};
 
 mod snapshot;
-pub(crate) use snapshot::{FileFate, FileLine, file_lines, snapshot};
+pub(crate) use snapshot::{FileLine, file_lines, snapshot};
 
 /// The context menu item.
 pub(crate) const SAVE_TEMPLATE_LABEL: &str = "Save as Template…";
@@ -42,6 +42,11 @@ pub(crate) const CANCEL_LABEL: &str = "Cancel";
 /// Shown while a large copy runs.
 pub(crate) const COPYING_TEXT: &str = "Copying the disk images into the template…";
 
+/// Why Save refuses a machine started (through the control server) since
+/// the dialog opened, or one gone meanwhile.
+const STARTED_ERROR: &str = "Stop the machine before saving it as a template.";
+const MACHINE_GONE: &str = "the machine no longer exists";
+
 /// The error of a save whose thread ended without a result.
 const COPY_EXITED: &str = "the template copy exited unexpectedly";
 
@@ -54,6 +59,8 @@ const DESCRIPTION_ROWS: usize = 3;
 
 /// The open dialog.
 pub(crate) struct SaveTemplateDialog {
+    /// The machine's slug, to check it is still stopped on Save.
+    slug: String,
     /// The machine's display name, for the heading.
     machine_name: String,
     /// The machine's definition when the dialog opened.
@@ -88,10 +95,12 @@ enum DialogAction {
 }
 
 impl SaveTemplateDialog {
-    /// The dialog for machine `def`, whose data folder is `artifact_dir`.
-    fn new(def: &MachineDef, artifact_dir: Option<PathBuf>) -> Self {
+    /// The dialog for machine `slug`'s `def`, whose data folder is
+    /// `artifact_dir`.
+    fn new(slug: String, def: &MachineDef, artifact_dir: Option<PathBuf>) -> Self {
         let preview = snapshot(def, artifact_dir.as_deref(), def.name.clone(), None);
         Self {
+            slug,
             machine_name: def.name.clone(),
             def: def.clone(),
             files: file_lines(&preview, artifact_dir.as_deref()),
@@ -146,7 +155,7 @@ impl ManagerApp {
         }
         let artifact_dir = self.artifacts_root.as_ref().map(|root| root.join(&slug));
         self.templates.reload();
-        self.templates.save_dialog = Some(SaveTemplateDialog::new(&entry.def, artifact_dir));
+        self.templates.save_dialog = Some(SaveTemplateDialog::new(slug, &entry.def, artifact_dir));
     }
 
     /// The Save as Template modal, drawn once per `update()` while it is
@@ -251,11 +260,8 @@ impl ManagerApp {
             super::template_install::copy_spinner(ui, COPYING_TEXT);
             return DialogAction::Idle;
         }
-        let missing = dialog
-            .files
-            .iter()
-            .any(|line| line.fate == FileFate::Missing);
-        let savable = !dialog.name.trim().is_empty() && !missing;
+        let blocked = dialog.files.iter().any(|line| line.fate.blocks_save());
+        let savable = !dialog.name.trim().is_empty() && !blocked;
         draw_buttons(ui, savable, clash.is_some())
     }
 
@@ -266,9 +272,13 @@ impl ManagerApp {
     fn commit_save_template(&mut self, dialog: &mut SaveTemplateDialog) -> bool {
         dialog.error = None;
         let replaced = dialog.clash(&self.templates.list).map(|t| t.slug.clone());
-        let job = replaced
-            .as_deref()
-            .map_or(Ok(()), |slug| self.check_template_unused(slug))
+        let job = self
+            .check_stopped(&dialog.slug)
+            .and_then(|()| {
+                replaced
+                    .as_deref()
+                    .map_or(Ok(()), |slug| self.check_template_unused(slug))
+            })
             .and_then(|()| self.prepare_save_template(dialog, replaced));
         let job = match job {
             Ok(job) => job,
@@ -288,6 +298,16 @@ impl ManagerApp {
         }
         let result = job.run();
         self.finish_save_template(dialog, result)
+    }
+
+    /// Refuse to save machine `slug` unless it is still listed and powered
+    /// off: the control server can start it while the dialog is open.
+    fn check_stopped(&self, slug: &str) -> Result<(), String> {
+        match self.entries.iter().find(|entry| entry.slug == slug) {
+            None => Err(MACHINE_GONE.to_string()),
+            Some(entry) if entry.is_alive() => Err(STARTED_ERROR.to_string()),
+            Some(_) => Ok(()),
+        }
     }
 
     /// Claim a slug and media folder for `dialog`'s template and plan the
@@ -416,7 +436,8 @@ fn draw_fields(ui: &mut egui::Ui, dialog: &mut SaveTemplateDialog) {
     .labelled_by(label.id);
 }
 
-/// What saving does with each file, a missing one in the error color.
+/// What saving does with each file, one that keeps Save off in the error
+/// color.
 fn draw_file_lines(ui: &mut egui::Ui, files: &[FileLine]) {
     if files.is_empty() {
         ui.weak("The machine names no files.");
@@ -425,7 +446,7 @@ fn draw_file_lines(ui: &mut egui::Ui, files: &[FileLine]) {
     ui.label("Files");
     for line in files {
         let text = line.text();
-        if line.fate == FileFate::Missing {
+        if line.fate.blocks_save() {
             ui.colored_label(ui.visuals().error_fg_color, text);
         } else {
             ui.add(egui::Label::new(egui::RichText::new(text).weak()).wrap());

@@ -60,22 +60,49 @@ fn download_needs_a_data_dir() {
     );
 }
 
+/// An app with a download running into `dir`, 29.1 MB in, while the
+/// returned sender lives.
+fn downloading_into(dir: &Path) -> (ManagerApp, mpsc::Sender<Result<(), String>>) {
+    let progress = Arc::new(Progress::default());
+    progress.set_total(Some(EOU_ARCHIVE_BYTES));
+    progress.add(29_100_000);
+    let (tx, rx) = mpsc::channel();
+    let mut app = app();
+    app.eou_download = Some(Download::running(Source::Eou, progress, rx));
+    app.eou_download_dir = Some(dir.to_path_buf());
+    (app, tx)
+}
+
 /// A running download shows its progress bar in place of the button.
 #[test]
 fn running_download_shows_its_progress() {
     let eou = TempDir::new("eou-menu-running");
-    let progress = Arc::new(Progress::default());
-    progress.set_total(Some(EOU_ARCHIVE_BYTES));
-    progress.add(29_100_000);
-    let (_tx, rx) = mpsc::channel();
-    let mut app = app();
-    app.eou_download = Some(Download::running(Source::Eou, progress, rx));
 
+    let (app, _tx) = downloading_into(eou.path());
     let harness = entry_harness(app, Some(eou.path()));
 
     harness.get_by_label(Source::Eou.label());
     harness.get_by_label("29.1 MB of 58.2 MB");
     assert!(harness.query_by_label(&download_label()).is_none());
+}
+
+/// Beneath another template, a running download shows no progress, only
+/// the button, off until it ends.
+#[test]
+fn download_for_another_template_turns_the_button_off() {
+    let eou = TempDir::new("eou-menu-elsewhere");
+    let other = TempDir::new("eou-menu-elsewhere-other");
+
+    let (app, _tx) = downloading_into(other.path());
+    let harness = entry_harness(app, Some(eou.path()));
+
+    assert!(harness.query_by_label(Source::Eou.label()).is_none());
+    assert!(
+        harness
+            .get_by_label(&download_label())
+            .accesskit_node()
+            .is_disabled()
+    );
 }
 
 /// A failed download says so and offers the button again for a retry.
@@ -86,11 +113,34 @@ fn failed_download_offers_a_retry() {
     tx.send(Err("404".to_string())).unwrap();
     let mut app = app();
     app.eou_download = Some(Download::running(Source::Eou, Arc::default(), rx));
+    app.eou_download_dir = Some(eou.path().to_path_buf());
 
     let harness = entry_harness(app, Some(eou.path()));
 
     harness.get_by_label(FAILED_TEXT);
     harness.get_by_label(&download_label());
+}
+
+/// Another template's failed download isn't reported here.
+#[test]
+fn failed_download_for_another_template_is_not_shown() {
+    let eou = TempDir::new("eou-menu-failed-here");
+    let other = TempDir::new("eou-menu-failed-other");
+    let (tx, rx) = mpsc::channel();
+    tx.send(Err("404".to_string())).unwrap();
+    let mut app = app();
+    app.eou_download = Some(Download::running(Source::Eou, Arc::default(), rx));
+    app.eou_download_dir = Some(other.path().to_path_buf());
+
+    let harness = entry_harness(app, Some(eou.path()));
+
+    assert!(harness.query_by_label(FAILED_TEXT).is_none());
+    assert!(
+        !harness
+            .get_by_label(&download_label())
+            .accesskit_node()
+            .is_disabled()
+    );
 }
 
 /// Clicking the button after a failure starts a new download.

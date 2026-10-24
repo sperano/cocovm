@@ -1,6 +1,7 @@
 use super::*;
 use crate::machine_def::tests::TempDir;
 use crate::manager::MachineEntry;
+use crate::manager::presets::Preset;
 use crate::manager::templates::tests::{EOU_TEMPLATE, TemplateFixture, sample_template};
 
 /// A draft over templates named `names`, slugged by position.
@@ -138,6 +139,113 @@ fn refused_delete_leaves_the_rest_applied() {
     assert_eq!(
         app.templates.find("coco-2-disk-basic").unwrap().name(),
         "My CoCo 2"
+    );
+}
+
+/// A rename as `split_renames` takes it.
+fn rename(slug: &str, name: &str) -> (String, String) {
+    (slug.to_string(), name.to_string())
+}
+
+/// The slugs of `renames`.
+fn rename_slugs<'a>(renames: &[&'a (String, String)]) -> Vec<&'a str> {
+    renames.iter().map(|(slug, _)| slug.as_str()).collect()
+}
+
+/// Templates `t0`, `t1`, ... named `names`.
+fn templates_named(names: &[&str]) -> Vec<Template> {
+    names
+        .iter()
+        .enumerate()
+        .map(|(index, name)| sample_template(&format!("t{index}"), name))
+        .collect()
+}
+
+/// A rename to the name another template keeps is refused, case aside.
+#[test]
+fn rename_into_a_remaining_name_is_refused() {
+    let templates = templates_named(&["A", "B"]);
+    let renames = [rename("t0", "b")];
+
+    let (applied, refused) = split_renames(&templates, &renames);
+
+    assert!(applied.is_empty());
+    assert_eq!(rename_slugs(&refused), ["t0"]);
+}
+
+/// Templates may swap names: each gives up the name the other takes.
+#[test]
+fn swapping_names_is_allowed() {
+    let templates = templates_named(&["A", "B"]);
+    let renames = [rename("t0", "B"), rename("t1", "A")];
+
+    let (applied, refused) = split_renames(&templates, &renames);
+
+    assert_eq!(rename_slugs(&applied), ["t0", "t1"]);
+    assert!(refused.is_empty());
+}
+
+/// Refusing a rename leaves its template's old name taken, which refuses
+/// the rename that wanted that name in turn.
+#[test]
+fn refusing_a_rename_cascades() {
+    let templates = templates_named(&["A", "B", "C"]);
+    let renames = [rename("t0", "B"), rename("t2", "A")];
+
+    let (applied, refused) = split_renames(&templates, &renames);
+
+    assert!(applied.is_empty());
+    assert_eq!(rename_slugs(&refused), ["t0", "t2"]);
+}
+
+/// A rename that no template contests applies beside one that is refused.
+#[test]
+fn an_uncontested_rename_survives_a_refused_one() {
+    let templates = templates_named(&["A", "B", "C"]);
+    let renames = [rename("t0", "B"), rename("t2", "Gamma")];
+
+    let (applied, refused) = split_renames(&templates, &renames);
+
+    assert_eq!(rename_slugs(&applied), ["t2"]);
+    assert_eq!(rename_slugs(&refused), ["t0"]);
+}
+
+/// A rename to the name of a template whose delete is refused is refused
+/// too, and both templates keep their names.
+#[test]
+fn rename_into_the_name_of_a_refused_delete_is_refused() {
+    let templates = TemplateFixture::seeded("settings-templates-clash");
+    let artifacts = TempDir::new("settings-templates-clash-artifacts");
+    let mut app = app(&templates, &artifacts);
+    let def = crate::machine_def::MachineDef::from_config(
+        "User CoCo".to_string(),
+        None,
+        &coco_core::MachineConfig::default(),
+    );
+    let mut entry = MachineEntry::new("user".to_string(), def);
+    let used = templates.media_dir("coco-3-disk-basic").join("disk0.dsk");
+    entry.def.media.disk0 = Some(used.display().to_string());
+    app.entries.push(entry);
+    let kept_name = Preset::CoCo3DiskBasic.name();
+    let edits = TemplateEdits {
+        renames: vec![rename("coco-2-disk-basic", kept_name)],
+        deletes: vec!["coco-3-disk-basic".to_string()],
+    };
+
+    let error = app.apply_template_edits(&edits).unwrap_err();
+
+    assert!(error.contains("“User CoCo”"), "{error}");
+    assert!(
+        error.contains(&format!("Another template is still named “{kept_name}”")),
+        "{error}"
+    );
+    assert_eq!(
+        app.templates.find("coco-3-disk-basic").unwrap().name(),
+        kept_name
+    );
+    assert_eq!(
+        app.templates.find("coco-2-disk-basic").unwrap().name(),
+        Preset::CoCo2DiskBasic.name()
     );
 }
 

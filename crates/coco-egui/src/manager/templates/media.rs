@@ -26,12 +26,20 @@ pub(crate) struct RelativeMedia {
     /// DriveWire share folders, copied with what they hold. A missing one
     /// is skipped: launch creates it.
     pub(crate) folders: Vec<String>,
+    /// The DriveWire print folder, when relative. Never copied, not even
+    /// inside a share folder.
+    pub(crate) print_folder: Option<String>,
 }
 
 impl RelativeMedia {
     /// Whether the definition names nothing in its data folder.
     pub(crate) fn is_empty(&self) -> bool {
         self.files.is_empty() && self.folders.is_empty()
+    }
+
+    /// [`Self::print_folder`] resolved in the data folder `root`.
+    pub(crate) fn print_dir(&self, root: &Path) -> Option<PathBuf> {
+        self.print_folder.as_ref().map(|folder| root.join(folder))
     }
 }
 
@@ -41,28 +49,48 @@ impl RelativeMedia {
 /// `[hardware].rom` names a file in the working directory, so
 /// `MachineDef::host_paths` already leaves it out.
 pub(crate) fn relative_media(def: &MachineDef) -> RelativeMedia {
-    let relative = |path: &&str| !Path::new(path).is_absolute();
+    let relative = |path: &&str| !path.trim().is_empty() && !Path::new(path).is_absolute();
+    let printer = &def.drivewire.printer;
+    let print_folder = (printer.output == PrintOutputDTO::Folder)
+        .then_some(printer.folder.as_str())
+        .filter(relative);
+    let not_print = |path: &&str| !print_folder.is_some_and(|print| same_path(path, print));
     let folders: BTreeSet<&str> = def
         .drivewire
         .shares
         .iter()
         .map(|share| share.path.as_str())
-        .filter(|path| !path.trim().is_empty())
         .filter(relative)
+        .filter(not_print)
         .collect();
-    let printer = &def.drivewire.printer;
-    let print_folder =
-        (printer.output == PrintOutputDTO::Folder).then_some(printer.folder.as_str());
     let files: BTreeSet<&str> = def
         .host_paths()
         .into_iter()
         .filter(relative)
-        .filter(|path| !folders.contains(path) && Some(*path) != print_folder)
+        .filter(not_print)
+        .filter(|path| !folders.contains(path))
         .collect();
     RelativeMedia {
         files: files.into_iter().map(str::to_string).collect(),
         folders: folders.into_iter().map(str::to_string).collect(),
+        print_folder: print_folder.map(str::to_string),
     }
+}
+
+/// Whether two relative paths name the same entry, `.` components aside.
+fn same_path(a: &str, b: &str) -> bool {
+    fn parts(path: &str) -> impl Iterator<Item = Component<'_>> {
+        Path::new(path)
+            .components()
+            .filter(|component| *component != Component::CurDir)
+    }
+    parts(a).eq(parts(b))
+}
+
+/// Whether `path` is a folder itself, not a symlink to one: a copy never
+/// follows a link out of the data folder.
+pub(crate) fn is_folder(path: &Path) -> bool {
+    fs::symlink_metadata(path).is_ok_and(|meta| meta.is_dir())
 }
 
 /// The [`RelativeMedia::files`] of `def` missing from `media_dir`. A
@@ -77,7 +105,7 @@ pub(crate) fn missing_files(def: &MachineDef, media_dir: &Path) -> Vec<String> {
 
 /// Refuse a relative path that could leave its data folder (`..`), so a
 /// copy never reads or writes outside the two folders it joins.
-fn check_inside(path: &str) -> Result<(), String> {
+pub(crate) fn check_inside(path: &str) -> Result<(), String> {
     let inside = Path::new(path)
         .components()
         .all(|component| matches!(component, Component::Normal(_) | Component::CurDir));
@@ -120,11 +148,12 @@ impl MediaCopy {
             .iter()
             .filter_map(|file| fs::metadata(self.from.join(file)).ok())
             .map(|meta| meta.len());
+        let skip = self.media.print_dir(&self.from);
         let folders = self
             .media
             .folders
             .iter()
-            .map(|folder| tree_bytes(&self.from.join(folder)));
+            .map(|folder| tree_bytes(&self.from.join(folder), skip.as_deref()));
         files.chain(folders).sum()
     }
 
@@ -144,10 +173,11 @@ impl MediaCopy {
             }
             copy_file(&source, &self.to.join(file))?;
         }
+        let skip = self.media.print_dir(&self.from);
         for folder in &self.media.folders {
             let source = self.from.join(folder);
-            if source.is_dir() {
-                copy_tree(&source, &self.to.join(folder))?;
+            if is_folder(&source) {
+                copy_tree(&source, &self.to.join(folder), skip.as_deref())?;
             }
         }
         Ok(())
@@ -164,10 +194,14 @@ fn copy_file(source: &Path, target: &Path) -> Result<(), String> {
         .map_err(|e| path_error(target, &e))
 }
 
-/// Copy the folder `source` and everything in it to `target`. A symlink is
-/// copied as the file it points at; one to a folder, or a dangling one, is
-/// skipped, so a link loop can't make the copy endless.
-fn copy_tree(source: &Path, target: &Path) -> Result<(), String> {
+/// Copy the folder `source` and everything in it to `target`, except the
+/// folder `skip` (the print folder). A symlink is copied as the file it
+/// points at; one to a folder, or a dangling one, is skipped, so a link
+/// loop can't make the copy endless.
+fn copy_tree(source: &Path, target: &Path, skip: Option<&Path>) -> Result<(), String> {
+    if skip == Some(source) {
+        return Ok(());
+    }
     fs::create_dir_all(target).map_err(|e| path_error(target, &e))?;
     let entries = fs::read_dir(source).map_err(|e| path_error(source, &e))?;
     for entry in entries {
@@ -176,7 +210,7 @@ fn copy_tree(source: &Path, target: &Path) -> Result<(), String> {
         let file_type = entry.file_type().map_err(|e| path_error(&path, &e))?;
         let destination = target.join(entry.file_name());
         if file_type.is_dir() {
-            copy_tree(&path, &destination)?;
+            copy_tree(&path, &destination, skip)?;
         } else if file_type.is_file() || path.is_file() {
             copy_file(&path, &destination)?;
         }
@@ -184,16 +218,20 @@ fn copy_tree(source: &Path, target: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// The bytes of every file under `dir`, following the same rules as
-/// [`copy_tree`]. Unreadable entries count as empty.
-pub(crate) fn tree_bytes(dir: &Path) -> u64 {
+/// The bytes of every file under the folder `dir`, without `skip`,
+/// following the same rules as [`copy_tree`]. Unreadable entries, and a
+/// `dir` that is a symlink, count as empty.
+pub(crate) fn tree_bytes(dir: &Path, skip: Option<&Path>) -> u64 {
+    if skip == Some(dir) || !is_folder(dir) {
+        return 0;
+    }
     let Ok(entries) = fs::read_dir(dir) else {
         return 0;
     };
     entries
         .flatten()
         .map(|entry| match entry.file_type() {
-            Ok(kind) if kind.is_dir() => tree_bytes(&entry.path()),
+            Ok(kind) if kind.is_dir() => tree_bytes(&entry.path(), skip),
             _ => fs::metadata(entry.path())
                 .ok()
                 .filter(fs::Metadata::is_file)
