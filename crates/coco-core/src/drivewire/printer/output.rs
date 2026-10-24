@@ -18,13 +18,12 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::thread;
 
+use crate::printer::to_host_text;
+
 use super::{JobEnd, PrintJob};
 
 /// Highest numeric suffix tried after a file name is taken.
 const NAME_COLLISION_ATTEMPTS: u32 = 1000;
-
-const CR: u8 = b'\r';
-const LF: u8 = b'\n';
 
 /// What happens to a job when the guest flushes it.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -65,21 +64,6 @@ impl PrintFormat {
             Self::Raw => Cow::Borrowed(bytes),
         }
     }
-}
-
-/// CR LF and lone CR become LF; every other byte is kept.
-pub(super) fn to_host_text(bytes: &[u8]) -> Vec<u8> {
-    let mut text = Vec::with_capacity(bytes.len());
-    let mut after_cr = false;
-    for &byte in bytes {
-        match byte {
-            CR => text.push(LF),
-            LF if after_cr => {}
-            _ => text.push(byte),
-        }
-        after_cr = byte == CR;
-    }
-    text
 }
 
 /// File name stem for `job`: its flush time, job number, and why it ended.

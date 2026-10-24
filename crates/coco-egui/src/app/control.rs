@@ -83,6 +83,16 @@ impl CocoApp {
         })
     }
 
+    /// `read_printer`: captured printer-port text and its truncation state,
+    /// optionally clearing both after taking the snapshot.
+    pub(crate) fn read_printer(&mut self, clear: bool) -> crate::control::Reply {
+        let captured = self.machine.bus.bitbanger.read_capture(clear);
+        crate::control::Reply::Printer(crate::control::PrinterOutput {
+            text: captured.text,
+            truncated: captured.truncated,
+        })
+    }
+
     /// `type_text`: queue `text` on [`Self::remote_type_ahead`], same
     /// mapping as [`Self::enqueue_text`] uses for the host's own type-ahead,
     /// except that a character with no CoCo key rejects the whole call

@@ -274,7 +274,7 @@ fn read_printer_requires_live_vm_and_clears_after_returning() {
         .machine
         .bus
         .bitbanger
-        .print_bytes(b"LINE\r");
+        .print_bytes(b"LINE\r\n");
 
     let first = dispatch(&mut app, "live", Action::ReadPrinter { clear: true });
     assert_eq!(

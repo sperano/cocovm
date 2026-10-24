@@ -89,14 +89,14 @@ fn owned_byte_estimate_accounts_for_rows_and_dot_capacity() {
 #[test]
 fn printer_capture_preserves_order_normalizes_cr_and_decodes_lossily() {
     let mut capture = PrinterCapture::default();
-    for byte in [b'A', b'\r', 0xFF, b'B'] {
+    for byte in [b'A', b'\r', b'\n', 0xFF, b'B', b'\r', b'C'] {
         capture.push(byte);
     }
 
     assert_eq!(
         capture.snapshot(),
         PrinterCaptureSnapshot {
-            text: "A\n\u{fffd}B".to_string(),
+            text: "A\n\u{fffd}B\nC".to_string(),
             truncated: false,
         }
     );
@@ -109,10 +109,10 @@ fn printer_capture_retains_newest_bytes_and_reports_truncation() {
         capture.push((byte % 251) as u8);
     }
 
-    let expected: Vec<u8> = (1..=PRINTER_CAPTURE_CAPACITY)
+    let retained: Vec<u8> = (1..=PRINTER_CAPTURE_CAPACITY)
         .map(|byte| (byte % 251) as u8)
-        .map(|byte| if byte == b'\r' { b'\n' } else { byte })
         .collect();
+    let expected = to_host_text(&retained);
     let snapshot = capture.snapshot();
     assert_eq!(snapshot.text, String::from_utf8_lossy(&expected));
     assert!(snapshot.truncated);

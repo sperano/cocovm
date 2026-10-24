@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use super::{Backend, finish, parse_args, structured_result};
+use super::{Backend, RpcError, finish, parse_args, structured_result};
 use crate::control::protocol::{Action, Reply, Request};
 
 #[derive(Deserialize)]
@@ -12,7 +12,7 @@ struct ReadPrinterArgs {
     clear: bool,
 }
 
-pub(super) fn dispatch(backend: &mut dyn Backend, args: Value) -> Result<Value, super::RpcError> {
+pub(super) fn dispatch(backend: &mut dyn Backend, args: Value) -> Result<Value, RpcError> {
     let ReadPrinterArgs { vm, clear } = parse_args(args)?;
     let request = Request {
         vm,
@@ -20,15 +20,16 @@ pub(super) fn dispatch(backend: &mut dyn Backend, args: Value) -> Result<Value, 
     };
     Ok(finish(backend, request, |reply| match reply {
         Reply::Printer(output) => {
+            let structured = json!({
+                "text": &output.text,
+                "truncated": output.truncated,
+            });
             let text = if output.truncated {
                 format!("[Earlier printer output was truncated.]\n{}", output.text)
             } else {
-                output.text.clone()
+                output.text
             };
-            Some(structured_result(
-                text,
-                json!({"text": output.text, "truncated": output.truncated}),
-            ))
+            Some(structured_result(text, structured))
         }
         _ => None,
     }))
