@@ -15,7 +15,7 @@ use super::{ManagerApp, WINDOW_SIZE};
 
 /// What the dialog asks before fetching anything.
 const PROMPT_TEXT: &str =
-    "Download the ROMs, cartridges, and images CoCoVM needs to start your machines.";
+    "To start a machine, CoCoVM needs to download some ROMs, cartridges, and images.";
 
 /// Window size while the dialog is the only content: room for the progress
 /// bar, with a failure message under it.
