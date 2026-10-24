@@ -80,7 +80,9 @@ To make your own template, right-click a powered-off machine and choose **Save
 as Template…**. The template keeps the machine's settings and a copy of each
 disk, tape, and cartridge file and DriveWire share folder that the machine uses
 from its data folder. Other files in that folder, such as print jobs, aren't
-copied, and files elsewhere on your computer stay shared. Each machine you
+copied, and files elsewhere on your computer stay shared. A share folder that's
+a symbolic link isn't copied, so a machine created from the template starts
+without that share's files. Each machine you
 create from a template gets its own copy of the copied files. To rename or
 delete templates, built-in ones included, open the **Templates** tab in the
 settings dialog. Deleting a template doesn't affect the machines made from it.
