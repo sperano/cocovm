@@ -55,6 +55,26 @@ fn about_request_opens_the_about_window() {
     assert!(harness.query_by_label(ABOUT_TEXT).is_none());
 }
 
+/// The About window credits the emulators used as references and the
+/// licensed CoCo 2 model.
+#[test]
+fn about_window_shows_acknowledgments() {
+    let mut harness = manager_harness(None, Vec::new());
+
+    harness.state().about_request.raise();
+    harness.step();
+
+    for label in [
+        "Acknowledgments",
+        "MAME",
+        "XRoar",
+        "TRS-80 Color Computer 2 by ericomont",
+        "CC BY 4.0",
+    ] {
+        harness.get_by_label(label);
+    }
+}
+
 /// The About window repeats the startup banner's inventory line, counted
 /// from the manager's own ROM and cartridge directories and machine list.
 /// Opened through the request, the one entry point present on every platform;
