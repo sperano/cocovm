@@ -55,6 +55,33 @@ fn about_request_opens_the_about_window() {
     assert!(harness.query_by_label(ABOUT_TEXT).is_none());
 }
 
+/// The About window links to the credited emulators, CoCo 2 model, and license.
+#[test]
+fn about_window_shows_acknowledgment_links() {
+    for (label, url) in [
+        ("MAME", "https://www.mamedev.org/"),
+        ("XRoar", "https://www.6809.org.uk/xroar/"),
+        (
+            "TRS-80 Color Computer 2 by ericomont",
+            "https://skfb.ly/6V6IL",
+        ),
+        ("CC BY 4.0", "https://creativecommons.org/licenses/by/4.0/"),
+    ] {
+        let mut harness = manager_harness(None, Vec::new());
+        harness.state().about_request.raise();
+        harness.step();
+
+        harness.get_by_label("Acknowledgments");
+        let link = harness.get_by_role_and_label(egui::accesskit::Role::Link, label);
+        link.click_accesskit();
+        harness.step();
+        assert_eq!(
+            harness.output().platform_output.commands,
+            [egui::OutputCommand::OpenUrl(egui::OpenUrl::same_tab(url))]
+        );
+    }
+}
+
 /// The About window repeats the startup banner's inventory line, counted
 /// from the manager's own ROM and cartridge directories and machine list.
 /// Opened through the request, the one entry point present on every platform;

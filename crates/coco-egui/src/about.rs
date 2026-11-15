@@ -17,6 +17,10 @@ const SECTION_GAP: f32 = 16.0;
 const ICON_BYTES: &[u8] = include_bytes!("../assets/cocovm-icon.png");
 const ICON_CACHE_ID: &str = "about_cocovm_icon";
 const GITHUB_URL: &str = "https://github.com/sperano/cocovm";
+const MAME_URL: &str = "https://www.mamedev.org/";
+const XROAR_URL: &str = "https://www.6809.org.uk/xroar/";
+const COCO2_MODEL_URL: &str = "https://skfb.ly/6V6IL";
+const CC_BY_4_URL: &str = "https://creativecommons.org/licenses/by/4.0/";
 
 /// The About window's update line while a check runs.
 pub(crate) const CHECKING_TEXT: &str = "Checking for updates…";
@@ -56,6 +60,8 @@ fn contents(ui: &mut egui::Ui, inventory: &str, update: &UpdateCheck) {
         ui.add_space(SECTION_GAP);
         ui.label(egui::RichText::new(inventory).size(DETAIL_SIZE));
         ui.add_space(SECTION_GAP);
+        acknowledgments(ui);
+        ui.add_space(SECTION_GAP);
         ui.separator();
         ui.add_space(TEXT_GAP);
         ui.label(egui::RichText::new("© 2026 Éric Spérano").size(DETAIL_SIZE));
@@ -64,6 +70,22 @@ fn contents(ui: &mut egui::Ui, inventory: &str, update: &UpdateCheck) {
         );
         ui.hyperlink_to("GitHub", GITHUB_URL);
     });
+}
+
+fn acknowledgments(ui: &mut egui::Ui) {
+    ui.label(
+        egui::RichText::new("Acknowledgments")
+            .size(DETAIL_SIZE)
+            .strong(),
+    );
+    detail_link(ui, "MAME", MAME_URL);
+    detail_link(ui, "XRoar", XROAR_URL);
+    detail_link(ui, "TRS-80 Color Computer 2 by ericomont", COCO2_MODEL_URL);
+    detail_link(ui, "CC BY 4.0", CC_BY_4_URL);
+}
+
+fn detail_link(ui: &mut egui::Ui, label: &str, url: &str) {
+    ui.hyperlink_to(egui::RichText::new(label).size(DETAIL_SIZE), url);
 }
 
 /// The update check's outcome. Nothing before a check, nor for a failed
