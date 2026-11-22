@@ -34,16 +34,18 @@ How to run the script:
 
 ## Preview mode (also the first step of a real release)
 
-1. Find the last release: `git tag --sort=-v:refname | head -1`.
-2. List what's unreleased:
+1. Refresh the remote state first: `git fetch --quiet --tags origin`.
+   Without it, `origin/main` and the tags can be stale.
+2. Find the last release: `git tag --sort=-v:refname | head -1`.
+3. List what's unreleased:
    - `git log <last-tag>..origin/main --oneline --first-parent`
    - For merged PRs, get real titles/bodies: `gh pr list --state merged
      --limit 30 --json number,title,mergedAt` and keep those merged after the
      last tag's date.
-3. Summarize the changes grouped as Added / Changed / Fixed and recommend a
+4. Summarize the changes grouped as Added / Changed / Fixed and recommend a
    bump: new features → `minor`; only fixes → `patch`. (Pre-1.0, breaking
    changes also go under `minor` — flag them in the entry instead.)
-4. In preview mode, print this and stop.
+5. In preview mode, print this and stop.
 
 ## Release flow
 
