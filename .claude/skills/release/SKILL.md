@@ -1,6 +1,6 @@
 ---
 name: release
-description: Cut a release of cocovm — collect unreleased changes, bump the workspace version, write the CHANGELOG entry, commit, tag, push, and create the GitHub release. Use when the user says "cut a release", "release 0.6", "tag a new version", or asks what's unreleased.
+description: Cut a release of cocovm — collect unreleased changes, write the release notes, open the release PR, then draft the GitHub release once it is merged; the owner approves by pushing the tag. Use when the user says "cut a release", "release 0.6", "tag a new version", or asks what's unreleased.
 ---
 
 # Release cocovm
@@ -10,20 +10,33 @@ root `Cargo.toml`. All crates inherit it (`version.workspace = true`) and are
 released in lockstep. Feature PRs never bump the version or edit the
 changelog — only this release flow does.
 
+Releases go through hollingsworth's shared `/release` script
+(`release_cli.py`, catalogue entry `cocovm`, kind `binaries`), in three
+steps: a release PR, a draft GitHub release, then the owner's approval.
+Nothing is ever pushed straight to `main`, and an agent never pushes a `v*`
+tag or publishes a release.
+
+How to run the script:
+
+- In an agent pod: `python3 /opt/kelos-tools/release_cli.py cocovm X.Y.Z ...`
+  from the repository root.
+- On the laptop, from the hollingsworth checkout:
+  `just release cocovm X.Y.Z --cwd ~/code/cocovm ...` (paths absolute).
+
 ## Arguments
 
 - No args → **preview mode**: report what's unreleased and recommend a bump
   level, then stop. Do not modify anything.
 - `patch` | `minor` | `major` → bump that component of the current version.
-- An explicit version like `0.6.0` → use it verbatim (must be greater than
-  the current version).
+- An explicit version like `0.6.0` → use it verbatim. It must be greater
+  than the current version and every `v*` tag and published release; the
+  script refuses otherwise.
 
 ## Preview mode (also the first step of a real release)
 
-1. Find the last release: `git tag --sort=-v:refname | head -1`. If there are
-   no tags yet, this is the **first release** — see below.
+1. Find the last release: `git tag --sort=-v:refname | head -1`.
 2. List what's unreleased:
-   - `git log <last-tag>..HEAD --oneline --first-parent`
+   - `git log <last-tag>..origin/main --oneline --first-parent`
    - For merged PRs, get real titles/bodies: `gh pr list --state merged
      --limit 30 --json number,title,mergedAt` and keep those merged after the
      last tag's date.
@@ -34,40 +47,15 @@ changelog — only this release flow does.
 
 ## Release flow
 
-Run these steps in order. Git commands sequentially, never in parallel.
+Git commands sequentially, never in parallel.
 
-### 1. Preflight
+### 1. Write the release notes
 
-- `git status` must be clean (no staged or unstaged changes — untracked
-  git-ignored files are fine). If dirty, stop and tell the user what's there;
-  never stash or discard for them.
-- Must be on `main`, and `git fetch origin && git status` must show it up to
-  date with `origin/main`. Releases are cut from main only, never from a
-  worktree feature branch.
-- The proposed version must be strictly greater than both the current
-  `Cargo.toml` version and the latest tag.
-- `Cargo.toml`'s version must equal the latest tag (minus the `v`), and the
-  newest `## [X.Y.Z]` section in `CHANGELOG.md` must be that same version.
-  If either is newer than the tag, a previous release was started but never
-  committed and tagged (its bump got swept into an unrelated commit). Stop
-  and report it; the user decides whether to fold those entries into this
-  release's notes. Never retro-tag such commits.
-
-### 2. Bump the version
-
-- Edit `version` under `[workspace.package]` in the root `Cargo.toml` — the
-  only place the version lives. Do not add `version =` lines to member crates.
-- Run `cargo check --workspace` so `Cargo.lock` picks up the new crate
-  versions. The lockfile change is part of the release commit.
-
-### 3. Changelog
-
-`CHANGELOG.md` at the repo root, [Keep a Changelog](https://keepachangelog.com)
-format. Prepend a new section:
+Write this version's changelog section body (no heading line) to a scratch
+file outside the repository, in [Keep a Changelog](https://keepachangelog.com)
+form:
 
 ```markdown
-## [X.Y.Z] - YYYY-MM-DD
-
 ### Added
 - ...
 
@@ -83,73 +71,78 @@ format. Prepend a new section:
   refactor. Omit empty subsections. Fold internal-only changes into a short
   line or drop them.
 - Source material: the PR titles/bodies and commits gathered in preview.
-  Draft the entry and show it to the user, but don't wait for a reply.
-  Later wording tweaks go in a follow-up commit to `CHANGELOG.md` plus
-  `gh release edit vX.Y.Z --notes-file <notes>`.
-- **First release only** (no CHANGELOG.md yet): create the file with the
-  standard Keep-a-Changelog header and backfill one section per era of the
-  full git history rather than pretending everything is new. Ask the user
-  whether to backfill in detail or start with a single summary section.
+  Show the draft to the user, but don't wait for a reply: wording tweaks
+  can be pushed to the release PR before it merges.
 
-### 4. Verify
-
-Run the test suite before committing (use the `quick-check` agent or
-`cargo build --workspace && cargo test --workspace`). A release is never cut
-on a red tree. **Never run `cargo fmt` in this repo.**
-
-### 5. Commit, tag, push
+### 2. Open the release PR
 
 ```
-git add Cargo.toml Cargo.lock CHANGELOG.md
-git commit -m "release: vX.Y.Z"
-git tag -a vX.Y.Z -m "vX.Y.Z"
-git push --follow-tags
+release_cli.py cocovm X.Y.Z --notes-file <notes>
 ```
 
-- Annotated tag (`-a`), name prefixed with `v`.
-- No co-author trailers on the commit message.
-- Commit, tag and push immediately after verification passes, without
-  waiting for the user. A bump left uncommitted, or a tag left unpushed,
-  gets stranded: the version is silently never published.
+`origin/main` does not carry `X.Y.Z` yet, so this is **prepare mode**: on a
+`release/cocovm/X.Y.Z` branch the script bumps
+`[workspace.package] version`, every workspace crate in `Cargo.lock`, and
+inserts `## [X.Y.Z] - YYYY-MM-DD` with the notes below an empty
+`## [Unreleased]`, then opens (or reuses) the PR "Release cocovm X.Y.Z".
+Report its link. It merges through `cubic-gate` like any PR, and merging it
+publishes nothing. Rerunning the command rebuilds the branch from
+`origin/main` and updates the same PR.
 
-### 6. GitHub release (draft)
+If `## [Unreleased]` already has entries, run without `--notes-file`: they
+become the release's notes. Both, or neither, is refused.
 
-Run this immediately after the push:
+### 3. Draft the GitHub release (after the PR is merged)
 
 ```
-gh release create vX.Y.Z --draft --title "vX.Y.Z" --notes-file <notes>
+release_cli.py cocovm X.Y.Z
 ```
 
-where `<notes>` is a temp file (scratchpad) containing just this version's
-changelog section (without the `## [X.Y.Z]` heading line).
+`origin/main` now carries `X.Y.Z`, so this is **draft mode**. The script
+checks that `Cargo.toml`, `Cargo.lock` and `CHANGELOG.md` at that exact
+commit say `X.Y.Z`, that no `vX.Y.Z` tag exists elsewhere, then runs
+`cargo test --workspace --locked` at the commit (blocking: this repo has no
+test CI; it can take a while, so give the call the longest timeout). Only
+then does it create or update the one draft release for `vX.Y.Z`, pinned
+to the full commit SHA, with the changelog section as its notes. Report the
+draft's link. Rerunning reuses the same draft.
 
-The release **must** be created as a draft. The repository uses immutable
-releases: a published release accepts no further assets, so the binaries the
-`Release binaries` workflow uploads would be rejected. The workflow, triggered
-by the tag push, attaches every target's archive to the draft and its final
-`publish` job flips it to published. Never run `gh release edit --draft=false`
-by hand while the workflow is still running.
+**Never publish the draft.** The repository uses immutable releases: a
+published release accepts no further assets, and GitHub never lets a tag
+name an immutable release used be published again. Publishing early burns
+the version with no binaries.
 
-### 7. Report
+### 4. Approval (the owner, on the laptop)
 
-End by stating: new version, tag name, release URL, and a one-line summary of
-what shipped.
+Tell the user the release is ready for approval:
+
+```
+just release-approve cocovm X.Y.Z --cwd ~/code/cocovm
+```
+
+It re-runs the validation (tests included) at the draft's SHA, refuses if
+the draft no longer matches that commit's version or changelog, then pushes
+the annotated tag `vX.Y.Z` there. The tag push runs `Release binaries`
+(`.github/workflows/release.yml`): it builds the five targets, attaches
+each archive to the draft, and its `publish` job publishes it. A tag
+ruleset on `refs/tags/v*` lets only the owner push release tags.
+
+### 5. Report
+
+End by stating: the version, the PR or draft link (whichever step you
+reached), and what the user does next.
 
 ## Failure handling
 
-- If anything fails after the tag exists locally but before push: fix, then
-  `git tag -d vX.Y.Z` and re-tag on the corrected commit. Never retag a
-  version that has already been pushed — bump again instead.
-- If the push succeeded but `gh release create` failed, just re-run the
-  `gh release create --draft` step; the tag is already up. If the workflow
-  got there first the draft already exists: use
-  `gh release edit vX.Y.Z --title "vX.Y.Z" --notes-file <notes>` instead.
-- If a build target failed, the draft stays unpublished. Fix the cause on
-  main and re-run the workflow against the existing tag:
-  `gh workflow run release.yml -f tag=vX.Y.Z`. It reuses the draft and
-  publishes once all targets succeed.
-- If a release was published without binaries, it cannot be repaired: it is
-  immutable, and deleting it does not help because GitHub permanently
-  refuses to publish another release under a tag name an immutable release
-  once used (`tag_name was used by an immutable release`). Leave the
-  release as is and cut the next patch version.
+- The script exits 1 with the reason for a blocking failure (version not
+  above the latest tag, a tag already elsewhere, failing tests, a changelog
+  or lockfile that does not say the version): fix it on `main` through a
+  PR, then rerun the step.
+- Draft mode after a later commit on `main` changed the notes: rerun step 3;
+  the draft follows the new SHA and notes while it is still a draft.
+- A build target failed after approval: the draft stays unpublished. The
+  owner fixes the cause and re-runs the workflow against the existing tag:
+  `gh workflow run release.yml -f tag=vX.Y.Z` (agents have no Actions
+  write). It reuses the draft and publishes once all targets succeed.
+- A published release cannot be repaired, and its version is burned:
+  release the next patch instead.
