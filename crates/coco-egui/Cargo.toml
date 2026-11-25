@@ -23,7 +23,7 @@ clap = { version = "4.6.1", features = ["derive", "env"] }
 coco-core = { path = "../coco-core" }
 cpal = "0.18.1"
 # MIT OR Apache-2.0. Encodes `screenshot` replies as base64 PNG data.
-base64 = "0.22"
+base64 = "0.23"
 # MIT. Seeds the environment from a `.env` file at startup, so `RUST_LOG` and
 # friends can be set per-checkout instead of per-shell (`load_dotenv` in
 # startup.rs).
