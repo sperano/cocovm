@@ -29,7 +29,7 @@ base64 = "0.23"
 # startup.rs).
 dotenvy = "0.15"
 mc6809 = { path = "../mc6809" }
-eframe = "0.33"
+eframe = "0.37"
 # MIT. Opts legacy Windows conhost into VT escape processing (no-op
 # elsewhere); called once at the top of main().
 enable-ansi-support = "0.3.1"
