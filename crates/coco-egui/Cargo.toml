@@ -87,7 +87,7 @@ unicode-width = "0.2"
 zip = { version = "9", default-features = false, features = ["deflate-flate2"] }
 # MIT OR Apache-2.0. Checks the NitrOS-9 EOU archive's digest (`nitros9.rs`);
 # already in Cargo.lock through coco-core.
-sha2 = "0.10"
+sha2 = "0.11"
 
 # All MIT. Retarget the application menu's About item (`macos_menu.rs`).
 [target.'cfg(target_os = "macos")'.dependencies]

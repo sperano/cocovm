@@ -16,7 +16,7 @@ serde_bytes = "0.11"
 # contract"): CBOR payload, gzipped, hashed with SHA-256 — see `snapshot.rs`.
 ciborium = "0.2"
 flate2 = "1"
-sha2 = "0.10"
+sha2 = "0.11"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
