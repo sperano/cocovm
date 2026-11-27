@@ -56,7 +56,7 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 # MIT OR Apache-2.0. Streams long printer-roll PNGs one page at a time.
 png = "0.18.0"
 owo-colors = {version="4.3.0",  features = ["supports-colors"]}
-rfd = "0.17.2"
+rfd = "0.18.0"
 # MIT OR Apache-2.0, no dependencies. Compares the latest GitHub release's
 # tag with the built version (`update.rs`). Cargo.lock already pins it for
 # winit's Android build tooling.
