@@ -70,7 +70,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # MIT OR Apache-2.0. Human-editable machine-definition file format
 # (`machine_def.rs`), read/written under `config_dir()/machines/<slug>.toml`.
-toml = "0.9"
+toml = "1.0"
 # MIT OR Apache-2.0. Comment-preserving TOML editing for the Settings dialog's
 # write-back into `config.toml` (`config.rs::save_file`).
 toml_edit = "0.25"
